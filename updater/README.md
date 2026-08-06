@@ -1,7 +1,7 @@
 # updater/
 
 The **local-app** (Tier 2) self-update client — deliberately separate from
-the OS-level Mender OTA tier, since a bad app update can't brick the device
+the OS-level RAUC OTA tier, since a bad app update can't brick the device
 the way a bad OS update can.
 
 Planned contents (not yet implemented):

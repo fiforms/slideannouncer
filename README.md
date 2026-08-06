@@ -21,7 +21,7 @@ to, and the rationale behind each architectural choice below.
 
 - [`image-builder/`](image-builder/) — pi-gen-based pipeline that produces
   the base Raspberry Pi OS image (Chromium, compositor, NetworkManager,
-  nginx, Mender client) and packages it as a Mender OTA artifact.
+  nginx, RAUC client) and packages it as a signed RAUC OTA bundle.
 - [`local-app/`](local-app/) — the on-device backend (WiFi setup, pairing,
   slide sync daemon) and frontend (setup screens + kiosk slideshow UI).
 - [`system/`](system/) — systemd units, nginx config, and polkit rules tying
@@ -36,6 +36,6 @@ to, and the rationale behind each architectural choice below.
 
 | Tier | What | Cadence | Mechanism |
 |---|---|---|---|
-| 1 | Base OS image | Rare | Mender A/B OTA, atomic + auto-rollback |
+| 1 | Base OS image | Rare | RAUC A/B OTA (self-hosted via the Laravel app), atomic + auto-rollback |
 | 2 | Local web app | Frequent | Atomic symlink-swap deploy over HTTP |
 | 3 | Slide content | Continuous | Polling sync against the server API |
