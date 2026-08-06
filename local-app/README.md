@@ -6,7 +6,12 @@ image, deployed via atomic symlink-swap rather than A/B partitioning (see
 
 Planned contents (not yet implemented):
 - `backend/` — FastAPI service(s):
-  - `wifi/` — NetworkManager control via `nmcli`, AP/hotspot first-boot setup.
+  - `wifi/` — NetworkManager control via `nmcli`, AP/hotspot first-boot
+    setup, and parsing `/boot/firmware/slideannouncer.yaml` for
+    pre-provisioned WiFi credentials.
+  - `identity/` — device UUID/identity-key generation, the
+    HMAC-SHA256-based boot-time consistency check against the boot
+    partition's declared UUID, and the wipe-and-regenerate flow on mismatch.
   - `pairing/` — exchanges the numeric one-time code for a Sanctum token via
     the server's `POST /api/slide-announcers/pair`.
   - `sync/` — the slide sync daemon: polls
