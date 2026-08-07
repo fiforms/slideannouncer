@@ -191,6 +191,16 @@ cp "$RAUC_KEYRING_CERT_PATH" "${FILES_DIR}/rauc-keyring.pem"
 
 echo "$SLIDE_ANNOUNCER_SERVER_URL" > "${FILES_DIR}/SERVER_URL"
 
+# Root password — debugging/development only (see .env.example). Left
+# unset, root stays locked, same as a stock image. 00-run.sh's on_chroot
+# block reads this file (if present) and chpasswd's root with it; never
+# committed (files/ is gitignored) and never baked into a real fleet
+# image unless someone deliberately sets ROOT_DEV_PASSWORD.
+if [ -n "${ROOT_DEV_PASSWORD:-}" ]; then
+	echo "$ROOT_DEV_PASSWORD" > "${FILES_DIR}/ROOT_DEV_PASSWORD"
+	echo "==> ROOT_DEV_PASSWORD set: root login enabled for this build — debug/dev images only, never a real fleet image"
+fi
+
 echo "==> Copying the custom stage into pi-gen (Docker build context = pi-gen/ only)"
 rsync -a --delete "${STAGE_SRC}/" "${PI_GEN_DIR}/stage-slide-announcer/"
 

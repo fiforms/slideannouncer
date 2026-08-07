@@ -132,7 +132,21 @@ sed -i 's/$/ ro quiet loglevel=3 logo.nologo vt.global_cursor_default=0/' "$CMDL
 # firmware before Linux even loads) for a solid black screen instead.
 printf '\n[all]\ndisable_splash=1\n' >> "${ROOTFS_DIR}/boot/firmware/config.txt"
 
+# Root password — debugging/development only (see .env.example and
+# build.sh, which only stages this file when ROOT_DEV_PASSWORD is set).
+# Exported (not just a shell variable) so it's visible inside on_chroot's
+# capsh-spawned bash below; the heredoc itself is single-quoted, so this
+# only ever gets read at chroot runtime, never substituted into the script
+# text on the host.
+if [ -f files/ROOT_DEV_PASSWORD ]; then
+	export ROOT_DEV_PASSWORD="$(cat files/ROOT_DEV_PASSWORD)"
+fi
+
 on_chroot << 'EOF'
+if [ -n "${ROOT_DEV_PASSWORD:-}" ]; then
+	echo "root:${ROOT_DEV_PASSWORD}" | chpasswd
+fi
+
 useradd --system --create-home --home-dir /var/lib/slide-announcer \
 	--groups video,render,input,dialout,netdev slideannouncer
 
