@@ -20,7 +20,7 @@ set -euo pipefail
 SRC_IMG="${1:?usage: repartition.sh <src.img> <out.img>}"
 OUT_IMG="${2:?usage: repartition.sh <src.img> <out.img>}"
 
-ROOTFS_FIXED_SIZE_MB="${ROOTFS_FIXED_SIZE_MB:-3072}"
+ROOTFS_FIXED_SIZE_MB="${ROOTFS_FIXED_SIZE_MB:-5120}"
 DATA_PLACEHOLDER_SIZE_MB="${DATA_PLACEHOLDER_SIZE_MB:-128}"
 ALIGN=$((8 * 1024 * 1024))
 
