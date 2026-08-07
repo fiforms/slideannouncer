@@ -210,8 +210,12 @@ rsync -a --delete "${STAGE_SRC}/" "${PI_GEN_DIR}/stage-slide-announcer/"
 # SIGPIPE prints nothing) and `set -e` then kills the whole script. Bound
 # the read at the source instead, and slice in bash rather than with
 # another `head -c` (same trap one stage later otherwise).
-USER_PASS_RAW="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
-USER_PASS="${USER_PASS_RAW:0:16}"
+if [ -n "${SLIDEADMIN_PASSWORD:-}" ]; then
+	USER_PASS="$SLIDEADMIN_PASSWORD"
+else
+	USER_PASS_RAW="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
+	USER_PASS="${USER_PASS_RAW:0:16}"
+fi
 CONFIG_FILE="$(mktemp)"
 cat "${HERE}/config" > "$CONFIG_FILE"
 {
@@ -370,3 +374,12 @@ echo "==> Building and signing RAUC bundle"
 rauc bundle --cert="$RAUC_CERT_PATH" --key="$RAUC_KEY_PATH" "$BUNDLE_DIR" "$BUNDLE_OUT"
 
 echo "==> Done: ${BUNDLE_OUT}"
+
+if [ -n "${USER_PASS:-}" ]; then
+	echo "==> Local account 'slideadmin' password (console/keyboard login only): ${USER_PASS}"
+else
+	# RESUME_WORK skipped the pi-gen stage, so no password was generated
+	# this run — the account was already provisioned in the earlier build
+	# raw.img came from, and that password was only ever printed there.
+	echo "==> RESUME_WORK build: 'slideadmin' password unchanged from the original build (see its output)"
+fi
