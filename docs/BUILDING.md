@@ -9,9 +9,29 @@ README for what's real vs. stubbed.
 ## Prerequisites (build host)
 
 - Docker (rootless or in the `docker` group — no `sudo docker` needed)
-- `parted`, `dosfstools`, `e2fsprogs`, `rsync`, `xz-utils` — for
-  `image-builder/repartition.sh`, which needs `sudo`
+- `parted`, `dosfstools`, `e2fsprogs`, `rsync`, `xz-utils`, `rauc` — for
+  `image-builder/repartition.sh` (needs `sudo`) and RAUC bundle signing
 - ~10GB free disk space
+
+## RAUC signing cert/key (one-time setup)
+
+The build produces a signed `.raucb` OTA bundle alongside the raw image,
+which needs a cert/key pair. `build.sh` checks for this up front and exits
+cleanly with instructions if it's missing, before running the long pi-gen
+build:
+
+```bash
+cd slideannouncer/image-builder
+./generate-rauc-cert.sh dev   # throwaway self-signed pair, dev/test only
+cp .env.example .env
+# edit .env with the paths it printed
+```
+
+A real fleet build should use `./generate-rauc-cert.sh production` instead
+— it sets up an offline CA plus a rotatable signing cert issued by it, and
+prints (and writes to a `MANIFEST.txt` alongside the generated files)
+exactly what needs to be backed up, how sensitively, and what to do if a
+key leaks. Read that before deciding where any of it ends up.
 
 ## Build
 
@@ -21,13 +41,23 @@ cd slideannouncer/image-builder
 ```
 
 First run also clones the `pi-gen` submodule if it isn't already checked
-out. Output: `image-builder/deploy/slideannouncer-<build-date>-<git-hash>.img.xz`
-(e.g. `slideannouncer-2026-08-06-a1b2c3d.img.xz`; `-dirty` appended to the
-hash if the repo had uncommitted changes at build time). The same
-`<kernel-version>-<build-date>-<git-hash>` string is baked into the image
-at `/opt/slide-announcer/VERSION` and surfaced by the stub's
-`GET /api/local/status` (`image_version`) and the kiosk page — so you can
-tell which build a running device is on without re-flashing to check.
+out. Output — two artifacts, same version stamp:
+- `image-builder/deploy/slideannouncer-<build-date>-<git-hash>.img.xz` —
+  the full disk image for initial flashing (e.g.
+  `slideannouncer-2026-08-06-a1b2c3d.img.xz`; `-dirty` appended to the hash
+  if the repo had uncommitted changes at build time).
+- `image-builder/deploy/slideannouncer-<build-date>-<git-hash>.raucb` — the
+  same rootA content, signed as a RAUC bundle for OTA delivery. Actual
+  on-device A/B activation is still a stub (see
+  `image-builder/README.md`) — this covers building/signing/transferring
+  bundles, not yet installing them.
+
+The same `<kernel-version>-<build-date>-<git-hash>` string is baked into the
+image at `/opt/slide-announcer/VERSION`, surfaced by the stub's
+`GET /api/local/status` (`image_version`) and the kiosk page, and reused
+verbatim as the `.raucb`'s manifest `version=` — so you can tell which
+build a running device is on without re-flashing to check, and the two
+artifacts from one build always agree on version.
 
 For a debug build with SSH also enabled (never for a real fleet image — the
 default build has no SSH access at all):

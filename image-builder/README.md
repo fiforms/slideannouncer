@@ -3,12 +3,15 @@
 **Tier 1 — base OS image.** Produces the rarely-updated Raspberry Pi OS
 image for a Raspberry Pi 4 (arm64, Bookworm).
 
-**Implemented so far:** the pi-gen pipeline, custom stage, and partition
-layout described below. **Not yet implemented:** RAUC itself (bundle
-signing, `system.conf`, actual A/B switching, tryboot) — see
-`SLIDE_ANNOUNCER.md` for why that's deliberately deferred. `rootB` exists in
-the partition table as an empty, unbooted placeholder until that work
-happens.
+**Implemented so far:** the pi-gen pipeline, custom stage, partition layout
+described below, and RAUC bundle production (`system.conf`, signed
+`.raucb` output, `rauc` client installed in the image). **Not yet
+implemented:** actual A/B slot switching/tryboot — `system.conf`'s
+bootloader backend is a stub that fails loudly at the activation step (see
+`system/rauc/system.conf`) — see `SLIDE_ANNOUNCER.md` for why that's
+deliberately deferred. `rootB` boots nothing yet; a bundle can be built,
+signed, and `rauc install`ed onto it (verifying its signature and writing
+its content), but the device won't actually switch to it afterward.
 
 ## Contents
 
@@ -58,6 +61,14 @@ happens.
   devices flashed today need no re-partitioning/data-migration once RAUC
   ships — just a normal OTA into the already-present `rootB`.
 - `build.sh` — top-level entrypoint. See "Building," below.
+- `generate-rauc-cert.sh` — generates RAUC bundle-signing cert/key
+  material (`image-builder/certs/`, gitignored), in two modes: `dev` (a
+  throwaway single self-signed pair) or `production` (an offline CA plus
+  a rotatable signing cert issued by it — see its own header comment and
+  the `MANIFEST.txt` it writes for what to back up and how).
+- `.env.example` — copy to `.env` (gitignored) and set `RAUC_CERT_PATH`/
+  `RAUC_KEY_PATH` (and `RAUC_KEYRING_CERT_PATH` for a production PKI) —
+  `build.sh` refuses to build without these existing as files.
 
 ## Building
 
@@ -66,12 +77,22 @@ static aarch64 qemu interpreter registered for binfmt_misc (`qemu-user-static`
 on Debian, `qemu-user-binfmt` on newer Ubuntu — `build.sh` auto-symlinks it
 to the filename pi-gen's `build-docker.sh` expects if your distro dropped
 the `-static` suffix, no sudo needed) plus
-`parted`/`dosfstools`/`e2fsprogs`/`rsync`/`xz-utils` for the repartition
-step (root privileges required there — `build.sh` calls `repartition.sh`
-via `sudo`).
+`parted`/`dosfstools`/`e2fsprogs`/`rsync`/`xz-utils`/`rauc` for the
+repartition and bundle-signing steps (root privileges required for
+repartitioning — `build.sh` calls `repartition.sh` via `sudo`).
+
+First, a RAUC signing cert/key pair (skip if you already have `.env` set up):
 
 ```bash
 cd image-builder
+./generate-rauc-cert.sh dev     # dev/test only — prints paths to use below
+# ... or for a real fleet:
+./generate-rauc-cert.sh production   # see its MANIFEST.txt for backup instructions
+cp .env.example .env
+# edit .env with the paths it printed
+```
+
+```bash
 ./build.sh
 # ... or, with SSH also enabled (never for a real fleet image):
 SSH_DEV_BUILD=1 ./build.sh
@@ -83,12 +104,20 @@ field debugging, not deferred to Raspberry Pi OS's interactive first-boot
 wizard (which would otherwise contest the console with the kiosk on every
 fresh card). Not exposed remotely unless `SSH_DEV_BUILD=1` was used.
 
-Output: `image-builder/deploy/slideannouncer-<build-date>-<git-hash>.img.xz`.
+Output — two artifacts, same version stamp:
+- `image-builder/deploy/slideannouncer-<build-date>-<git-hash>.img.xz` — the
+  full boot+rootA+rootB+data disk, for initial flashing only.
+- `image-builder/deploy/slideannouncer-<build-date>-<git-hash>.raucb` — the
+  same rootA content, packaged and signed as a RAUC bundle for OTA
+  (`rauc install <url>` on a device; actual A/B activation is still a stub —
+  see "Not yet implemented," above).
+
 The same version string (plus the kernel version baked into the image) is
 written to `/opt/slide-announcer/VERSION` and surfaced by the stub app, so a
-running device can be identified without re-flashing. Flash with
-`rpi-imager` or `xzcat ... | dd ...`. See `../docs/BUILDING.md` for the full
-flash/first-boot walkthrough.
+running device can be identified without re-flashing — the `.raucb`'s
+manifest `version=` is read back out of that same file, so both artifacts
+always agree. Flash the `.img.xz` with `rpi-imager` or `xzcat ... | dd ...`.
+See `../docs/BUILDING.md` for the full flash/first-boot walkthrough.
 
 See the main repo's `SLIDE_ANNOUNCER.md`, "Tier 1 — Base OS image" for the
 full rationale (why pi-gen, why RAUC self-hosted over Mender, tryboot vs

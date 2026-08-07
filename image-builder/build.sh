@@ -27,6 +27,47 @@ WORK=""
 RAW_IMG_READY=0
 SUDO_KEEPALIVE_PID=""
 
+# RAUC bundle signing cert/key, from image-builder/.env (never committed —
+# see .gitignore). Checked up front, before the sudo prompt and the long
+# pi-gen build, so a missing pair fails fast and cheap instead of after
+# 20+ minutes of building an image with nowhere to sign the bundle.
+if [ -f "${HERE}/.env" ]; then
+	set -a
+	# shellcheck disable=SC1091
+	. "${HERE}/.env"
+	set +a
+fi
+RAUC_CERT_PATH="${RAUC_CERT_PATH:-}"
+RAUC_KEY_PATH="${RAUC_KEY_PATH:-}"
+# Defaults to RAUC_CERT_PATH — correct for a single dev/test cert doing
+# both jobs. A production PKI (generate-rauc-cert.sh production) sets this
+# to the CA cert instead, separate from the signing cert used below, so
+# devices trust the CA rather than one specific rotatable signing cert.
+RAUC_KEYRING_CERT_PATH="${RAUC_KEYRING_CERT_PATH:-$RAUC_CERT_PATH}"
+if [ -z "$RAUC_CERT_PATH" ] || [ -z "$RAUC_KEY_PATH" ] \
+	|| [ ! -f "$RAUC_CERT_PATH" ] || [ ! -f "$RAUC_KEY_PATH" ] \
+	|| [ ! -f "$RAUC_KEYRING_CERT_PATH" ]; then
+	cat >&2 <<EOF
+build.sh: RAUC_CERT_PATH/RAUC_KEY_PATH (/RAUC_KEYRING_CERT_PATH) not set to existing files.
+
+This build produces two artifacts: the raw .img.xz (initial provisioning)
+and a signed .raucb bundle (OTA updates) — the bundle needs a signing
+cert/key pair to exist before the build starts.
+
+No pair yet?
+    ./generate-rauc-cert.sh dev          # throwaway, dev/test only
+    ./generate-rauc-cert.sh production   # offline CA + rotatable signing cert
+
+Then copy .env.example to .env and set RAUC_CERT_PATH/RAUC_KEY_PATH (and
+RAUC_KEYRING_CERT_PATH, for production) to the paths it prints.
+EOF
+	exit 1
+fi
+if ! command -v rauc >/dev/null 2>&1; then
+	echo "build.sh: 'rauc' not found on this build host (needed to bundle/sign the .raucb) — install the rauc package" >&2
+	exit 1
+fi
+
 cleanup() {
 	local exit_code=$?
 	[ -n "$SUDO_KEEPALIVE_PID" ] && kill "$SUDO_KEEPALIVE_PID" 2>/dev/null
@@ -110,6 +151,13 @@ rsync -a --exclude 'backend/venv' "${REPO_ROOT}/local-app/" "${FILES_DIR}/local-
 } > "${FILES_DIR}/BUILD_INFO"
 echo "==> Build provenance: date=${BUILD_DATE} git=${GIT_HASH}"
 
+# Only a public cert goes into the image's RAUC keyring (installed by
+# 00-run.sh) — RAUC_KEYRING_CERT_PATH, not RAUC_CERT_PATH (the two are the
+# same file in dev mode, but the CA cert vs. the signing cert in
+# production mode — see .env.example). No private key ever gets staged
+# here; it's only ever passed as an argument to `rauc bundle` below.
+cp "$RAUC_KEYRING_CERT_PATH" "${FILES_DIR}/rauc-keyring.pem"
+
 echo "==> Copying the custom stage into pi-gen (Docker build context = pi-gen/ only)"
 rsync -a --delete "${STAGE_SRC}/" "${PI_GEN_DIR}/stage-slide-announcer/"
 
@@ -192,3 +240,44 @@ xz -6 -T0 -c "$FINAL_IMG" > "${DEPLOY_DIR}/${OUT_NAME}"
 sudo chown "$(id -u):$(id -g)" "${DEPLOY_DIR}/${OUT_NAME}"
 
 echo "==> Done: ${DEPLOY_DIR}/${OUT_NAME}"
+
+# --- RAUC bundle: same rootA content, packaged as a signed .raucb for OTA
+# (the .img.xz above is the whole boot+rootA+rootB+data disk, for initial
+# flashing only — RAUC bundles a single slot's filesystem image, not a
+# disk) -----------------------------------------------------------------
+echo "==> Extracting rootA into a standalone image for RAUC bundling"
+BUNDLE_DIR="${WORK}/bundle"
+mkdir -p "$BUNDLE_DIR"
+FINAL_LOOP="$(sudo losetup --show --find --partscan --read-only "$FINAL_IMG")"
+udevadm settle 2>/dev/null || true
+sudo dd if="${FINAL_LOOP}p2" of="${BUNDLE_DIR}/rootfs.img" bs=4M status=none
+sudo losetup -d "$FINAL_LOOP"
+sudo chown "$(id -u):$(id -g)" "${BUNDLE_DIR}/rootfs.img"
+
+# Read the exact version stamp 00-run.sh wrote into the image itself
+# (kernel-version-build_date-git_hash) rather than reconstructing it here,
+# so the RAUC manifest's version always matches what a running device
+# reports via /opt/slide-announcer/VERSION.
+ROOTFS_MNT="${WORK}/rootfs-mnt"
+mkdir -p "$ROOTFS_MNT"
+sudo mount -o ro,loop "${BUNDLE_DIR}/rootfs.img" "$ROOTFS_MNT"
+IMAGE_VERSION="$(cat "${ROOTFS_MNT}/opt/slide-announcer/VERSION")"
+sudo umount "$ROOTFS_MNT"
+
+cat > "${BUNDLE_DIR}/manifest.raucm" <<EOF
+[update]
+compatible=slideannouncer-rpi4
+version=${IMAGE_VERSION}
+
+[bundle]
+format=plain
+
+[image.rootfs]
+filename=rootfs.img
+EOF
+
+BUNDLE_OUT="${DEPLOY_DIR}/${IMG_NAME}-${BUILD_DATE}-${GIT_HASH}.raucb"
+echo "==> Building and signing RAUC bundle"
+rauc bundle --cert="$RAUC_CERT_PATH" --key="$RAUC_KEY_PATH" "$BUNDLE_DIR" "$BUNDLE_OUT"
+
+echo "==> Done: ${BUNDLE_OUT}"

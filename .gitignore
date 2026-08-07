@@ -1,5 +1,7 @@
 image-builder/deploy/
 image-builder/stage-slide-announcer/01-system-files/files/
+image-builder/.env
+image-builder/certs/
 local-app/backend/venv/
 __pycache__/
 *.pyc

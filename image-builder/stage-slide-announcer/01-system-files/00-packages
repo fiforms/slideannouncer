@@ -12,3 +12,4 @@ libinput-tools
 parted
 e2fsprogs
 cloud-guest-utils
+rauc

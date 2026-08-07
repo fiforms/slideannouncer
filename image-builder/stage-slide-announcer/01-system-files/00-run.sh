@@ -32,6 +32,19 @@ install -d "${ROOTFS_DIR}/etc/polkit-1/rules.d"
 install -m 644 files/system/polkit/50-networkmanager-slide-announcer.rules \
 	"${ROOTFS_DIR}/etc/polkit-1/rules.d/"
 
+# RAUC: slot config + stub tryboot backend (see system/rauc/system.conf for
+# what's real vs. stubbed) + the public bundle-signing cert build.sh stages
+# into files/rauc-keyring.pem — never the private key, which stays on the
+# build host/CI secret store and is only ever passed to `rauc bundle`.
+install -d "${ROOTFS_DIR}/etc/rauc" "${ROOTFS_DIR}/usr/lib/rauc"
+install -m 644 files/system/rauc/system.conf "${ROOTFS_DIR}/etc/rauc/system.conf"
+install -m 644 files/rauc-keyring.pem "${ROOTFS_DIR}/etc/rauc/keyring.pem"
+install -m 755 files/system/rauc/rpi-tryboot-backend.sh \
+	"${ROOTFS_DIR}/usr/lib/rauc/rpi-tryboot-backend.sh"
+install -d "${ROOTFS_DIR}/etc/tmpfiles.d"
+install -m 644 files/system/rauc/slide-announcer-rauc.conf \
+	"${ROOTFS_DIR}/etc/tmpfiles.d/slide-announcer-rauc.conf"
+
 # Placeholder fstab entry — image-builder/repartition.sh rewrites DATADEV to
 # the real PARTUUID of partition 4 once the final partition table exists
 # (pi-gen itself only ever produces boot+root, see repartition.sh).
