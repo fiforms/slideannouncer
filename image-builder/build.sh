@@ -1,10 +1,10 @@
 #!/bin/bash
 # Top-level entrypoint: builds the Slide Announcer Raspberry Pi image.
 #
-#   ./build.sh                 normal build (no SSH, sanitized per design)
-#   SSH_DEV_BUILD=1 ./build.sh dev build with SSH enabled + a random password
-#                               printed to the console (never for real fleet
-#                               images — see image-builder/README.md)
+#   ./build.sh                 normal build (no SSH; a random per-build
+#                               console-login password is still printed —
+#                               see image-builder/README.md)
+#   SSH_DEV_BUILD=1 ./build.sh same, plus SSH enabled with that same password
 #
 # Pipeline: stage our files into pi-gen -> run pi-gen via Docker -> take its
 # raw boot+root .img output -> repartition.sh into the final
@@ -58,16 +58,28 @@ echo "==> Build provenance: date=${BUILD_DATE} git=${GIT_HASH}"
 echo "==> Copying the custom stage into pi-gen (Docker build context = pi-gen/ only)"
 rsync -a --delete "${STAGE_SRC}/" "${PI_GEN_DIR}/stage-slide-announcer/"
 
-CONFIG_FILE="${HERE}/config"
+# A local account always gets created with a random per-build password
+# (never just deferred to Raspberry Pi OS's interactive first-boot wizard —
+# with no FIRST_USER_PASS set, that wizard demands a keyboard-driven
+# keyboard-layout-then-create-account flow on every fresh card, which is
+# exactly the console-hijacking behavior the kiosk exists to avoid).
+# DISABLE_FIRST_BOOT_USER_RENAME=1 requires FIRST_USER_PASS to be set (pi-gen
+# enforces this at build time) — that's what makes the account exist non-
+# interactively instead of via the wizard. This is a real local login,
+# useful for field debugging with a physical keyboard; it's just not one
+# that's ever exposed remotely unless SSH is also enabled below.
+USER_PASS="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 16)"
+CONFIG_FILE="$(mktemp)"
+cat "${HERE}/config" > "$CONFIG_FILE"
+{
+	echo "DISABLE_FIRST_BOOT_USER_RENAME=1"
+	echo "FIRST_USER_PASS=${USER_PASS}"
+} >> "$CONFIG_FILE"
+echo "==> Local account 'slideadmin' password (console/keyboard login only): ${USER_PASS}"
+
 if [ "${SSH_DEV_BUILD:-0}" = "1" ]; then
-	DEV_PASS="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 16)"
-	CONFIG_FILE="$(mktemp)"
-	cat "${HERE}/config" > "$CONFIG_FILE"
-	{
-		echo "ENABLE_SSH=1"
-		echo "FIRST_USER_PASS=${DEV_PASS}"
-	} >> "$CONFIG_FILE"
-	echo "==> SSH_DEV_BUILD=1: dev image, user 'slideadmin', password: ${DEV_PASS}"
+	echo "ENABLE_SSH=1" >> "$CONFIG_FILE"
+	echo "==> SSH_DEV_BUILD=1: SSH enabled too — same password as above"
 fi
 
 if ! command -v qemu-aarch64-static >/dev/null 2>&1; then

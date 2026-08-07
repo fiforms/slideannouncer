@@ -73,10 +73,15 @@ via `sudo`).
 ```bash
 cd image-builder
 ./build.sh
-# ... or, for a debug build with SSH enabled and a random password printed
-# to the console (never for a real fleet image):
+# ... or, with SSH also enabled (never for a real fleet image):
 SSH_DEV_BUILD=1 ./build.sh
 ```
+
+Every build (dev or not) prints a random password for the `slideadmin`
+local account to the console — a real local login for physical-keyboard
+field debugging, not deferred to Raspberry Pi OS's interactive first-boot
+wizard (which would otherwise contest the console with the kiosk on every
+fresh card). Not exposed remotely unless `SSH_DEV_BUILD=1` was used.
 
 Output: `image-builder/deploy/slideannouncer-<build-date>-<git-hash>.img.xz`.
 The same version string (plus the kernel version baked into the image) is

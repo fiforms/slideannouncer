@@ -29,14 +29,20 @@ at `/opt/slide-announcer/VERSION` and surfaced by the stub's
 `GET /api/local/status` (`image_version`) and the kiosk page — so you can
 tell which build a running device is on without re-flashing to check.
 
-For a debug build with SSH enabled (never for a real fleet image — the
+For a debug build with SSH also enabled (never for a real fleet image — the
 default build has no SSH access at all):
 
 ```bash
 SSH_DEV_BUILD=1 ./build.sh
 ```
 
-The console prints a randomly generated password for the `slideadmin` user.
+Every build — dev or not — prints a random password for the `slideadmin`
+local account to the console. That's a real local login (keyboard +
+monitor), meant for field debugging, not deferred to Raspberry Pi OS's
+interactive first-boot wizard (which would otherwise ask for a keyboard
+layout and walk through account creation on every fresh card, fighting the
+kiosk for the console). It's only reachable over SSH if `SSH_DEV_BUILD=1`
+was used for that build.
 
 ## Flash
 

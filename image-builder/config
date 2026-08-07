@@ -6,15 +6,16 @@ RELEASE=bookworm
 IMG_NAME=slideannouncer
 TARGET_HOSTNAME=slideannouncer
 
-# No default desktop user — the device has no interactive shell login story;
-# access is via the kiosk/setup web UI and (during development) SSH.
-# DISABLE_FIRST_BOOT_USER_RENAME is deliberately left unset (default 0):
-# setting it requires a fixed FIRST_USER_PASS at build time (pi-gen refuses
-# to build otherwise, to avoid shipping a known-empty password with no way
-# to change it), which we don't want to bake into every build. Leaving it
-# unset just defers that first-boot rename/password step — harmlessly,
-# since getty@tty1 is disabled in favor of the kiosk, so no console login
-# path exists for it to ever run against anyway.
+# The device has no interactive shell login story in normal operation —
+# access is via the kiosk/setup web UI and (during development) SSH — but
+# a real local account still gets created for physical-keyboard field
+# debugging, rather than deferred to Raspberry Pi OS's interactive
+# first-boot wizard (keyboard layout + create-account prompts), which would
+# otherwise contest the console with the kiosk on every fresh card.
+# DISABLE_FIRST_BOOT_USER_RENAME=1 + a random FIRST_USER_PASS are appended
+# to a per-build copy of this file by build.sh (not set here statically) —
+# pi-gen requires FIRST_USER_PASS whenever that flag is set, and baking one
+# fixed password into this file would mean every build/device shares it.
 FIRST_USER_NAME=slideadmin
 
 LOCALE_DEFAULT=en_US.UTF-8
