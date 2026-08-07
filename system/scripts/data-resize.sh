@@ -17,7 +17,11 @@ MARKER=/data/.data-resized
 
 DATA_SRC="$(findmnt -no SOURCE /data)"
 DISK="/dev/$(lsblk -no PKNAME "$DATA_SRC")"
-PART_NUM="$(lsblk -no PARTN "$DATA_SRC")"
+# lsblk's PARTN column isn't available on every util-linux version this
+# image might ship (confirmed missing on real hardware: "lsblk: unknown
+# column: PARTN") — pull the trailing partition number off the device name
+# instead, e.g. /dev/sda4 -> 4, /dev/mmcblk0p4 -> 4.
+PART_NUM="${DATA_SRC##*[!0-9]}"
 
 if [ -z "$DISK" ] || [ -z "$PART_NUM" ]; then
 	echo "slide-announcer-data-resize: could not determine disk/partition for /data ($DATA_SRC), skipping" >&2

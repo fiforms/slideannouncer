@@ -1,0 +1,21 @@
+[Unit]
+Description=Create /run/overlay-var's upper/work dirs before /var's overlay mounts
+# systemd-tmpfiles-setup.service (which system/read-only-root/overlay-var.conf
+# targets) is ordered after local-fs.target — but local-fs.target can't be
+# reached until var.mount succeeds, and var.mount needs these dirs to exist
+# first. That's a genuine ordering cycle; systemd breaks it by running
+# var.mount before tmpfiles-setup, which is exactly the wrong order. This
+# unit sidesteps the cycle entirely by not depending on local-fs.target at
+# all, matching slide-announcer-data-resize.service's DefaultDependencies=no
+# pattern.
+DefaultDependencies=no
+After=local-fs-pre.target
+Before=var.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/mkdir -p -m 0755 /run/overlay-var/upper /run/overlay-var/work
+
+[Install]
+WantedBy=local-fs-pre.target

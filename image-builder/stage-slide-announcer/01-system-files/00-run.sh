@@ -58,7 +58,11 @@ install -m 644 files/SERVER_URL "${ROOTFS_DIR}/etc/slide-announcer/server-url"
 
 # Placeholder fstab entry — image-builder/repartition.sh rewrites DATADEV to
 # the real PARTUUID of partition 4 once the final partition table exists
-# (pi-gen itself only ever produces boot+root, see repartition.sh).
+# (pi-gen itself only ever produces boot+root, see repartition.sh). The
+# mountpoint itself has to exist in the rootfs content too — root is ro (see
+# below), so systemd can't create it on demand at boot the way it would on a
+# writable root.
+install -d "${ROOTFS_DIR}/data"
 echo "DATADEV  /data  ext4  defaults,noatime,nofail  0  2" >> "${ROOTFS_DIR}/etc/fstab"
 
 # Read-only rootfs (see SLIDE_ANNOUNCER.md, Tier 1, "Read-only rootfs"): the
@@ -79,13 +83,19 @@ echo "DATADEV  /data  ext4  defaults,noatime,nofail  0  2" >> "${ROOTFS_DIR}/etc
 #   the data partition itself, since they must exist before the very first
 #   boot's overlay mount runs.
 # - /var: upper layer is tmpfs (/run/overlay-var, created fresh every boot
-#   by system/read-only-root/overlay-var.conf below) — logs, nginx/
+#   by slide-announcer-overlay-var-dirs.service) — logs, nginx/
 #   NetworkManager runtime state, caches. None of it needs to survive a
 #   reboot; anything that does (identity, pairing state, slide cache)
 #   already lives on /data by design (see "Persistent state discipline").
 # x-systemd.requires-mounts-for orders each overlay after the filesystem
-# its upperdir/workdir live on; x-systemd.after=systemd-tmpfiles-setup.service
-# on the /var line orders it after overlay-var.conf's directories exist.
+# its upperdir/workdir live on; x-systemd.after=slide-announcer-overlay-var-dirs.service
+# on the /var line orders it after that unit creates /run/overlay-var's
+# upper/work dirs. Deliberately not systemd-tmpfiles-setup.service — that
+# unit is ordered after local-fs.target, which can't be reached until
+# var.mount succeeds, an ordering cycle systemd resolves by running
+# var.mount first, before the dirs exist.
+# slide-announcer-overlay-var-dirs.service has DefaultDependencies=no
+# specifically to sidestep that cycle.
 # The /etc overlay is `nofail`, matching /data's own nofail above — if
 # /data doesn't mount, the device still boots with a read-only /etc rather
 # than dropping to an emergency shell; the /var overlay never needs nofail
@@ -94,15 +104,13 @@ cat >> "${ROOTFS_DIR}/etc/fstab" <<'EOF'
 tmpfs   /tmp        tmpfs    nosuid,nodev,mode=1777                                                                      0  0
 tmpfs   /var/tmp    tmpfs    nosuid,nodev,mode=1777                                                                      0  0
 overlay /etc        overlay  lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,x-systemd.requires-mounts-for=/data,nofail    0  0
-overlay /var        overlay  lowerdir=/var,upperdir=/run/overlay-var/upper,workdir=/run/overlay-var/work,x-systemd.requires-mounts-for=/run/overlay-var,x-systemd.after=systemd-tmpfiles-setup.service    0  0
+overlay /var        overlay  lowerdir=/var,upperdir=/run/overlay-var/upper,workdir=/run/overlay-var/work,x-systemd.requires-mounts-for=/run/overlay-var,x-systemd.after=slide-announcer-overlay-var-dirs.service    0  0
 EOF
 # ROOTDEV is still the literal placeholder text at this point in the build
 # — pi-gen's own export-image/04-set-partuuid step substitutes the real
 # PARTUUID afterward, once the image is exported.
 sed -i 's#\(ROOTDEV\s*/\s*ext4\s*\)defaults,noatime#\1ro,noatime#' "${ROOTFS_DIR}/etc/fstab"
 
-install -m 644 files/system/read-only-root/overlay-var.conf \
-	"${ROOTFS_DIR}/etc/tmpfiles.d/slide-announcer-overlay-var.conf"
 install -d "${ROOTFS_DIR}/etc/systemd/journald.conf.d"
 install -m 644 files/system/read-only-root/journald-volatile.conf \
 	"${ROOTFS_DIR}/etc/systemd/journald.conf.d/slide-announcer-volatile.conf"
@@ -147,6 +155,7 @@ systemctl mask rpi-resizerootfs.service 2>/dev/null || true
 # `mask` unconditionally symlinks to /dev/null regardless of preset state.
 systemctl mask getty@tty1.service
 
+systemctl enable slide-announcer-overlay-var-dirs.service
 systemctl enable slide-announcer-data-resize.service
 systemctl enable slide-announcer-firstboot.service
 systemctl enable slide-announcer-backend.service
