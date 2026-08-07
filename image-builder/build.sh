@@ -5,6 +5,12 @@
 #                               console-login password is still printed —
 #                               see image-builder/README.md)
 #   SSH_DEV_BUILD=1 ./build.sh same, plus SSH enabled with that same password
+#   RESUME_WORK=<dir> ./build.sh
+#                               skip the pi-gen/Docker build and reuse an
+#                               already-decompressed raw.img from a previous
+#                               run's WORK dir (printed on failure below) —
+#                               for retrying repartition.sh onward without
+#                               paying for the slow stage again
 #
 # Pipeline: stage our files into pi-gen -> run pi-gen via Docker -> take its
 # raw boot+root .img output -> repartition.sh into the final
@@ -18,15 +24,74 @@ STAGE_SRC="${HERE}/stage-slide-announcer"
 DEPLOY_DIR="${HERE}/deploy"
 IMG_NAME="slideannouncer"
 WORK=""
+RAW_IMG_READY=0
+SUDO_KEEPALIVE_PID=""
 
 cleanup() {
+	local exit_code=$?
+	[ -n "$SUDO_KEEPALIVE_PID" ] && kill "$SUDO_KEEPALIVE_PID" 2>/dev/null
 	# pi-gen is a git submodule (its own repo) — our .gitignore can't reach
 	# into it, so this staged copy must be removed explicitly rather than
 	# left as untracked clutter in someone else's working tree.
 	rm -rf "${PI_GEN_DIR}/stage-slide-announcer"
-	[ -n "$WORK" ] && rm -rf "$WORK"
+	if [ -n "$WORK" ]; then
+		if [ "$exit_code" != 0 ] && [ "$RAW_IMG_READY" = 1 ]; then
+			echo "==> Failed after raw.img was ready — kept it for a retry:" >&2
+			echo "      RESUME_WORK=${WORK} $0" >&2
+			echo "    (skips re-running pi-gen/Docker, resumes at repartition.sh)" >&2
+		else
+			rm -rf "$WORK"
+		fi
+	fi
+	exit "$exit_code"
 }
 trap cleanup EXIT
+
+RESUME_WORK="${RESUME_WORK:-}"
+if [ -n "$RESUME_WORK" ]; then
+	WORK="$RESUME_WORK"
+	if [ ! -f "${WORK}/raw.img" ]; then
+		echo "RESUME_WORK=${WORK} has no raw.img to resume from" >&2
+		exit 1
+	fi
+	echo "==> RESUME_WORK=${WORK}: reusing existing raw.img, skipping pi-gen/Docker build"
+fi
+
+# repartition.sh (below) needs root, but only after the pi-gen/Docker build —
+# which can run long enough that a sudo timestamp grabbed only right before
+# that call has since expired, with no one at the keyboard to re-enter a
+# password. Authenticate up front instead, and keep the ticket alive for the
+# whole build so the later `sudo repartition.sh` never has to prompt again.
+echo "==> repartition.sh will need root partway through this build"
+if [ -t 0 ]; then
+	read -n 1 -s -r -p "    Press any key to authenticate sudo now, before the long pi-gen build... "
+	echo
+fi
+sudo -v
+(
+	while kill -0 "$$" 2>/dev/null; do
+		sudo -n true 2>/dev/null
+		sleep 60
+	done
+) &
+SUDO_KEEPALIVE_PID=$!
+
+# Build provenance: <kernel-version>-<build-date>-<git-hash> (kernel version
+# is filled in by 01-system-files/00-run.sh, from inside the built rootfs —
+# `uname -r` here would only tell us this x86 build host's kernel, not the
+# image's, since the build is cross-compiled under qemu rather than booted).
+# Computed unconditionally (even on RESUME_WORK) since it's also used below
+# for the final output filename.
+BUILD_DATE="$(date -u +%Y-%m-%d)"
+GIT_HASH="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
+# `git diff --quiet` alone would miss untracked files — and right now
+# almost everything here IS untracked, pre-commit. status --porcelain
+# catches untracked/staged/unstaged all at once.
+[ -z "$(git -C "$REPO_ROOT" status --porcelain)" ] || GIT_HASH="${GIT_HASH}-dirty"
+
+if [ -n "$RESUME_WORK" ]; then
+	RAW_IMG_READY=1
+else
 
 echo "==> Ensuring pi-gen submodule is checked out"
 git -C "$REPO_ROOT" submodule update --init "image-builder/pi-gen"
@@ -39,16 +104,6 @@ rsync -a --exclude 'backend/venv' "${REPO_ROOT}/system/" "${FILES_DIR}/system/"
 rsync -a "${REPO_ROOT}/provisioning/" "${FILES_DIR}/provisioning/"
 rsync -a --exclude 'backend/venv' "${REPO_ROOT}/local-app/" "${FILES_DIR}/local-app/"
 
-# Build provenance: <kernel-version>-<build-date>-<git-hash> (kernel version
-# is filled in by 01-system-files/00-run.sh, from inside the built rootfs —
-# `uname -r` here would only tell us this x86 build host's kernel, not the
-# image's, since the build is cross-compiled under qemu rather than booted).
-BUILD_DATE="$(date -u +%Y-%m-%d)"
-GIT_HASH="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
-# `git diff --quiet` alone would miss untracked files — and right now
-# almost everything here IS untracked, pre-commit. status --porcelain
-# catches untracked/staged/unstaged all at once.
-[ -z "$(git -C "$REPO_ROOT" status --porcelain)" ] || GIT_HASH="${GIT_HASH}-dirty"
 {
 	echo "BUILD_DATE=${BUILD_DATE}"
 	echo "GIT_HASH=${GIT_HASH}"
@@ -122,6 +177,9 @@ fi
 WORK="$(mktemp -d)"
 echo "==> Decompressing $(basename "$RAW_XZ")"
 unxz -k -c "$RAW_XZ" > "${WORK}/raw.img"
+RAW_IMG_READY=1
+
+fi
 
 mkdir -p "$DEPLOY_DIR"
 FINAL_IMG="${WORK}/${IMG_NAME}.img"
