@@ -38,6 +38,12 @@ its content), but the device won't actually switch to it afterward.
     build starts, since pi-gen's Docker build context is just the `pi-gen/`
     directory — see `build.sh`'s comments) into the rootfs, creates the
     dedicated `slideannouncer` service user, enables the systemd units.
+    Also wires up the read-only rootfs: rewrites `/etc/fstab`'s root entry
+    and `cmdline.txt` to mount `ro`, appends the `/tmp`+`/var/tmp` tmpfs
+    and `/etc`+`/var` overlay fstab entries, and installs
+    `system/read-only-root/`'s tmpfiles/journald config (see
+    `system/README.md` and `SLIDE_ANNOUNCER.md`, Tier 1, "Read-only
+    rootfs").
   - `02-clean-before-compress/` — sanitize step: strips SSH host keys and
     resets `machine-id` (regenerated for real by
     `provisioning/firstboot.py` on the device's actual first boot), clears
@@ -56,6 +62,10 @@ its content), but the device won't actually switch to it afterward.
   p4  data   ext4   small placeholder; grown to fill the real SD card by
                      slide-announcer-data-resize.service on first boot
   ```
+
+  Also pre-creates `/etc`'s read-only-rootfs overlay upper/work directories
+  on the new `data` partition — they have to exist before the very first
+  boot's overlay mount runs, and `/data` isn't populated until this step.
 
   Building this out now (rather than a single auto-expanding rootfs) means
   devices flashed today need no re-partitioning/data-migration once RAUC

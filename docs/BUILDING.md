@@ -119,6 +119,18 @@ identity — this is expected, not a bug (see
    hostname, image version, device UUID, and the detected setup mode. This
    is the end-to-end proof the image works — no WiFi/pairing yet.
 
+## Verifying the read-only rootfs
+
+- `mount | grep ' / '` should show `ro` for the root filesystem.
+- `touch /some-new-file` at the root of the filesystem should fail with
+  "Read-only file system"; `touch /etc/some-new-file` and
+  `touch /var/some-new-file` should both succeed (the overlays).
+- `mount | grep overlay` should show two overlay mounts, on `/etc` and
+  `/var`.
+- Reboot, then check `/var/some-new-file` again — it should be gone
+  (tmpfs-backed, resets every boot), while `/etc/some-new-file` should
+  still be there (backed by `/data`).
+
 ## Verifying the anti-clone identity check
 
 - `df -h /data` should show it grown to (close to) the full card size, not

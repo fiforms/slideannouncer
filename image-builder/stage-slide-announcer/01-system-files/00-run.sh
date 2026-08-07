@@ -50,6 +50,52 @@ install -m 644 files/system/rauc/slide-announcer-rauc.conf \
 # (pi-gen itself only ever produces boot+root, see repartition.sh).
 echo "DATADEV  /data  ext4  defaults,noatime,nofail  0  2" >> "${ROOTFS_DIR}/etc/fstab"
 
+# Read-only rootfs (see SLIDE_ANNOUNCER.md, Tier 1, "Read-only rootfs"): the
+# root filesystem itself is mounted ro (below), so anything that needs to
+# write to /etc or /var at runtime goes through a CoW overlay instead.
+# - /tmp, /var/tmp: plain volatile tmpfs, nothing here needs to survive a
+#   reboot.
+# - /etc: upper layer lives on /data, not tmpfs — SSH host keys and
+#   machine-id (regenerated once by provisioning/firstboot.py) and any
+#   future NetworkManager connection profiles under
+#   /etc/NetworkManager/system-connections/ must survive reboots, and this
+#   way they just do, with no code on top of plain file writes. Caveat this
+#   trades for: a RAUC OTA that changes a stock /etc file already shadowed
+#   by something in the upper layer won't show through until that shadow is
+#   cleared — acceptable here since nothing currently expects OTA to
+#   silently rewrite live /etc config out from under a running device.
+#   image-builder/repartition.sh pre-creates the upper/work directories on
+#   the data partition itself, since they must exist before the very first
+#   boot's overlay mount runs.
+# - /var: upper layer is tmpfs (/run/overlay-var, created fresh every boot
+#   by system/read-only-root/overlay-var.conf below) — logs, nginx/
+#   NetworkManager runtime state, caches. None of it needs to survive a
+#   reboot; anything that does (identity, pairing state, slide cache)
+#   already lives on /data by design (see "Persistent state discipline").
+# x-systemd.requires-mounts-for orders each overlay after the filesystem
+# its upperdir/workdir live on; x-systemd.after=systemd-tmpfiles-setup.service
+# on the /var line orders it after overlay-var.conf's directories exist.
+# The /etc overlay is `nofail`, matching /data's own nofail above — if
+# /data doesn't mount, the device still boots with a read-only /etc rather
+# than dropping to an emergency shell; the /var overlay never needs nofail
+# since its tmpfs backing is always available.
+cat >> "${ROOTFS_DIR}/etc/fstab" <<'EOF'
+tmpfs   /tmp        tmpfs    nosuid,nodev,mode=1777                                                                      0  0
+tmpfs   /var/tmp    tmpfs    nosuid,nodev,mode=1777                                                                      0  0
+overlay /etc        overlay  lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,x-systemd.requires-mounts-for=/data,nofail    0  0
+overlay /var        overlay  lowerdir=/var,upperdir=/run/overlay-var/upper,workdir=/run/overlay-var/work,x-systemd.requires-mounts-for=/run/overlay-var,x-systemd.after=systemd-tmpfiles-setup.service    0  0
+EOF
+# ROOTDEV is still the literal placeholder text at this point in the build
+# — pi-gen's own export-image/04-set-partuuid step substitutes the real
+# PARTUUID afterward, once the image is exported.
+sed -i 's#\(ROOTDEV\s*/\s*ext4\s*\)defaults,noatime#\1ro,noatime#' "${ROOTFS_DIR}/etc/fstab"
+
+install -m 644 files/system/read-only-root/overlay-var.conf \
+	"${ROOTFS_DIR}/etc/tmpfiles.d/slide-announcer-overlay-var.conf"
+install -d "${ROOTFS_DIR}/etc/systemd/journald.conf.d"
+install -m 644 files/system/read-only-root/journald-volatile.conf \
+	"${ROOTFS_DIR}/etc/systemd/journald.conf.d/slide-announcer-volatile.conf"
+
 # Quiet boot: move kernel/systemd console messages off tty1 (our kiosk's
 # display) onto tty3 instead (still there via Ctrl+Alt+F3 for debugging,
 # just not visible on the physical display), and suppress most kernel log
@@ -57,7 +103,12 @@ echo "DATADEV  /data  ext4  defaults,noatime,nofail  0  2" >> "${ROOTFS_DIR}/etc
 # in place rather than risking reordering root=/rootfstype=/etc.
 CMDLINE="${ROOTFS_DIR}/boot/firmware/cmdline.txt"
 sed -i 's/console=tty1/console=tty3/' "$CMDLINE"
-sed -i 's/$/ quiet loglevel=3 logo.nologo vt.global_cursor_default=0/' "$CMDLINE"
+# `ro`: belt-and-suspenders alongside /etc/fstab's ro root entry above — the
+# kernel mounts root directly from this cmdline (no initramfs in this
+# image), before /etc/fstab is even read, so this is what actually makes
+# the very first mount read-only; the fstab entry only matters afterward if
+# systemd-remount-fs.service re-evaluates the options.
+sed -i 's/$/ ro quiet loglevel=3 logo.nologo vt.global_cursor_default=0/' "$CMDLINE"
 # ...and disable the early rainbow test-pattern splash (shown by the GPU
 # firmware before Linux even loads) for a solid black screen instead.
 printf '\n[all]\ndisable_splash=1\n' >> "${ROOTFS_DIR}/boot/firmware/config.txt"
