@@ -1,0 +1,14 @@
+chromium
+labwc
+seatd
+xwayland
+network-manager
+nginx-light
+python3-venv
+python3-pip
+python3-yaml
+evtest
+libinput-tools
+parted
+e2fsprogs
+cloud-guest-utils

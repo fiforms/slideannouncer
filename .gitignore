@@ -1,0 +1,10 @@
+image-builder/deploy/
+image-builder/stage-slide-announcer/01-system-files/files/
+local-app/backend/venv/
+__pycache__/
+*.pyc
+
+# image-builder/pi-gen/{deploy,work,config}/ are already covered by that
+# submodule's own .gitignore. image-builder/pi-gen/stage-slide-announcer/
+# (build.sh's staged copy, since a submodule's working tree is outside this
+# .gitignore's reach) is removed by build.sh itself on exit instead.

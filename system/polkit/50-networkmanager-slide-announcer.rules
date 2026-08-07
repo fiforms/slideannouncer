@@ -1,0 +1,11 @@
+// Lets the dedicated `slideannouncer` service user drive NetworkManager
+// (nmcli WiFi scan/connect, hotspot mode) over D-Bus without running the
+// backend as root. Unused by today's stub backend — no WiFi/pairing logic
+// exists yet — but grants exactly what Tier 2 needs so this doesn't need
+// revisiting alongside that work.
+polkit.addRule(function(action, subject) {
+	if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 &&
+	    subject.user === "slideannouncer") {
+		return polkit.Result.YES;
+	}
+});

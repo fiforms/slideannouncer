@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Slide Announcer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #10151c;
+    color: #e8ecf1;
+    font-family: system-ui, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card {
+    text-align: center;
+    max-width: 32rem;
+    padding: 2rem;
+  }
+  h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+  .status { color: #9fb0c3; margin: 1rem 0; }
+  dl {
+    text-align: left;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.25rem 1rem;
+    font-size: 0.9rem;
+    color: #c7d1dd;
+  }
+  dt { font-weight: 600; color: #9fb0c3; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Slide Announcer</h1>
+    <p class="status" id="message">Loading status…</p>
+    <dl>
+      <dt>Hostname</dt><dd id="hostname">—</dd>
+      <dt>Image version</dt><dd id="image-version">—</dd>
+      <dt>Device UUID</dt><dd id="device-uuid">—</dd>
+      <dt>Setup mode detected</dt><dd id="setup-mode">—</dd>
+    </dl>
+  </div>
+  <script>
+    fetch("/api/local/status")
+      .then((r) => r.json())
+      .then((data) => {
+        document.getElementById("message").textContent = data.message;
+        document.getElementById("hostname").textContent = data.hostname ?? "—";
+        document.getElementById("image-version").textContent = data.image_version ?? "—";
+        document.getElementById("device-uuid").textContent = data.device_uuid ?? "—";
+        document.getElementById("setup-mode").textContent = data.setup_mode ?? "—";
+      })
+      .catch(() => {
+        document.getElementById("message").textContent =
+          "Could not reach the local backend (/api/local/status).";
+      });
+  </script>
+</body>
+</html>

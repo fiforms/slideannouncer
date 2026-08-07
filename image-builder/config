@@ -1,0 +1,49 @@
+# pi-gen config for the Slide Announcer image.
+# Consumed via `pi-gen/build-docker.sh -c image-builder/config` (see build.sh).
+
+ARCH=arm64
+RELEASE=bookworm
+IMG_NAME=slideannouncer
+TARGET_HOSTNAME=slideannouncer
+
+# No default desktop user — the device has no interactive shell login story;
+# access is via the kiosk/setup web UI and (during development) SSH.
+# DISABLE_FIRST_BOOT_USER_RENAME is deliberately left unset (default 0):
+# setting it requires a fixed FIRST_USER_PASS at build time (pi-gen refuses
+# to build otherwise, to avoid shipping a known-empty password with no way
+# to change it), which we don't want to bake into every build. Leaving it
+# unset just defers that first-boot rename/password step — harmlessly,
+# since getty@tty1 is disabled in favor of the kiosk, so no console login
+# path exists for it to ever run against anyway.
+FIRST_USER_NAME=slideadmin
+
+LOCALE_DEFAULT=en_US.UTF-8
+KEYBOARD_KEYMAP=us
+KEYBOARD_LAYOUT="English (US)"
+TIMEZONE_DEFAULT=America/New_York
+
+# Off by default for production builds — the 02-clean-before-compress step
+# strips host keys regardless, but disabling the service entirely means a
+# stray build never accidentally ships an image with a known
+# FIRST_USER_PASS reachable over SSH. Set ENABLE_SSH=1 / FIRST_USER_PASS via
+# `SSH_DEV_BUILD=1 ./build.sh` for a debug build (see build.sh).
+ENABLE_SSH=0
+
+DEPLOY_COMPRESSION=xz
+COMPRESSION_LEVEL=6
+
+# Lite (headless) base only, stage0-stage2 from upstream pi-gen, plus our
+# own out-of-tree stage. Referenced via ${BASE_DIR} (pi-gen's own root
+# inside the build container, /pi-gen) rather than a relative path, since
+# our stage is copied into place at ${BASE_DIR}/stage-slide-announcer by
+# build.sh before build-docker.sh runs (see build.sh — the Docker build
+# context is just the pi-gen directory, so out-of-tree stages must be
+# staged in first).
+#
+# The `:-/pi-gen` default matters: build-docker.sh sources this file on the
+# HOST too (under `set -u`, before BASE_DIR exists at all — that's exported
+# later by pi-gen's own build.sh, inside the container) just to read
+# IMG_NAME/CONTAINER_NAME. STAGE_LIST is unused on the host, so the default
+# only needs to not blow up `set -u` there; inside the container BASE_DIR is
+# already /pi-gen, so the default and the real value agree anyway.
+STAGE_LIST="${BASE_DIR:-/pi-gen}/stage0 ${BASE_DIR:-/pi-gen}/stage1 ${BASE_DIR:-/pi-gen}/stage2 ${BASE_DIR:-/pi-gen}/stage-slide-announcer"

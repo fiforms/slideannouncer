@@ -1,0 +1,13 @@
+[Unit]
+Description=Slide Announcer first-boot provisioning (identity, setup-mode detection)
+After=slide-announcer-data-resize.service network-pre.target
+Before=slide-announcer-backend.service slide-announcer-kiosk.service
+Wants=slide-announcer-data-resize.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /opt/slide-announcer/provisioning/firstboot.py
+
+[Install]
+WantedBy=multi-user.target

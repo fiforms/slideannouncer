@@ -1,0 +1,16 @@
+[Unit]
+Description=Slide Announcer local backend (stub)
+After=slide-announcer-firstboot.service
+Requires=slide-announcer-firstboot.service
+
+[Service]
+Type=simple
+User=slideannouncer
+Group=slideannouncer
+WorkingDirectory=/opt/slide-announcer/local-app/backend
+ExecStart=/opt/slide-announcer/local-app/backend/venv/bin/uvicorn stub_main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
