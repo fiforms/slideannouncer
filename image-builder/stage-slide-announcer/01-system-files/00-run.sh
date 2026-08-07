@@ -22,6 +22,7 @@ install -m 644 files/system/*.service "${ROOTFS_DIR}/etc/systemd/system/"
 install -d "${ROOTFS_DIR}/usr/local/sbin" "${ROOTFS_DIR}/usr/local/bin"
 install -m 755 files/system/scripts/data-resize.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-data-resize.sh"
 install -m 755 files/system/scripts/kiosk-start.sh "${ROOTFS_DIR}/usr/local/bin/slide-announcer-kiosk-start.sh"
+install -m 755 files/system/scripts/rauc-update.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-update"
 
 install -d "${ROOTFS_DIR}/etc/nginx/sites-available"
 install -m 644 files/system/nginx-slide-announcer.conf "${ROOTFS_DIR}/etc/nginx/sites-available/slide-announcer.conf"
@@ -41,9 +42,19 @@ install -m 644 files/system/rauc/system.conf "${ROOTFS_DIR}/etc/rauc/system.conf
 install -m 644 files/rauc-keyring.pem "${ROOTFS_DIR}/etc/rauc/keyring.pem"
 install -m 755 files/system/rauc/rpi-tryboot-backend.sh \
 	"${ROOTFS_DIR}/usr/lib/rauc/rpi-tryboot-backend.sh"
+install -m 755 files/system/rauc/rpi-tryboot-commit.sh \
+	"${ROOTFS_DIR}/usr/lib/rauc/rpi-tryboot-commit.sh"
 install -d "${ROOTFS_DIR}/etc/tmpfiles.d"
 install -m 644 files/system/rauc/slide-announcer-rauc.conf \
 	"${ROOTFS_DIR}/etc/tmpfiles.d/slide-announcer-rauc.conf"
+
+# The AnnouncementSlides server this fleet talks to (build.sh validates
+# SLIDE_ANNOUNCER_SERVER_URL is set before staging this) — one server per
+# fleet, baked in at build time. Read by the local-app backend (pairing/
+# sync/heartbeat) and the future RAUC update-check unit alike, so there's
+# exactly one place this ever needs to be set.
+install -d "${ROOTFS_DIR}/etc/slide-announcer"
+install -m 644 files/SERVER_URL "${ROOTFS_DIR}/etc/slide-announcer/server-url"
 
 # Placeholder fstab entry — image-builder/repartition.sh rewrites DATADEV to
 # the real PARTUUID of partition 4 once the final partition table exists
@@ -140,6 +151,7 @@ systemctl enable slide-announcer-data-resize.service
 systemctl enable slide-announcer-firstboot.service
 systemctl enable slide-announcer-backend.service
 systemctl enable slide-announcer-kiosk.service
+systemctl enable slide-announcer-tryboot-check.service
 systemctl enable nginx.service
 systemctl enable seatd.service
 EOF

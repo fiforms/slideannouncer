@@ -34,6 +34,19 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
 - `read-only-root/journald-volatile.conf` — journald drop-in forcing
   `Storage=volatile`, since `/var/log/journal` would never persist across a
   reboot anyway once `/var` is overlay-tmpfs.
+- `rauc/` — `system.conf` (slot config, including the `kernel.0`/`kernel.1`
+  custom slots for boot-partition content), `rpi-tryboot-backend.sh`
+  (get/set-primary — stages a tryboot attempt) and `rpi-tryboot-commit.sh`
+  (runs at boot, commits a successful tryboot attempt), and a tmpfiles
+  rule for RAUC's persistent statusfile dir. **HARDWARE-UNVERIFIED** — see
+  `../image-builder/README.md`'s note and each script's own header.
+- `slide-announcer-tryboot-check.service` — runs `rpi-tryboot-commit.sh`
+  every boot; a no-op unless this boot was a RAUC tryboot attempt.
+- `scripts/rauc-update.py` (installed as `/usr/local/sbin/slide-announcer-update`)
+  — manual CLI for testing the RAUC OTA pipeline: `check` (calls the server
+  heartbeat), `install [url-or-path]`, `tryboot` (reboots into the staged
+  slot), `status`, `mark-good`. No automatic timer/idle-window gating yet —
+  see the script's own module docstring for what it does and doesn't cover.
 
 ## Read-only rootfs
 
@@ -49,7 +62,11 @@ runs. See `SLIDE_ANNOUNCER.md`, Tier 1, "Read-only rootfs" for the full
 rationale.
 
 **Not yet implemented:** the slide sync daemon and real kiosk slideshow
-rendering (Tier 2), and anything RAUC-related (Tier 1 OTA).
+rendering (Tier 2); automatic OS update checks/idle-window gating (Tier 1
+still needs `slide-announcer-update` triggered by hand). RAUC's A/B
+tryboot switching itself has a full attempt at an implementation now (see
+`rauc/`, above) but is hardware-unverified — no real device has run an
+install → tryboot → health-check → commit/rollback cycle yet.
 
 See the main repo's `SLIDE_ANNOUNCER.md` for how these units interact across
 update tiers (e.g. why local-app restarts are gated to an idle window).

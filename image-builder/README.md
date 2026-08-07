@@ -4,14 +4,18 @@
 image for a Raspberry Pi 4 (arm64, Bookworm).
 
 **Implemented so far:** the pi-gen pipeline, custom stage, partition layout
-described below, and RAUC bundle production (`system.conf`, signed
-`.raucb` output, `rauc` client installed in the image). **Not yet
-implemented:** actual A/B slot switching/tryboot — `system.conf`'s
-bootloader backend is a stub that fails loudly at the activation step (see
-`system/rauc/system.conf`) — see `SLIDE_ANNOUNCER.md` for why that's
-deliberately deferred. `rootB` boots nothing yet; a bundle can be built,
-signed, and `rauc install`ed onto it (verifying its signature and writing
-its content), but the device won't actually switch to it afterward.
+described below, RAUC bundle production (`system.conf`, signed `.raucb`
+output covering both rootfs and boot-partition kernel/initramfs content),
+and a full attempt at A/B slot switching via Raspberry Pi tryboot
+(`system/rauc/rpi-tryboot-backend.sh` + `rpi-tryboot-commit.sh`,
+`slide-announcer-update tryboot`). **HARDWARE-UNVERIFIED:** none of the
+tryboot-specific pieces (the `tryboot.txt`/`os_prefix` mechanism, the
+`/proc/device-tree/chosen/bootloader/tryboot` boot-detection flag, RAUC's
+exact custom-bootloader-backend and custom-slot-hook argv/env contracts)
+have been run through a real install → tryboot reboot → forced-bad-health
+→ rollback cycle on actual hardware — see each script's own header and
+`SLIDE_ANNOUNCER.md`'s open questions. Treat this as a real first attempt
+to validate against real hardware, not a proven implementation.
 
 ## Contents
 
@@ -56,29 +60,39 @@ its content), but the device won't actually switch to it afterward.
   this project settles on ahead of RAUC:
 
   ```
-  p1  boot   FAT32  unchanged, copied as-is
+  p1  boot   FAT32  kernel/initramfs/config.txt/cmdline.txt at the root
+                     (whichever slot is currently committed) plus
+                     slotA/ and slotB/ subdirs (RAUC's "kernel" custom
+                     slot target — see system/rauc/system.conf)
   p2  rootA  ext4   fixed size (default 3GiB), pi-gen's root content, ACTIVE
-  p3  rootB  ext4   same fixed size, empty — unused future OTA slot
+  p3  rootB  ext4   same fixed size, empty — unused until first OTA
   p4  data   ext4   small placeholder; grown to fill the real SD card by
                      slide-announcer-data-resize.service on first boot
   ```
 
   Also pre-creates `/etc`'s read-only-rootfs overlay upper/work directories
   on the new `data` partition — they have to exist before the very first
-  boot's overlay mount runs, and `/data` isn't populated until this step.
+  boot, and `/data` isn't populated until this step — and seeds
+  `boot/firmware/slotA/` to mirror the partition root (this build's active
+  slot) while `slotB/` starts empty. RAUC's own A/B bookkeeping needs
+  nothing pre-seeded on `/data` at all — see `system/rauc/rpi-tryboot-backend.sh`
+  for why (it's derived from the running kernel's `/proc/cmdline`
+  instead, specifically so a `/data` wipe/factory-reset can't desync it).
 
   Building this out now (rather than a single auto-expanding rootfs) means
-  devices flashed today need no re-partitioning/data-migration once RAUC
-  ships — just a normal OTA into the already-present `rootB`.
+  devices flashed today need no re-partitioning/data-migration for a RAUC
+  OTA — just a normal install into the already-present `rootB`/`slotB/`.
 - `build.sh` — top-level entrypoint. See "Building," below.
 - `generate-rauc-cert.sh` — generates RAUC bundle-signing cert/key
   material (`image-builder/certs/`, gitignored), in two modes: `dev` (a
   throwaway single self-signed pair) or `production` (an offline CA plus
   a rotatable signing cert issued by it — see its own header comment and
   the `MANIFEST.txt` it writes for what to back up and how).
-- `.env.example` — copy to `.env` (gitignored) and set `RAUC_CERT_PATH`/
-  `RAUC_KEY_PATH` (and `RAUC_KEYRING_CERT_PATH` for a production PKI) —
-  `build.sh` refuses to build without these existing as files.
+- `.env.example` — copy to `.env` (gitignored) and set `SLIDE_ANNOUNCER_SERVER_URL`
+  (the fleet's AnnouncementSlides server, baked into every image at
+  `/etc/slide-announcer/server-url`) plus `RAUC_CERT_PATH`/`RAUC_KEY_PATH`
+  (and `RAUC_KEYRING_CERT_PATH` for a production PKI) — `build.sh` refuses
+  to build without all of these set.
 
 ## Building
 
@@ -91,15 +105,17 @@ the `-static` suffix, no sudo needed) plus
 repartition and bundle-signing steps (root privileges required for
 repartitioning — `build.sh` calls `repartition.sh` via `sudo`).
 
-First, a RAUC signing cert/key pair (skip if you already have `.env` set up):
+First, `.env` (skip if you already have one set up):
 
 ```bash
 cd image-builder
+cp .env.example .env
+# edit .env: SLIDE_ANNOUNCER_SERVER_URL=https://your-server.example.org
+
 ./generate-rauc-cert.sh dev     # dev/test only — prints paths to use below
 # ... or for a real fleet:
 ./generate-rauc-cert.sh production   # see its MANIFEST.txt for backup instructions
-cp .env.example .env
-# edit .env with the paths it printed
+# edit .env with the RAUC_* paths it printed
 ```
 
 ```bash

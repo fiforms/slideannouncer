@@ -13,17 +13,27 @@ README for what's real vs. stubbed.
   `image-builder/repartition.sh` (needs `sudo`) and RAUC bundle signing
 - ~10GB free disk space
 
-## RAUC signing cert/key (one-time setup)
+## One-time setup: server URL + RAUC signing cert/key
 
-The build produces a signed `.raucb` OTA bundle alongside the raw image,
-which needs a cert/key pair. `build.sh` checks for this up front and exits
-cleanly with instructions if it's missing, before running the long pi-gen
-build:
+`build.sh` checks all of this up front and exits cleanly with instructions
+if anything's missing, before running the long pi-gen build.
+
+**Server URL** — every device built from the image needs to know which
+AnnouncementSlides server to pair/sync/check-updates against. One
+self-hosted server per fleet, so this is a single build-time value, not a
+per-device setting:
 
 ```bash
 cd slideannouncer/image-builder
-./generate-rauc-cert.sh dev   # throwaway self-signed pair, dev/test only
 cp .env.example .env
+# edit .env: SLIDE_ANNOUNCER_SERVER_URL=https://your-server.example.org
+```
+
+**RAUC signing cert/key** — the build also produces a signed `.raucb` OTA
+bundle alongside the raw image, which needs a cert/key pair:
+
+```bash
+./generate-rauc-cert.sh dev   # throwaway self-signed pair, dev/test only
 # edit .env with the paths it printed
 ```
 
@@ -142,3 +152,47 @@ identity — this is expected, not a bug (see
   show "identity missing or inconsistent — regenerating," and the file
   should come back with a **new** `device_uuid`/`device_uuid_check` pair
   consistent with each other again.
+
+## Testing the RAUC OTA pipeline (manual, no server needed)
+
+There's no automatic update-check timer yet — `/usr/local/sbin/slide-announcer-update`
+(source: `system/scripts/rauc-update.py`) is a CLI for exercising the
+pieces that do exist, over SSH on a dev build (`SSH_DEV_BUILD=1`):
+
+```bash
+scp image-builder/deploy/slideannouncer-*.raucb slideadmin@<device-ip>:/tmp/
+ssh slideadmin@<device-ip>
+sudo slide-announcer-update install /tmp/slideannouncer-*.raucb
+sudo slide-announcer-update status              # inspect before rebooting
+sudo slide-announcer-update tryboot --yes       # reboots the device now
+```
+
+`install` writes both slots (rootfs into `rootB`, kernel/initramfs/config/
+cmdline into `boot/firmware/slotB/`) and stages `tryboot.txt` via
+`rpi-tryboot-backend.sh` — nothing switches yet at that point. `tryboot`
+triggers the actual reboot; on the way back up,
+`slide-announcer-tryboot-check.service` should detect the tryboot boot and
+(today's placeholder health check: simply reaching that unit) commit slot
+B as the new default and call `rauc status mark-good`. Check
+`journalctl -u slide-announcer-tryboot-check` and
+`sudo slide-announcer-update status` after it comes back to see whether
+that happened. **This whole cycle is hardware-unverified** — see
+`system/rauc/rpi-tryboot-backend.sh` and `rpi-tryboot-commit.sh`'s own
+headers for exactly which pieces (the `tryboot.txt`/`os_prefix` mechanism,
+the tryboot boot-detection flag, RAUC's custom-hook contract) are
+reconstructed from general documentation rather than confirmed against
+this specific hardware/firmware/RAUC version. If it doesn't come back up
+at all, or comes back on the old slot, that's exactly the kind of thing
+this first pass needs a real device to find.
+
+A signature/hash failure at the `install` step instead (e.g. after
+re-signing with a different cert, or corrupting the bundle) is what proves
+verification itself is actually working, rather than being silently
+skipped.
+
+`slide-announcer-update check` calls the real heartbeat contract from
+`SLIDE_ANNOUNCER.md`, Part 1 — but that server endpoint isn't implemented
+yet, and no pairing flow exists to populate `/data/device-token`, so
+`check` (and bare `install` with no argument, which calls `check`
+internally) will fail with a clear "not paired" message until both of
+those land. `install <path-or-url>` works standalone in the meantime.

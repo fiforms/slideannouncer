@@ -131,17 +131,36 @@ rsync -rtx "${SRC_BOOT_MNT}/" "${DST_ROOT_MNT}/boot/firmware/"
 # now-stale, PARTUUIDs for its 2-partition layout) ---------------------------
 NEW_DISK_ID="$(dd if="$OUT_IMG" skip=440 bs=1 count=4 2>/dev/null | xxd -e | cut -f2 -d' ')"
 NEW_BOOT_PARTUUID="${NEW_DISK_ID}-01"
-NEW_ROOTA_PARTUUID="${NEW_DISK_ID}-02"
 NEW_DATA_PARTUUID="${NEW_DISK_ID}-04"
 
 sed -i -E "s/PARTUUID=[0-9a-fA-F]{8}-01/PARTUUID=${NEW_BOOT_PARTUUID}/" \
 	"${DST_ROOT_MNT}/etc/fstab" "${DST_ROOT_MNT}/boot/firmware/cmdline.txt"
-sed -i -E "s/PARTUUID=[0-9a-fA-F]{8}-02/PARTUUID=${NEW_ROOTA_PARTUUID}/" \
-	"${DST_ROOT_MNT}/etc/fstab" "${DST_ROOT_MNT}/boot/firmware/cmdline.txt"
 sed -i "s/DATADEV/PARTUUID=${NEW_DATA_PARTUUID}/" "${DST_ROOT_MNT}/etc/fstab"
+
+# root= uses the ext4 LABEL, not a PARTUUID, unlike boot/data above — a
+# PARTUUID is unique per built image (NEW_DISK_ID, randomly assigned right
+# here), but a RAUC bundle is built once and installed fleet-wide into
+# whichever of rootA/rootB is currently inactive on each individual
+# device, so it can't carry a literal PARTUUID for "the slot it lands in."
+# LABEL=rootA/rootB is a fleet-wide constant instead (set by mkfs.ext4
+# above on every device), which is what makes image-builder/build.sh's
+# bundled boot files portable across the fleet at all — see its
+# bootfiles.tar.gz/hook.sh comments.
+sed -i -E "s/PARTUUID=[0-9a-fA-F]{8}-02/LABEL=rootA/" \
+	"${DST_ROOT_MNT}/etc/fstab" "${DST_ROOT_MNT}/boot/firmware/cmdline.txt"
+
+# --- seed the boot partition's per-slot kernel/initramfs/cmdline/config
+# directories (RAUC's "kernel" custom slot class — see
+# system/rauc/system.conf and rpi-tryboot-backend.sh): slotA/ mirrors
+# what's already at the partition root (this build's active slot); slotB/
+# starts empty, same as rootB, until the first real OTA populates it.
+BOOTFW="${DST_ROOT_MNT}/boot/firmware"
+mkdir -p "${BOOTFW}/slotA" "${BOOTFW}/slotB"
+rsync -rt --exclude /slotA --exclude /slotB --exclude /tryboot.txt \
+	"${BOOTFW}/" "${BOOTFW}/slotA/"
 
 echo "repartition.sh: wrote ${OUT_IMG}"
 echo "  boot  PARTUUID=${NEW_BOOT_PARTUUID}"
-echo "  rootA PARTUUID=${NEW_ROOTA_PARTUUID}  (active, $((FIXED_ROOT_SIZE_BYTES / 1024 / 1024))MiB)"
-echo "  rootB (unused placeholder, same size)"
+echo "  rootA LABEL=rootA  (active, $((FIXED_ROOT_SIZE_BYTES / 1024 / 1024))MiB; boot/firmware/slotA/ seeded to match)"
+echo "  rootB (unused placeholder, same size; boot/firmware/slotB/ empty until first OTA)"
 echo "  data  PARTUUID=${NEW_DATA_PARTUUID}  (${DATA_PLACEHOLDER_SIZE_MB}MiB placeholder, grows on first boot)"

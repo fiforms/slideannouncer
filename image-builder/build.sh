@@ -68,6 +68,37 @@ if ! command -v rauc >/dev/null 2>&1; then
 	exit 1
 fi
 
+# The AnnouncementSlides server this fleet talks to (pairing, sync,
+# heartbeat, and — relevant here — where the future OTA-check unit polls
+# for release info). One self-hosted server per fleet, so this is a
+# build-time constant baked into every image rather than a per-device
+# setting like device_uuid. Validated up front for the same reason as the
+# RAUC cert/key above: fail before the expensive pi-gen build, not after.
+SLIDE_ANNOUNCER_SERVER_URL="${SLIDE_ANNOUNCER_SERVER_URL:-}"
+if [ -z "$SLIDE_ANNOUNCER_SERVER_URL" ]; then
+	cat >&2 <<EOF
+build.sh: SLIDE_ANNOUNCER_SERVER_URL is not set.
+
+Every device built from this image needs to know which AnnouncementSlides
+server to talk to (pairing/sync/heartbeat, and OTA update checks).
+
+Copy .env.example to .env (if you haven't already) and set:
+    SLIDE_ANNOUNCER_SERVER_URL=https://your-server.example.org
+EOF
+	exit 1
+fi
+case "$SLIDE_ANNOUNCER_SERVER_URL" in
+	https://*/|http://*/)
+		echo "build.sh: SLIDE_ANNOUNCER_SERVER_URL should not have a trailing slash: ${SLIDE_ANNOUNCER_SERVER_URL}" >&2
+		exit 1
+		;;
+	https://?*|http://?*) ;;
+	*)
+		echo "build.sh: SLIDE_ANNOUNCER_SERVER_URL doesn't look like a URL (expected http(s)://...): ${SLIDE_ANNOUNCER_SERVER_URL}" >&2
+		exit 1
+		;;
+esac
+
 cleanup() {
 	local exit_code=$?
 	[ -n "$SUDO_KEEPALIVE_PID" ] && kill "$SUDO_KEEPALIVE_PID" 2>/dev/null
@@ -158,6 +189,8 @@ echo "==> Build provenance: date=${BUILD_DATE} git=${GIT_HASH}"
 # here; it's only ever passed as an argument to `rauc bundle` below.
 cp "$RAUC_KEYRING_CERT_PATH" "${FILES_DIR}/rauc-keyring.pem"
 
+echo "$SLIDE_ANNOUNCER_SERVER_URL" > "${FILES_DIR}/SERVER_URL"
+
 echo "==> Copying the custom stage into pi-gen (Docker build context = pi-gen/ only)"
 rsync -a --delete "${STAGE_SRC}/" "${PI_GEN_DIR}/stage-slide-announcer/"
 
@@ -241,16 +274,41 @@ sudo chown "$(id -u):$(id -g)" "${DEPLOY_DIR}/${OUT_NAME}"
 
 echo "==> Done: ${DEPLOY_DIR}/${OUT_NAME}"
 
-# --- RAUC bundle: same rootA content, packaged as a signed .raucb for OTA
-# (the .img.xz above is the whole boot+rootA+rootB+data disk, for initial
-# flashing only — RAUC bundles a single slot's filesystem image, not a
-# disk) -----------------------------------------------------------------
-echo "==> Extracting rootA into a standalone image for RAUC bundling"
+# --- RAUC bundle: rootA content + boot-partition files, packaged as a
+# signed .raucb for OTA (the .img.xz above is the whole
+# boot+rootA+rootB+data disk, for initial flashing only — a RAUC bundle
+# carries per-slot-class images instead: "rootfs" here is a full ext4
+# filesystem image, "kernel" is a tarball of the boot-partition files a
+# custom-slot hook unpacks into slotA/slotB — see system/rauc/system.conf
+# and rpi-tryboot-backend.sh for the A/B scheme this feeds) -----------------
+echo "==> Extracting rootA + boot files into a standalone bundle for RAUC"
 BUNDLE_DIR="${WORK}/bundle"
 mkdir -p "$BUNDLE_DIR"
 FINAL_LOOP="$(sudo losetup --show --find --partscan --read-only "$FINAL_IMG")"
 udevadm settle 2>/dev/null || true
 sudo dd if="${FINAL_LOOP}p2" of="${BUNDLE_DIR}/rootfs.img" bs=4M status=none
+
+BOOT_MNT="${WORK}/boot-mnt"
+mkdir -p "$BOOT_MNT"
+sudo mount -o ro "${FINAL_LOOP}p1" "$BOOT_MNT"
+BOOTFILES_DIR="${BUNDLE_DIR}/bootfiles"
+mkdir -p "$BOOTFILES_DIR"
+# slotA/slotB/tryboot.txt (repartition.sh's per-device runtime state) never
+# ship in the bundle — only the top-level boot files (kernel, initramfs,
+# config.txt, cmdline.txt, overlays/) do; the device-side hook (below)
+# decides which slot directory they land in at install time.
+sudo rsync -rt --exclude /slotA --exclude /slotB --exclude /tryboot.txt \
+	"${BOOT_MNT}/" "${BOOTFILES_DIR}/"
+sudo umount "$BOOT_MNT"
+sudo chown -R "$(id -u):$(id -g)" "$BOOTFILES_DIR"
+
+# cmdline.txt's root= is device- and slot-specific (which of rootA/rootB
+# this bundle lands in on a given device isn't known until install time) —
+# templated here, filled in by the bundle hook's slot-install step below.
+sed -i -E 's/root=LABEL=root[AB]/root=LABEL=__ROOTLABEL__/' "${BOOTFILES_DIR}/cmdline.txt"
+
+tar -C "$BOOTFILES_DIR" -czf "${BUNDLE_DIR}/bootfiles.tar.gz" .
+
 sudo losetup -d "$FINAL_LOOP"
 sudo chown "$(id -u):$(id -g)" "${BUNDLE_DIR}/rootfs.img"
 
@@ -264,6 +322,30 @@ sudo mount -o ro,loop "${BUNDLE_DIR}/rootfs.img" "$ROOTFS_MNT"
 IMAGE_VERSION="$(cat "${ROOTFS_MNT}/opt/slide-announcer/VERSION")"
 sudo umount "$ROOTFS_MNT"
 
+# Bundle hook: RAUC has no built-in notion of "a directory inside an
+# already-mounted FAT32 partition" as a slot, so the "kernel" custom slot's
+# actual install logic ships inside the bundle itself (covered by the same
+# signature as every image in it) rather than living as a static
+# device-side script. HARDWARE-UNVERIFIED: the argv/env var contract below
+# (slot-install, RAUC_SLOT_DEVICE, RAUC_IMAGE_NAME) is reconstructed from
+# RAUC's general custom-slot hook conventions — verify against the
+# installed rauc version's own docs before trusting this on real hardware.
+cat > "${BUNDLE_DIR}/hook.sh" <<'HOOKEOF'
+#!/bin/bash
+set -euo pipefail
+case "${1:-}" in
+slot-install)
+	TARGET="/boot/firmware/${RAUC_SLOT_DEVICE:?}"
+	ROOTLABEL="${RAUC_SLOT_DEVICE#slot}" # slotA -> A, slotB -> B
+	mkdir -p "$TARGET"
+	find "$TARGET" -mindepth 1 -delete
+	tar -xzf "${RAUC_IMAGE_NAME:?}" -C "$TARGET"
+	sed -i "s/__ROOTLABEL__/root${ROOTLABEL}/" "${TARGET}/cmdline.txt"
+	;;
+esac
+HOOKEOF
+chmod +x "${BUNDLE_DIR}/hook.sh"
+
 cat > "${BUNDLE_DIR}/manifest.raucm" <<EOF
 [update]
 compatible=slideannouncer-rpi4
@@ -272,8 +354,15 @@ version=${IMAGE_VERSION}
 [bundle]
 format=plain
 
+[hooks]
+filename=hook.sh
+
 [image.rootfs]
 filename=rootfs.img
+
+[image.kernel]
+filename=bootfiles.tar.gz
+hooks=install
 EOF
 
 BUNDLE_OUT="${DEPLOY_DIR}/${IMG_NAME}-${BUILD_DATE}-${GIT_HASH}.raucb"

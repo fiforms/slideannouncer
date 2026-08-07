@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""Slide Announcer RAUC update CLI (Tier 1 OS OTA) — manual/testing use.
+
+No automatic timer or idle-window gating exists yet (see SLIDE_ANNOUNCER.md,
+Tier 1, "Update safety") — this just wraps the pieces that already exist
+(the heartbeat contract from Part 1, and `rauc` itself) into something a
+person can run over SSH/console to test the pipeline end to end before any
+of that automation gets built on top of it.
+
+Known limitation: system/rauc/rpi-tryboot-backend.sh and rpi-tryboot-commit.sh
+are a real (not stub) but HARDWARE-UNVERIFIED implementation of Raspberry
+Pi tryboot A/B switching — see those files' own headers. A real tryboot
+cycle (install, tryboot reboot, forced-bad health check, confirm rollback)
+hasn't been run on actual hardware yet; this CLI is exactly the tool for
+doing that testing.
+
+Subcommands:
+    check                   call the server heartbeat, print the OS update
+                             fields
+    install [URL_OR_PATH]   `rauc install` the given bundle, or (with no
+                             argument) whatever `check` reports as available
+    tryboot                 reboot into the slot `install` just staged, via
+                             Raspberry Pi's tryboot (one-shot; reverts to
+                             the current slot on the next boot unless
+                             rpi-tryboot-commit.sh commits it first)
+    status                  `rauc status`
+    mark-good               `rauc status mark-good`
+
+`install`/`tryboot`/`status`/`mark-good` need root — run this with sudo.
+"""
+import argparse
+import json
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+SERVER_URL_FILE = Path("/etc/slide-announcer/server-url")
+DEVICE_TOKEN_FILE = Path("/data/device-token")
+VERSION_FILE = Path("/opt/slide-announcer/VERSION")
+
+
+def read_server_url():
+    if not SERVER_URL_FILE.exists():
+        sys.exit(
+            f"{SERVER_URL_FILE} missing — was this image built without "
+            "SLIDE_ANNOUNCER_SERVER_URL set? See image-builder/.env.example."
+        )
+    return SERVER_URL_FILE.read_text().strip()
+
+
+def read_device_token():
+    if not DEVICE_TOKEN_FILE.exists():
+        return None
+    return DEVICE_TOKEN_FILE.read_text().strip()
+
+
+def read_os_version():
+    if VERSION_FILE.exists():
+        return VERSION_FILE.read_text().strip()
+    return None
+
+
+def heartbeat():
+    server_url = read_server_url()
+    token = read_device_token()
+    if not token:
+        sys.exit(
+            f"No device token at {DEVICE_TOKEN_FILE} — this device isn't "
+            "paired (pairing isn't implemented yet either; see "
+            "SLIDE_ANNOUNCER.md). To test the RAUC pipeline without "
+            "pairing, use 'install <url-or-path>' directly instead of "
+            "'check'/plain 'install'."
+        )
+
+    body = json.dumps({"os_version": read_os_version()}).encode()
+    req = urllib.request.Request(
+        f"{server_url}/api/slide-announcers/heartbeat",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            sys.exit(
+                "Server rejected this device's token (401) — revoked or "
+                "unpaired. Not handling the wipe-and-reboot flow here "
+                "(see SLIDE_ANNOUNCER.md's Heartbeat/revocation section) — "
+                "this CLI is test tooling, not the real update-check unit."
+            )
+        sys.exit(f"Heartbeat failed: HTTP {e.code} {e.reason}")
+    except urllib.error.URLError as e:
+        sys.exit(f"Heartbeat failed: {e.reason} (is {server_url} correct and reachable?)")
+
+
+def cmd_check(args):
+    data = heartbeat()
+    print(json.dumps(data, indent=2))
+    if data.get("os_update_available"):
+        print(f"\nOS update available: {data.get('latest_os_version')} — {data.get('os_bundle_url')}")
+        if not data.get("os_auto_update_enabled", True):
+            print("os_auto_update_enabled is false — server says report only, don't auto-install.")
+    else:
+        print("\nNo OS update available.")
+    return data
+
+
+def run_rauc(*args):
+    try:
+        print(f"+ rauc {' '.join(args)}")
+        return subprocess.run(["rauc", *args])
+    except FileNotFoundError:
+        sys.exit("'rauc' not found — run this on the device, not the build host.")
+
+
+def cmd_install(args):
+    bundle = args.bundle
+    if not bundle:
+        data = cmd_check(args)
+        bundle = data.get("os_bundle_url")
+        if not bundle:
+            sys.exit(
+                "No bundle URL to install (server reports no update "
+                "available). Pass one explicitly to force a test install: "
+                "'install <url-or-path-to.raucb>'."
+            )
+
+    print(f"\nInstalling: {bundle}")
+    result = run_rauc("install", bundle)
+    if result.returncode == 0:
+        print(
+            "\nInstall succeeded — rpi-tryboot-backend.sh has staged the "
+            "new slot (/boot/firmware/tryboot.txt). Nothing has rebooted "
+            "yet. Run 'sudo slide-announcer-update tryboot' to actually "
+            "boot into it, or 'status' to inspect RAUC's view first."
+        )
+    sys.exit(result.returncode)
+
+
+def cmd_tryboot(args):
+    if not args.yes:
+        sys.exit(
+            "This reboots the device right now, into whatever slot the "
+            "last 'install' staged (see /boot/firmware/tryboot.txt). "
+            "Pass --yes to actually do it."
+        )
+    print(
+        "Rebooting via tryboot — HARDWARE-UNVERIFIED (see "
+        "system/rauc/rpi-tryboot-backend.sh's header). If this doesn't "
+        "come back up with the new slot committed (check "
+        "'sudo slide-announcer-update status' and "
+        "'journalctl -u slide-announcer-tryboot-check' after it reboots), "
+        "the tryboot.txt/os_prefix mechanism needs a closer look against "
+        "this device's actual firmware."
+    )
+    sys.exit(subprocess.run(["reboot", "0 tryboot"]).returncode)
+
+
+def cmd_status(args):
+    sys.exit(run_rauc("status").returncode)
+
+
+def cmd_mark_good(args):
+    print(
+        "Note: this is meant to run automatically after a post-update "
+        "health check passes — no such health check exists yet. Calling it "
+        "directly here only tests the RAUC command itself.\n"
+    )
+    sys.exit(run_rauc("status", "mark-good").returncode)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Slide Announcer RAUC OS update CLI (manual/testing use — see this file's module docstring)."
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("check", help="Call the server heartbeat, print OS update fields").set_defaults(func=cmd_check)
+
+    p_install = sub.add_parser("install", help="Install a RAUC bundle (from the server check, or an explicit URL/path)")
+    p_install.add_argument("bundle", nargs="?", help="Bundle URL or local path; omit to use whatever 'check' reports")
+    p_install.set_defaults(func=cmd_install)
+
+    p_tryboot = sub.add_parser("tryboot", help="Reboot into the slot the last 'install' staged (disruptive)")
+    p_tryboot.add_argument("--yes", action="store_true", help="Actually reboot (required)")
+    p_tryboot.set_defaults(func=cmd_tryboot)
+
+    sub.add_parser("status", help="rauc status").set_defaults(func=cmd_status)
+    sub.add_parser("mark-good", help="rauc status mark-good").set_defaults(func=cmd_mark_good)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

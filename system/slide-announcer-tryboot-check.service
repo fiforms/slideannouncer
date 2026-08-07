@@ -1,0 +1,16 @@
+[Unit]
+Description=Slide Announcer RAUC tryboot commit check (Tier 1 OTA)
+# Ordered after the backend service — reaching this point is today's
+# placeholder health check (see rpi-tryboot-commit.sh and
+# SLIDE_ANNOUNCER.md's open questions). Runs every boot; no-ops instantly
+# unless this boot was a RAUC tryboot attempt.
+After=slide-announcer-backend.service
+Wants=slide-announcer-backend.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/rauc/rpi-tryboot-commit.sh
+
+[Install]
+WantedBy=multi-user.target
