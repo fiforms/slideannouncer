@@ -68,7 +68,14 @@ rsync -a --delete "${STAGE_SRC}/" "${PI_GEN_DIR}/stage-slide-announcer/"
 # interactively instead of via the wizard. This is a real local login,
 # useful for field debugging with a physical keyboard; it's just not one
 # that's ever exposed remotely unless SSH is also enabled below.
-USER_PASS="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 16)"
+# Not `tr -dc ... < /dev/urandom | head -c 16` — /dev/urandom is an
+# infinite stream, so `head -c` closes it early and SIGPIPEs `tr`, which
+# `set -o pipefail` below treats as a pipeline failure (silently, since
+# SIGPIPE prints nothing) and `set -e` then kills the whole script. Bound
+# the read at the source instead, and slice in bash rather than with
+# another `head -c` (same trap one stage later otherwise).
+USER_PASS_RAW="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
+USER_PASS="${USER_PASS_RAW:0:16}"
 CONFIG_FILE="$(mktemp)"
 cat "${HERE}/config" > "$CONFIG_FILE"
 {
