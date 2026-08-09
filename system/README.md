@@ -15,19 +15,34 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
 - `slide-announcer-firstboot.service` — runs
   `provisioning/firstboot.py` (SSH/machine-id regen, device identity check,
   setup-mode detection).
-- `slide-announcer-backend.service` — the local backend (currently the
-  stub in `local-app/backend/stub_main.py`; will become the real FastAPI
-  app from `SLIDE_ANNOUNCER.md`'s Tier 2 design).
+- `slide-announcer-local-app-seed.service` + `scripts/local-app-seed.py` —
+  runs every boot, before the backend/kiosk services: extracts the
+  local-app release tarball baked into this image at
+  `/opt/slide-announcer/local-app-release/` onto `/data/local-app/releases/`
+  and swaps the `/data/local-app/current` symlink, but only if `/data` has
+  none installed yet or an older one — never downgrades. See
+  `../local-app/README.md`'s "Installation on the device" for the full
+  design (this is what lets local-app live entirely on `/data`, on the same
+  atomic symlink-swap layout the future `updater/` will maintain, instead
+  of being baked straight into the read-only rootfs).
+- `slide-announcer-backend.service` — the local backend
+  (`local-app/backend/main.py`, FastAPI, running from
+  `/data/local-app/current/backend` under the fixed
+  `/opt/slide-announcer/venv`) — local status plus the WiFi/network
+  settings API; pairing and slide sync from `SLIDE_ANNOUNCER.md`'s Tier 2
+  design are still not implemented.
 - `slide-announcer-kiosk.service` + `scripts/kiosk-start.sh` — starts
   `labwc` with Chromium autostarted in kiosk mode against the local
   nginx-served app. Runs as the dedicated `slideannouncer` user via
   `seatd`, no display manager/logind session involved.
-- `nginx-slide-announcer.conf` — serves `local-app/frontend/stub` and
-  reverse-proxies `/api/*` to the backend on loopback only.
+- `nginx-slide-announcer.conf` — serves `/data/local-app/current/frontend`
+  (the Vue SPA, following the `current` symlink at request time — see
+  `../local-app/README.md`) and reverse-proxies `/api/*` to the backend on
+  loopback only.
 - `polkit/50-networkmanager-slide-announcer.rules` — grants the
-  `slideannouncer` service user NetworkManager D-Bus control. Unused by
-  today's stub backend (no WiFi/pairing logic exists yet) — included now so
-  Tier 2 doesn't need to revisit this.
+  `slideannouncer` service user NetworkManager D-Bus control, used by the
+  backend's `network.py` (`nmcli` scan/connect/status calls backing the
+  Settings > Network menu — see `../local-app/README.md`).
 - `read-only-root/overlay-var.conf` — tmpfiles.d rule creating
   `/run/overlay-var`'s upper/work dirs fresh every boot, backing `/var`'s
   writable overlay (see below).

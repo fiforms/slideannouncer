@@ -1,0 +1,13 @@
+[Unit]
+Description=Slide Announcer local-app seed/upgrade onto /data (never downgrades)
+After=slide-announcer-data-resize.service
+Before=slide-announcer-backend.service slide-announcer-kiosk.service
+Wants=slide-announcer-data-resize.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/slide-announcer-local-app-seed
+
+[Install]
+WantedBy=multi-user.target

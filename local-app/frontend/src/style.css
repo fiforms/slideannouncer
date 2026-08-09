@@ -1,0 +1,81 @@
+:root {
+  color-scheme: dark;
+  --bg: #10151c;
+  --panel: #182029;
+  --panel-hover: #212b37;
+  --border: #2a3542;
+  --text: #e8ecf1;
+  --text-dim: #9fb0c3;
+  --accent: #4f8cff;
+  --danger: #ff6b6b;
+  --ok: #4caf50;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, sans-serif;
+  /* TV safe area — avoid content hugging the edges of the panel. */
+  padding: 3vh 4vw;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+li:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tile,
+.list-item {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  color: var(--text);
+  text-align: left;
+}
+
+.tile:hover,
+.tile:focus-visible,
+.list-item:hover,
+.list-item:focus-visible {
+  background: var(--panel-hover);
+  border-color: var(--accent);
+}
+
+.pill {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.pill.ok { background: rgba(76, 175, 80, 0.15); color: var(--ok); }
+.pill.warn { background: rgba(255, 107, 107, 0.15); color: var(--danger); }
+
+input[type="text"],
+input[type="password"] {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 1.1rem;
+}

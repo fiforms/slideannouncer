@@ -1,16 +1,18 @@
 # Building and flashing the image
 
 This covers the current state of the pipeline: a bootable image with the
-pi-gen/system/provisioning pieces for real, and a **stub** local-app just
-proving the boot → firstboot → kiosk pipeline works end-to-end. No
-WiFi/pairing/sync yet — see `../SLIDE_ANNOUNCER.md` and each directory's
-README for what's real vs. stubbed.
+pi-gen/system/provisioning pieces for real, a real WiFi/network settings
+menu (local-app), and pairing/slide-sync still not implemented — see
+`../SLIDE_ANNOUNCER.md` and each directory's README for what's real vs.
+stubbed.
 
 ## Prerequisites (build host)
 
 - Docker (rootless or in the `docker` group — no `sudo docker` needed)
 - `parted`, `dosfstools`, `e2fsprogs`, `rsync`, `xz-utils`, `rauc` — for
   `image-builder/repartition.sh` (needs `sudo`) and RAUC bundle signing
+- Node.js/`npm` — builds `local-app/frontend`'s Vue app before staging
+  (device itself never runs Node; only the built `dist/` goes on the image)
 - ~10GB free disk space
 
 ## One-time setup: server URL + RAUC signing cert/key
@@ -63,7 +65,7 @@ out. Output — two artifacts, same version stamp:
   bundles, not yet installing them.
 
 The same `<kernel-version>-<build-date>-<git-hash>` string is baked into the
-image at `/opt/slide-announcer/VERSION`, surfaced by the stub's
+image at `/opt/slide-announcer/VERSION`, surfaced by the local backend's
 `GET /api/local/status` (`image_version`) and the kiosk page, and reused
 verbatim as the `.raucb`'s manifest `version=` — so you can tell which
 build a running device is on without re-flashing to check, and the two
@@ -125,9 +127,16 @@ identity — this is expected, not a bug (see
    detects/records the setup mode (`headless-config` if you pre-provisioned
    WiFi above, `hid-setup` if a keyboard+pointer is attached, otherwise
    `ap-mode-fallback` — none of these are *acted on* yet, just detected).
-3. The kiosk display comes up (`labwc` + Chromium) showing the stub page:
-   hostname, image version, device UUID, and the detected setup mode. This
-   is the end-to-end proof the image works — no WiFi/pairing yet.
+3. `slide-announcer-local-app-seed.service` extracts the local-app release
+   tarball baked into this image onto `/data/local-app/releases/<version>/`
+   and points `/data/local-app/current` at it (first boot only ever seeds;
+   it never has anything older to compare against yet) — see
+   `../local-app/README.md`, "Installation on the device."
+4. The kiosk display comes up (`labwc` + Chromium) showing the home page:
+   hostname, image version, device UUID, and the detected setup mode, plus
+   a "Settings" link into the real Network settings menu (WiFi scan/
+   connect, connection status) — see `../local-app/README.md`. Pairing/
+   slide sync are still not implemented.
 
 ## Verifying the read-only rootfs
 

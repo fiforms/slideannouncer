@@ -5,7 +5,17 @@
 
 install -d "${ROOTFS_DIR}/opt/slide-announcer"
 cp -r files/provisioning "${ROOTFS_DIR}/opt/slide-announcer/provisioning"
-cp -r files/local-app "${ROOTFS_DIR}/opt/slide-announcer/local-app"
+
+# local-app itself is never installed onto rootfs — only its built release
+# tarball, read-only at a fixed path. system/scripts/local-app-seed.py (run
+# every boot, before the backend/kiosk services) extracts this onto /data
+# and maintains /data/local-app/current, seeded on first boot and never
+# downgraded across an OS update — see local-app/README.md, "Installation
+# on the device."
+install -d "${ROOTFS_DIR}/opt/slide-announcer/local-app-release"
+cp files/local-app-release/local-app.tar.gz "${ROOTFS_DIR}/opt/slide-announcer/local-app-release/local-app.tar.gz"
+cp files/local-app-release/VERSION "${ROOTFS_DIR}/opt/slide-announcer/local-app-release/VERSION"
+cp files/local-app-release/requirements.txt "${ROOTFS_DIR}/opt/slide-announcer/local-app-release/requirements.txt"
 
 # Version stamp: <kernel-version>-<build-date>-<git-hash>. BUILD_DATE/
 # GIT_HASH come from build.sh (host-side, so they reflect the
@@ -23,6 +33,7 @@ install -d "${ROOTFS_DIR}/usr/local/sbin" "${ROOTFS_DIR}/usr/local/bin"
 install -m 755 files/system/scripts/data-resize.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-data-resize.sh"
 install -m 755 files/system/scripts/kiosk-start.sh "${ROOTFS_DIR}/usr/local/bin/slide-announcer-kiosk-start.sh"
 install -m 755 files/system/scripts/rauc-update.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-update"
+install -m 755 files/system/scripts/local-app-seed.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-local-app-seed"
 
 install -d "${ROOTFS_DIR}/etc/nginx/sites-available"
 install -m 644 files/system/nginx-slide-announcer.conf "${ROOTFS_DIR}/etc/nginx/sites-available/slide-announcer.conf"
@@ -152,10 +163,14 @@ useradd --system --create-home --home-dir /var/lib/slide-announcer \
 
 chown -R slideannouncer:slideannouncer /opt/slide-announcer
 
-python3 -m venv /opt/slide-announcer/local-app/backend/venv
-/opt/slide-announcer/local-app/backend/venv/bin/pip install --no-cache-dir \
-	-r /opt/slide-announcer/local-app/backend/requirements.txt
-chown -R slideannouncer:slideannouncer /opt/slide-announcer/local-app/backend/venv
+# Fixed OS-image infra, independent of which app release is current on
+# /data (see local-app/README.md, "Installation on the device") — a future
+# app-only update via the updater is expected to be code-only, not a new
+# dependency; a requirements.txt change ships alongside an OS update instead.
+python3 -m venv /opt/slide-announcer/venv
+/opt/slide-announcer/venv/bin/pip install --no-cache-dir \
+	-r /opt/slide-announcer/local-app-release/requirements.txt
+chown -R slideannouncer:slideannouncer /opt/slide-announcer/venv
 
 # The stock root-resize first-boot unit conflicts with our fixed-size rootA
 # design (see image-builder/repartition.sh) — only /data auto-expands here.
@@ -172,6 +187,7 @@ systemctl mask getty@tty1.service
 systemctl enable slide-announcer-overlay-var-dirs.service
 systemctl enable slide-announcer-data-resize.service
 systemctl enable slide-announcer-firstboot.service
+systemctl enable slide-announcer-local-app-seed.service
 systemctl enable slide-announcer-backend.service
 systemctl enable slide-announcer-kiosk.service
 systemctl enable slide-announcer-tryboot-check.service

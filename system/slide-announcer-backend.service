@@ -1,14 +1,18 @@
 [Unit]
-Description=Slide Announcer local backend (stub)
-After=slide-announcer-firstboot.service
-Requires=slide-announcer-firstboot.service
+Description=Slide Announcer local backend (WiFi/network settings API)
+After=slide-announcer-firstboot.service slide-announcer-local-app-seed.service
+Requires=slide-announcer-firstboot.service slide-announcer-local-app-seed.service
 
 [Service]
 Type=simple
 User=slideannouncer
 Group=slideannouncer
-WorkingDirectory=/opt/slide-announcer/local-app/backend
-ExecStart=/opt/slide-announcer/local-app/backend/venv/bin/uvicorn stub_main:app --host 127.0.0.1 --port 8000
+# /data/local-app/current is the symlink slide-announcer-local-app-seed.service
+# maintains (seeded from the OS image, later swapped by the updater) — the
+# venv is fixed OS-image infra instead, independent of which app release is
+# current (see local-app/README.md's "Installation on the device").
+WorkingDirectory=/data/local-app/current/backend
+ExecStart=/opt/slide-announcer/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
 Restart=on-failure
 RestartSec=2
 

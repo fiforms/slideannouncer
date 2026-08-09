@@ -1,7 +1,7 @@
 # image-builder/
 
 **Tier 1 — base OS image.** Produces the rarely-updated Raspberry Pi OS
-image for a Raspberry Pi 4 (arm64, Bookworm).
+image for a Raspberry Pi 4 (arm64, Trixie).
 
 **Implemented so far:** the pi-gen pipeline, custom stage, partition layout
 described below, RAUC bundle production (`system.conf`, signed `.raucb`
@@ -20,10 +20,10 @@ to validate against real hardware, not a proven implementation.
 ## Contents
 
 - `pi-gen/` — official [pi-gen](https://github.com/RPi-Distro/pi-gen)
-  builder, vendored as a git submodule pinned to the `bookworm-arm64`
-  branch (arm64 specifically — the plain `bookworm` branch defaults to
+  builder, vendored as a git submodule pinned to the `trixie-arm64`
+  branch (arm64 specifically — the plain `trixie` branch defaults to
   armhf).
-- `config` — pi-gen config: arm64/Bookworm, Lite base (`stage0`-`stage2`,
+- `config` — pi-gen config: arm64/Trixie, Lite base (`stage0`-`stage2`,
   no X11 desktop — we bring our own Wayland compositor), plus our
   out-of-tree `stage-slide-announcer`.
 - `stage-slide-announcer/` — the custom pi-gen stage (pi-gen only scans

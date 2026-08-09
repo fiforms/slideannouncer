@@ -67,6 +67,10 @@ if ! command -v rauc >/dev/null 2>&1; then
 	echo "build.sh: 'rauc' not found on this build host (needed to bundle/sign the .raucb) — install the rauc package" >&2
 	exit 1
 fi
+if ! command -v npm >/dev/null 2>&1; then
+	echo "build.sh: 'npm' not found on this build host (needed to build local-app/frontend's Vue app) — install Node.js" >&2
+	exit 1
+fi
 
 # The AnnouncementSlides server this fleet talks to (pairing, sync,
 # heartbeat, and — relevant here — where the future OTA-check unit polls
@@ -168,13 +172,29 @@ else
 echo "==> Ensuring pi-gen submodule is checked out"
 git -C "$REPO_ROOT" submodule update --init "image-builder/pi-gen"
 
+echo "==> Building the local-app release tarball (local-app/package.sh)"
+"${REPO_ROOT}/local-app/package.sh"
+LOCAL_APP_VERSION="$(cat "${REPO_ROOT}/local-app/deploy/VERSION")"
+echo "==> local-app version: ${LOCAL_APP_VERSION}"
+
 echo "==> Staging system/, provisioning/, local-app/ into the pi-gen custom stage"
 FILES_DIR="${STAGE_SRC}/01-system-files/files"
 rm -rf "$FILES_DIR"
 mkdir -p "$FILES_DIR"
 rsync -a --exclude 'backend/venv' "${REPO_ROOT}/system/" "${FILES_DIR}/system/"
 rsync -a "${REPO_ROOT}/provisioning/" "${FILES_DIR}/provisioning/"
-rsync -a --exclude 'backend/venv' "${REPO_ROOT}/local-app/" "${FILES_DIR}/local-app/"
+# The device gets no local-app *source* at all — only the built release
+# tarball, baked in read-only at a fixed rootfs path, plus requirements.txt
+# (to build the venv, itself fixed OS-image infra independent of the app
+# version). system/scripts/local-app-seed.py extracts the tarball onto
+# /data on first boot (or after an OS update ships a newer app than what's
+# already installed there) — see local-app/README.md's "Installation on
+# the device" section for the full design.
+install -d "${FILES_DIR}/local-app-release"
+cp "${REPO_ROOT}/local-app/deploy/slide-announcer-local-app-latest.tar.gz" \
+	"${FILES_DIR}/local-app-release/local-app.tar.gz"
+cp "${REPO_ROOT}/local-app/deploy/VERSION" "${FILES_DIR}/local-app-release/VERSION"
+cp "${REPO_ROOT}/local-app/backend/requirements.txt" "${FILES_DIR}/local-app-release/requirements.txt"
 
 {
 	echo "BUILD_DATE=${BUILD_DATE}"

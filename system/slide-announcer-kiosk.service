@@ -1,7 +1,7 @@
 [Unit]
 Description=Slide Announcer kiosk display (labwc + Chromium)
-After=slide-announcer-firstboot.service slide-announcer-backend.service seatd.service
-Requires=slide-announcer-firstboot.service seatd.service
+After=slide-announcer-firstboot.service slide-announcer-local-app-seed.service slide-announcer-backend.service seatd.service
+Requires=slide-announcer-firstboot.service slide-announcer-local-app-seed.service seatd.service
 Wants=slide-announcer-backend.service
 
 [Service]

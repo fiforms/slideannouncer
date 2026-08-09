@@ -10,7 +10,10 @@ This repo is consumed as a git submodule at `slideannouncer/` in the main
 `announcementslides` repo, which pins an exact commit of this repo per
 server release.
 
-**Status: architecture/scaffolding stage — no implementation yet.**
+**Status: early implementation.** Image build, first-boot provisioning,
+device identity, on-device WiFi/network settings, and a first pass at RAUC
+OTA (hardware-unverified) are implemented; pairing and slide sync are not
+yet — see each directory's README for specifics.
 
 See [`SLIDE_ANNOUNCER.md`](https://github.com/fiforms/announcementslides/blob/master/SLIDE_ANNOUNCER.md)
 in the main repo for the full design: the three update tiers (OS image,
