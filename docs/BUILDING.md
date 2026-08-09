@@ -177,7 +177,7 @@ independent things to check — a device can fail either one separately:
   `/var/lib/NetworkManager/NetworkManager.state` at build time) baked into
   the image via a rebuild+reflash.
 
-Both are unverified on real hardware so far.
+Both are confirmed working on real hardware.
 
 ## Verifying the read-only rootfs
 

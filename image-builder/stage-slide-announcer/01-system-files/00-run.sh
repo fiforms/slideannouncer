@@ -50,10 +50,10 @@ install -m 644 files/system/polkit/*.rules "${ROOTFS_DIR}/etc/polkit-1/rules.d/"
 # the only mechanism that still actually works) turning off the password
 # manager and autofill, so entering the WiFi password in Settings > Network
 # doesn't trigger a confusing "Save password?" bubble on a kiosk with no
-# concept of a user account to save it for. UNVERIFIED on real hardware —
-# confirm at chrome://policy that this loaded (Debian/Raspberry Pi OS's
-# `chromium` package reads /etc/chromium/policies/managed/, not Google
-# Chrome's /etc/opt/chrome/... path).
+# concept of a user account to save it for. Confirmed on real hardware —
+# chrome://policy shows this loaded (Debian/Raspberry Pi OS's `chromium`
+# package reads /etc/chromium/policies/managed/, not Google Chrome's
+# /etc/opt/chrome/... path).
 install -d "${ROOTFS_DIR}/etc/chromium/policies/managed"
 install -m 644 files/system/chromium-policies/slide-announcer.json \
 	"${ROOTFS_DIR}/etc/chromium/policies/managed/"
@@ -199,8 +199,8 @@ fi
 # rfkill-unblock/`iw reg set` side effects raspi-config also attempts can
 # harmlessly fail here — what actually matters is the persisted config it
 # writes, applied for real on the device's first real boot.
-# UNVERIFIED on real hardware yet — confirm `rfkill list` shows wifi
-# unblocked on first boot without a manual raspi-config run.
+# Confirmed on real hardware — `rfkill list` shows wifi unblocked on first
+# boot without a manual raspi-config run.
 raspi-config nonint do_wifi_country "${WIFI_COUNTRY}" || true
 
 # Belt-and-suspenders alongside build.sh setting WPA_COUNTRY for pi-gen's
