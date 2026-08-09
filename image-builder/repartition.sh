@@ -37,14 +37,10 @@ SRC_ROOT_MNT="${WORK_DIR}/src-root"
 DST_ROOT_MNT="${WORK_DIR}/dst-root"
 mkdir -p "$SRC_BOOT_MNT" "$SRC_ROOT_MNT" "$DST_ROOT_MNT"
 
-DST_DATA_MNT="${WORK_DIR}/dst-data"
-mkdir -p "$DST_DATA_MNT"
-
 cleanup() {
 	set +e
 	umount "${DST_ROOT_MNT}/boot/firmware" 2>/dev/null
 	umount "$DST_ROOT_MNT" 2>/dev/null
-	umount "$DST_DATA_MNT" 2>/dev/null
 	umount "$SRC_BOOT_MNT" 2>/dev/null
 	umount "$SRC_ROOT_MNT" 2>/dev/null
 	[ -n "$DST_LOOP" ] && losetup -d "$DST_LOOP" 2>/dev/null
@@ -101,16 +97,13 @@ mkdosfs -n bootfs -F 32 -s 4 "${DST_LOOP}p1" > /dev/null
 mkfs.ext4 -q -F -L rootA "${DST_LOOP}p2"
 mkfs.ext4 -q -F -L rootB "${DST_LOOP}p3"
 mkfs.ext4 -q -F -L data "${DST_LOOP}p4"
-
-# /etc's read-only-rootfs overlay (see image-builder/stage-slide-announcer's
-# 01-system-files/00-run.sh and SLIDE_ANNOUNCER.md, "Read-only rootfs") needs
-# its upperdir/workdir to already exist on /data before the very first boot's
-# overlay mount runs — they can't be created on demand at boot the way
-# /run's tmpfs-backed /var overlay dirs are, since /data doesn't get
-# populated until here.
-mount "${DST_LOOP}p4" "$DST_DATA_MNT" -t ext4
-mkdir -p "${DST_DATA_MNT}/overlay/etc/upper" "${DST_DATA_MNT}/overlay/etc/work"
-umount "$DST_DATA_MNT"
+# Nothing is written to p4 beyond the bare filesystem — it stays exactly as
+# empty as a factory-reset reformat leaves it (see
+# system/scripts/factory-reset-check.sh). slide-announcer-data-dirs.service
+# creates /data/overlay/etc/{upper,work} (needed before /etc's overlay can
+# mount) on every boot, including this device's very first one, so there's
+# no separate build-time seed to keep in sync with that runtime path
+# anymore — one mechanism covers "brand new card" and "post-reset" alike.
 
 mount "${SRC_LOOP}p1" "$SRC_BOOT_MNT" -t vfat -o ro
 mount "${SRC_LOOP}p2" "$SRC_ROOT_MNT" -t ext4 -o ro

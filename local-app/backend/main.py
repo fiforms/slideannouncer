@@ -12,6 +12,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 import network
+import system_control
 
 app = FastAPI()
 
@@ -91,4 +92,36 @@ async def network_forget(body: ForgetRequest):
         await network.forget(body.ssid)
     except network.NetworkCommandError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@app.get("/api/local/system/update-check")
+def system_update_check_status():
+    return {"result": system_control.read_update_check_status()}
+
+
+@app.post("/api/local/system/update-check")
+async def system_update_check_trigger():
+    try:
+        result = await system_control.trigger_update_check()
+    except system_control.SystemCommandError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"result": result}
+
+
+@app.post("/api/local/system/reboot")
+async def system_reboot():
+    try:
+        await system_control.reboot()
+    except system_control.SystemCommandError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@app.post("/api/local/system/factory-reset")
+async def system_factory_reset():
+    try:
+        await system_control.trigger_factory_reset()
+    except system_control.SystemCommandError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"ok": True}

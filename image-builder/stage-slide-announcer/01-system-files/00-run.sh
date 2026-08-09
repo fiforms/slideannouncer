@@ -34,6 +34,8 @@ install -m 755 files/system/scripts/data-resize.sh "${ROOTFS_DIR}/usr/local/sbin
 install -m 755 files/system/scripts/kiosk-start.sh "${ROOTFS_DIR}/usr/local/bin/slide-announcer-kiosk-start.sh"
 install -m 755 files/system/scripts/rauc-update.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-update"
 install -m 755 files/system/scripts/local-app-seed.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-local-app-seed"
+install -m 755 files/system/scripts/update-check.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-update-check"
+install -m 755 files/system/scripts/factory-reset-check.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-factory-reset-check"
 
 install -d "${ROOTFS_DIR}/etc/nginx/sites-available"
 install -m 644 files/system/nginx-slide-announcer.conf "${ROOTFS_DIR}/etc/nginx/sites-available/slide-announcer.conf"
@@ -41,8 +43,20 @@ rm -f "${ROOTFS_DIR}/etc/nginx/sites-enabled/default"
 ln -sf ../sites-available/slide-announcer.conf "${ROOTFS_DIR}/etc/nginx/sites-enabled/slide-announcer.conf"
 
 install -d "${ROOTFS_DIR}/etc/polkit-1/rules.d"
-install -m 644 files/system/polkit/50-networkmanager-slide-announcer.rules \
-	"${ROOTFS_DIR}/etc/polkit-1/rules.d/"
+install -m 644 files/system/polkit/*.rules "${ROOTFS_DIR}/etc/polkit-1/rules.d/"
+
+# Chromium enterprise policy (not command-line flags — Chromium removed the
+# old --disable-save-password-bubble-style switches years ago; policy is
+# the only mechanism that still actually works) turning off the password
+# manager and autofill, so entering the WiFi password in Settings > Network
+# doesn't trigger a confusing "Save password?" bubble on a kiosk with no
+# concept of a user account to save it for. UNVERIFIED on real hardware —
+# confirm at chrome://policy that this loaded (Debian/Raspberry Pi OS's
+# `chromium` package reads /etc/chromium/policies/managed/, not Google
+# Chrome's /etc/opt/chrome/... path).
+install -d "${ROOTFS_DIR}/etc/chromium/policies/managed"
+install -m 644 files/system/chromium-policies/slide-announcer.json \
+	"${ROOTFS_DIR}/etc/chromium/policies/managed/"
 
 # RAUC: slot config + stub tryboot backend (see system/rauc/system.conf for
 # what's real vs. stubbed) + the public bundle-signing cert build.sh stages
@@ -143,6 +157,21 @@ sed -i 's/$/ ro quiet loglevel=3 logo.nologo vt.global_cursor_default=0/' "$CMDL
 # firmware before Linux even loads) for a solid black screen instead.
 printf '\n[all]\ndisable_splash=1\n' >> "${ROOTFS_DIR}/boot/firmware/config.txt"
 
+# Fleet-specific hardware config.txt lines (fan control overlays, etc. —
+# see SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA in .env.example), under their own
+# unconditional [all] section same as disable_splash above. This survives
+# RAUC OTA/tryboot switching for free rather than needing special-casing:
+# image-builder/repartition.sh mirrors this same partition-root config.txt
+# into boot/firmware/slotA/ for the initial image, and every future OTA
+# bundle is built from this same 00-run.sh too, so slotB/config.txt (and
+# the file rpi-tryboot-commit.sh copies back to the partition root on
+# commit) always carries whatever's set here at build time.
+if [ -s files/BOOT_CONFIG_EXTRA ]; then
+	printf '\n[all]\n' >> "${ROOTFS_DIR}/boot/firmware/config.txt"
+	cat files/BOOT_CONFIG_EXTRA >> "${ROOTFS_DIR}/boot/firmware/config.txt"
+	printf '\n' >> "${ROOTFS_DIR}/boot/firmware/config.txt"
+fi
+
 # Root password — debugging/development only (see .env.example and
 # build.sh, which only stages this file when ROOT_DEV_PASSWORD is set).
 # Exported (not just a shell variable) so it's visible inside on_chroot's
@@ -152,11 +181,42 @@ printf '\n[all]\ndisable_splash=1\n' >> "${ROOTFS_DIR}/boot/firmware/config.txt"
 if [ -f files/ROOT_DEV_PASSWORD ]; then
 	export ROOT_DEV_PASSWORD="$(cat files/ROOT_DEV_PASSWORD)"
 fi
+export WIFI_COUNTRY="$(cat files/WIFI_COUNTRY)"
 
 on_chroot << 'EOF'
 if [ -n "${ROOT_DEV_PASSWORD:-}" ]; then
 	echo "root:${ROOT_DEV_PASSWORD}" | chpasswd
 fi
+
+# The WiFi radio ships soft rfkill-blocked until a regulatory domain is
+# set — a kernel/cfg80211 requirement, not something NetworkManager/nmcli
+# can work around from the device side (see SLIDE_ANNOUNCER_WIFI_COUNTRY in
+# image-builder/.env.example). raspi-config's own do_wifi_country is used
+# rather than hand-writing config files, since it's the one mechanism the
+# Raspberry Pi Foundation keeps correct across OS releases regardless of
+# which network stack is active. `|| true`: this chroot has no real WiFi
+# radio (qemu-user, build host's kernel underneath), so the live
+# rfkill-unblock/`iw reg set` side effects raspi-config also attempts can
+# harmlessly fail here — what actually matters is the persisted config it
+# writes, applied for real on the device's first real boot.
+# UNVERIFIED on real hardware yet — confirm `rfkill list` shows wifi
+# unblocked on first boot without a manual raspi-config run.
+raspi-config nonint do_wifi_country "${WIFI_COUNTRY}" || true
+
+# Belt-and-suspenders alongside build.sh setting WPA_COUNTRY for pi-gen's
+# own stage2/02-net-tweaks/01-run.sh (which otherwise bakes
+# WirelessEnabled=false here when WPA_COUNTRY is unset — a NetworkManager-
+# level radio-off flag, separate from the kernel rfkill block above):
+# force it back to true unconditionally, regardless of what that earlier
+# stage decided. /var is a tmpfs overlay reset every boot (see
+# read-only-root, above), so whatever's baked into this real file is what
+# every single boot actually gets — a live `nmcli radio wifi on` on a
+# running device never survives a reboot without this being right here.
+mkdir -p /var/lib/NetworkManager
+cat > /var/lib/NetworkManager/NetworkManager.state << 'NMEOF'
+[main]
+WirelessEnabled=true
+NMEOF
 
 useradd --system --create-home --home-dir /var/lib/slide-announcer \
 	--groups video,render,input,dialout,netdev slideannouncer
@@ -185,6 +245,8 @@ systemctl mask rpi-resizerootfs.service 2>/dev/null || true
 systemctl mask getty@tty1.service
 
 systemctl enable slide-announcer-overlay-var-dirs.service
+systemctl enable slide-announcer-factory-reset-check.service
+systemctl enable slide-announcer-data-dirs.service
 systemctl enable slide-announcer-data-resize.service
 systemctl enable slide-announcer-firstboot.service
 systemctl enable slide-announcer-local-app-seed.service

@@ -1,0 +1,6 @@
+[Unit]
+Description=Slide Announcer OTA update check (triggered on demand from the Settings UI)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/slide-announcer-update-check

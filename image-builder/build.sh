@@ -103,6 +103,37 @@ case "$SLIDE_ANNOUNCER_SERVER_URL" in
 		;;
 esac
 
+# WiFi regulatory domain (ISO 3166-1 alpha-2, e.g. US) — the Pi's WiFi
+# radio ships soft rfkill-blocked until this is set (a kernel/cfg80211
+# requirement, not something nmcli/NetworkManager can work around from the
+# device side), so without this every device would need someone at the
+# console running raspi-config by hand before Settings > Network's WiFi
+# scan could ever see anything. Optional, defaults to US — this fleet's
+# deployment target — since getting a device on WiFi at all matters more
+# here than failing the build over a missing regulatory code.
+SLIDE_ANNOUNCER_WIFI_COUNTRY="${SLIDE_ANNOUNCER_WIFI_COUNTRY:-US}"
+if ! [[ "$SLIDE_ANNOUNCER_WIFI_COUNTRY" =~ ^[A-Z]{2}$ ]]; then
+	echo "build.sh: SLIDE_ANNOUNCER_WIFI_COUNTRY must be a 2-letter ISO 3166-1 code (e.g. US), got: ${SLIDE_ANNOUNCER_WIFI_COUNTRY}" >&2
+	exit 1
+fi
+echo "==> WiFi regulatory domain: ${SLIDE_ANNOUNCER_WIFI_COUNTRY}"
+
+# Extra config.txt lines for hardware this fleet needs that a stock image
+# doesn't set — e.g. a fan control overlay. Optional, free-form (one or
+# more raw config.txt lines — see .env.example), appended under their own
+# [all] section by 00-run.sh. Not validated here beyond "not accidentally
+# a [section] header" — config.txt's own parser is the real validator, and
+# a typo here should fail obviously at boot (dmesg/dtoverlay warnings),
+# not silently.
+SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA="${SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA:-}"
+if [[ "$SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA" == *"["* ]]; then
+	echo "build.sh: SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA shouldn't include a [section] header — it's already placed under its own [all] section" >&2
+	exit 1
+fi
+if [ -n "$SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA" ]; then
+	echo "==> Extra config.txt lines: ${SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA}"
+fi
+
 cleanup() {
 	local exit_code=$?
 	[ -n "$SUDO_KEEPALIVE_PID" ] && kill "$SUDO_KEEPALIVE_PID" 2>/dev/null
@@ -210,6 +241,14 @@ echo "==> Build provenance: date=${BUILD_DATE} git=${GIT_HASH}"
 cp "$RAUC_KEYRING_CERT_PATH" "${FILES_DIR}/rauc-keyring.pem"
 
 echo "$SLIDE_ANNOUNCER_SERVER_URL" > "${FILES_DIR}/SERVER_URL"
+echo "$SLIDE_ANNOUNCER_WIFI_COUNTRY" > "${FILES_DIR}/WIFI_COUNTRY"
+# Written even when empty (as a genuinely empty file, not just a blank
+# line) — 00-run.sh checks `[ -s ... ]` (non-empty) so an absent/blank
+# setting is just a no-op, no branching needed here.
+: > "${FILES_DIR}/BOOT_CONFIG_EXTRA"
+if [ -n "$SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA" ]; then
+	printf '%s\n' "$SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA" > "${FILES_DIR}/BOOT_CONFIG_EXTRA"
+fi
 
 # Root password — debugging/development only (see .env.example). Left
 # unset, root stays locked, same as a stock image. 00-run.sh's on_chroot
@@ -251,6 +290,16 @@ cat "${HERE}/config" > "$CONFIG_FILE"
 {
 	echo "DISABLE_FIRST_BOOT_USER_RENAME=1"
 	echo "FIRST_USER_PASS=${USER_PASS}"
+	# pi-gen's own stage2/02-net-tweaks/01-run.sh checks this var: set, it
+	# calls raspi-config itself (redundant with, but harmless alongside,
+	# our own call in stage-slide-announcer/01-system-files/00-run.sh);
+	# UNSET, it instead bakes WirelessEnabled=false into
+	# /var/lib/NetworkManager/NetworkManager.state — a *separate* NM-level
+	# radio-off flag from the kernel rfkill block, and one that would
+	# otherwise re-assert on every boot (that file lives on /var, which is
+	# a tmpfs overlay reset every boot per the read-only-rootfs design, so
+	# a live `nmcli radio wifi on` never survives a reboot without this).
+	echo "WPA_COUNTRY=${SLIDE_ANNOUNCER_WIFI_COUNTRY}"
 } >> "$CONFIG_FILE"
 echo "==> Local account 'slideadmin' password (console/keyboard login only): ${USER_PASS}"
 

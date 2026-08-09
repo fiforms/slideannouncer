@@ -31,6 +31,30 @@ cp .env.example .env
 # edit .env: SLIDE_ANNOUNCER_SERVER_URL=https://your-server.example.org
 ```
 
+**WiFi regulatory domain** — optional, defaults to `US`. The Pi's WiFi
+radio is soft rfkill-blocked by the kernel until a country is set (this is
+true regardless of NetworkManager config — nothing on the device side can
+work around it), so if devices deploy somewhere other than the US, set
+this before building or Settings > Network's WiFi scan won't find
+anything until someone runs `sudo raspi-config nonint do_wifi_country <CC>`
+by hand at the console:
+
+```bash
+# edit .env: SLIDE_ANNOUNCER_WIFI_COUNTRY=US
+```
+
+**Extra config.txt lines** — optional, for hardware this fleet needs that a
+stock image doesn't configure (a fan control overlay, for example):
+
+```bash
+# edit .env: SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA=dtoverlay=gpio-fan,gpiopin=14,temp=65000
+```
+
+Baked in under its own `[all]` section, so it applies unconditionally.
+This survives RAUC OTA/tryboot switching without any special handling —
+every future OTA bundle gets built from this same `.env` file too, so
+whichever slot ends up active always carries it.
+
 **RAUC signing cert/key** — the build also produces a signed `.raucb` OTA
 bundle alongside the raw image, which needs a cert/key pair:
 
@@ -137,6 +161,23 @@ identity — this is expected, not a bug (see
    a "Settings" link into the real Network settings menu (WiFi scan/
    connect, connection status) — see `../local-app/README.md`. Pairing/
    slide sync are still not implemented.
+
+If Settings > Network's WiFi scan reports no networks found, there are two
+independent things to check — a device can fail either one separately:
+- `rfkill list` at the console — `Soft blocked: yes` on the `wlan` line is
+  the kernel-level regulatory-domain block; `sudo raspi-config nonint
+  do_wifi_country US` (swap in the right code) fixes a running device
+  without a rebuild.
+- `nmcli radio wifi` — `disabled` means NetworkManager's own admin flag is
+  off (a separate thing pi-gen's stock stage2 sets when it doesn't see a
+  `WPA_COUNTRY` value — see `build.sh`'s comment where it sets that for
+  pi-gen). `sudo nmcli radio wifi on` fixes a running device, but won't
+  survive a reboot on its own (`/var` resets every boot) — that needs
+  `image-builder/build.sh`'s own fix (forcing `WirelessEnabled=true` into
+  `/var/lib/NetworkManager/NetworkManager.state` at build time) baked into
+  the image via a rebuild+reflash.
+
+Both are unverified on real hardware so far.
 
 ## Verifying the read-only rootfs
 

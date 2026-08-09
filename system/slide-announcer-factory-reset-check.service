@@ -1,0 +1,18 @@
+[Unit]
+Description=Slide Announcer factory reset (reformats /data before it's ever mounted, if triggered)
+# Same DefaultDependencies=no / Before=<mount unit> shape as
+# slide-announcer-overlay-var-dirs.service, for the same reason: this has
+# to run before data.mount even attempts to mount /data, which the normal
+# local-fs.target dependency chain can't guarantee.
+DefaultDependencies=no
+After=boot-firmware.mount local-fs-pre.target
+Before=data.mount
+ConditionPathExists=/boot/firmware/FACTORY_RESET
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/slide-announcer-factory-reset-check
+
+[Install]
+WantedBy=local-fs-pre.target

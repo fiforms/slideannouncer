@@ -1,0 +1,21 @@
+[Unit]
+Description=Recreate /data's overlay upper/work dirs before /etc's overlay mounts
+# image-builder/repartition.sh pre-creates these once, at image-build time
+# — but a factory reset (slide-announcer-factory-reset-check.service)
+# reformats /data at runtime, which would otherwise leave them missing on
+# the very next boot. Runs unconditionally every boot instead of only
+# after a reset (cheap, idempotent — same reasoning as
+# slide-announcer-overlay-var-dirs.service already applies to /var's own
+# tmpfs upper/work dirs).
+DefaultDependencies=no
+After=data.mount
+Before=etc.mount
+Requires=data.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/mkdir -p -m 0755 /data/overlay/etc/upper /data/overlay/etc/work
+
+[Install]
+WantedBy=local-fs-pre.target

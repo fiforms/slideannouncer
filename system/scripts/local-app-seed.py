@@ -70,6 +70,13 @@ def extract_release(version: str) -> None:
         # start) — hand the extracted tree over so the app runs with
         # consistent ownership, matching the venv's own chown in 00-run.sh.
         subprocess.run(["chown", "-R", "slideannouncer:slideannouncer", str(tmp_dir)], check=True)
+        # chown only fixes ownership, not mode — nginx (www-data) is neither
+        # the owner nor in the slideannouncer group, so it also needs an
+        # explicit go+rX here rather than relying on whatever this service's
+        # umask happened to produce. Capital X only sets execute on dirs (and
+        # files that already have it somewhere), so plain files don't
+        # spuriously become "executable."
+        subprocess.run(["chmod", "-R", "u+rwX,go+rX", str(tmp_dir)], check=True)
         tmp_dir.rename(target_dir)
         log(f"extracted embedded release {version} to {target_dir}")
 
@@ -93,7 +100,13 @@ def main() -> int:
         log(f"embedded VERSION '{embedded_version}' doesn't parse as X.Y.Z[-...] — refusing to seed")
         return 1
 
+    # Explicit chmod, not just mkdir's mode= (which is filtered through
+    # whatever umask this service happens to run under) — nginx and the
+    # backend both need to traverse these, and neither is root nor in
+    # root's group, so "whatever the umask produces" isn't good enough.
     RELEASES_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_LOCAL_APP.chmod(0o755)
+    RELEASES_DIR.chmod(0o755)
 
     current = installed_version()
     if current is None:

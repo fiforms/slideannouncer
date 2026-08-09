@@ -59,6 +59,7 @@ def run_once_setup() -> None:
     dbus_machine_id.symlink_to("/etc/machine-id")
 
     STATUS_DIR.mkdir(parents=True, exist_ok=True)
+    STATUS_DIR.chmod(0o755)
     FIRSTBOOT_MARKER.touch()
     log("first-boot setup complete")
 
@@ -187,9 +188,15 @@ def detect_setup_mode() -> None:
 
     log(f"detected setup mode: {mode}")
     STATUS_DIR.mkdir(parents=True, exist_ok=True)
+    STATUS_DIR.chmod(0o755)
     SETUP_MODE_STATUS.write_text(
         json.dumps({"setup_mode": mode, "device_uuid": config.get("device_uuid")}, indent=2)
     )
+    # This service (and update-check.py's own status file) run as root;
+    # local-app's backend, which reads this back, doesn't — see
+    # local-app-seed.py's identical fix for why an explicit chmod (not just
+    # whatever this service's umask happens to produce) is needed here.
+    SETUP_MODE_STATUS.chmod(0o644)
 
 
 def main() -> int:

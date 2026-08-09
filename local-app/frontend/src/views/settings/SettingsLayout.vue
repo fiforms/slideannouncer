@@ -6,6 +6,7 @@
 // focus rings are enough navigation — no custom spatial-nav system needed.
 const categories = [
   { path: '/settings/network', label: 'Network' },
+  { path: '/settings/system', label: 'System' },
   { path: '/settings/about', label: 'About' },
 ]
 </script>

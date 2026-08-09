@@ -5,6 +5,25 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
 
 ## Contents
 
+- `slide-announcer-factory-reset-check.service` + `scripts/factory-reset-check.sh`
+  — runs before `/data` is ever mounted (`DefaultDependencies=no`,
+  `Before=data.mount`, same shape as `overlay-var-dirs.service` below).
+  If `/boot/firmware/FACTORY_RESET` exists, reformats `/data` and removes
+  the flag; otherwise a no-op (`ConditionPathExists`). No second reboot
+  needed — boot just continues into the now-empty `/data`, which every
+  other boot-time piece here (identity, local-app seeding, WiFi via the
+  `/etc` overlay) already knows how to handle correctly, because that's
+  exactly what a brand-new SD card looks like too. Triggered from the
+  Settings > System UI (`slide-announcer-factory-reset-trigger.service`,
+  below) or by hand (mount the boot partition on any PC/Mac and create the
+  file, same as `slideannouncer.yaml`).
+- `slide-announcer-data-dirs.service` — recreates `/data/overlay/etc/`'s
+  upper/work dirs before `/etc`'s overlay mount, every boot (cheap,
+  idempotent) — needed because a factory reset wipes them at runtime,
+  unlike `image-builder/repartition.sh`'s one-time build-time seed.
+- `slide-announcer-factory-reset-trigger.service` — on-demand (never
+  enabled at boot) unit the backend starts via the polkit rule below: sets
+  `/boot/firmware/FACTORY_RESET` and reboots.
 - `slide-announcer-data-resize.service` + `scripts/data-resize.sh` — grows
   the `/data` partition (partition 4) to fill the real SD card on first
   boot via `growpart`/`resize2fs`, since it's created as a small
@@ -35,6 +54,12 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   `labwc` with Chromium autostarted in kiosk mode against the local
   nginx-served app. Runs as the dedicated `slideannouncer` user via
   `seatd`, no display manager/logind session involved.
+- `chromium-policies/slide-announcer.json` — Chromium enterprise policy
+  (installed to `/etc/chromium/policies/managed/`) disabling the password
+  manager and autofill, so entering the WiFi password in Settings >
+  Network doesn't trigger a "Save password?" bubble — a kiosk has no user
+  account concept to save it for. Policy, not a command-line flag: modern
+  Chromium removed the flags that used to do this.
 - `nginx-slide-announcer.conf` — serves `/data/local-app/current/frontend`
   (the Vue SPA, following the `current` symlink at request time — see
   `../local-app/README.md`) and reverse-proxies `/api/*` to the backend on
@@ -43,6 +68,18 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   `slideannouncer` service user NetworkManager D-Bus control, used by the
   backend's `network.py` (`nmcli` scan/connect/status calls backing the
   Settings > Network menu — see `../local-app/README.md`).
+- `polkit/50-slide-announcer-system.rules` — grants `slideannouncer`
+  exactly two more things: `systemctl reboot` (via logind's own reboot
+  action), and starting units named `slide-announcer-*.service` (never
+  arbitrary system units). Backs the Settings > System menu's "Restart
+  Device," "Check for Update," and "Factory Reset" — see
+  `../local-app/README.md`'s "Privileged operations from the web UI" for
+  the full design.
+- `slide-announcer-update-check.service` + `scripts/update-check.py` — an
+  on-demand (never enabled at boot) oneshot unit the backend starts via the
+  polkit rule above. Runs as root, calls `slide-announcer-update check`,
+  and writes the result to `/data/status/update-check.json` for the
+  unprivileged backend to read back.
 - `read-only-root/overlay-var.conf` — tmpfiles.d rule creating
   `/run/overlay-var`'s upper/work dirs fresh every boot, backing `/var`'s
   writable overlay (see below).
@@ -71,9 +108,16 @@ back over themselves so services can still write to the paths they expect
 `machine-id`, future NetworkManager WiFi profiles), `/var`'s is tmpfs
 (logs/runtime state, reset every boot). The fstab/cmdline wiring lives in
 `image-builder/stage-slide-announcer/01-system-files/00-run.sh`;
-`image-builder/repartition.sh` pre-creates `/etc`'s upper/work directories
-on `/data` since they must exist before the first boot's overlay mount
-runs. See `SLIDE_ANNOUNCER.md`, Tier 1, "Read-only rootfs" for the full
+`/data`'s filesystem itself is created at image-build time
+(`image-builder/repartition.sh`), but left otherwise empty — `/etc`'s
+upper/work directories on it (which must exist before the overlay can
+mount at all) are created at boot instead, by
+`slide-announcer-data-dirs.service` (above), on every single boot
+including the device's very first one. That's what makes a brand-new SD
+card and a post-factory-reset `/data` (which the same service also has to
+handle — see `system/scripts/factory-reset-check.sh`) go through exactly
+the same code path, rather than keeping a separate build-time seed in sync
+with it. See `SLIDE_ANNOUNCER.md`, Tier 1, "Read-only rootfs" for the full
 rationale.
 
 **Not yet implemented:** the slide sync daemon and real kiosk slideshow

@@ -70,11 +70,14 @@ to validate against real hardware, not a proven implementation.
                      slide-announcer-data-resize.service on first boot
   ```
 
-  Also pre-creates `/etc`'s read-only-rootfs overlay upper/work directories
-  on the new `data` partition — they have to exist before the very first
-  boot, and `/data` isn't populated until this step — and seeds
-  `boot/firmware/slotA/` to mirror the partition root (this build's active
-  slot) while `slotB/` starts empty. RAUC's own A/B bookkeeping needs
+  `data` gets a filesystem here but is otherwise left empty — even `/etc`'s
+  read-only-rootfs overlay upper/work directories (which have to exist
+  before the very first boot's overlay mount) are created at boot instead
+  (`slide-announcer-data-dirs.service`), not seeded here, so a brand-new
+  card and a post-factory-reset `/data` go through the exact same
+  boot-time path rather than two mechanisms that could drift apart. Also
+  seeds `boot/firmware/slotA/` to mirror the partition root (this build's
+  active slot) while `slotB/` starts empty. RAUC's own A/B bookkeeping needs
   nothing pre-seeded on `/data` at all — see `system/rauc/rpi-tryboot-backend.sh`
   for why (it's derived from the running kernel's `/proc/cmdline`
   instead, specifically so a `/data` wipe/factory-reset can't desync it).
@@ -92,7 +95,16 @@ to validate against real hardware, not a proven implementation.
   (the fleet's AnnouncementSlides server, baked into every image at
   `/etc/slide-announcer/server-url`) plus `RAUC_CERT_PATH`/`RAUC_KEY_PATH`
   (and `RAUC_KEYRING_CERT_PATH` for a production PKI) — `build.sh` refuses
-  to build without all of these set.
+  to build without all of these set. `SLIDE_ANNOUNCER_WIFI_COUNTRY` is
+  optional (defaults to `US`) — the WiFi radio ships soft rfkill-blocked
+  by the kernel until a regulatory domain is set, regardless of
+  NetworkManager config, so this needs to be right for wherever devices
+  actually deploy or Settings > Network's WiFi scan won't see anything.
+  `SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA` is also optional — free-form extra
+  `config.txt` lines for hardware this fleet needs (a fan control overlay,
+  etc.), appended under their own `[all]` section by `00-run.sh`. Survives
+  RAUC OTA/tryboot switching, since every future OTA bundle is built from
+  this same `.env` too.
 
 ## Building
 

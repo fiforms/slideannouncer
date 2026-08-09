@@ -20,6 +20,13 @@ image, deployed via atomic symlink-swap rather than A/B partitioning (see
     `POST /api/local/network/forget` (`{ssid}` — deletes the saved
     connection profile). These back the real on-device WiFi/network
     settings menu described below.
+  - `system_control.py` — reboot, OTA update-check, and factory reset,
+    triggered from the Settings > System screen. See "Privileged operations
+    from the web UI," below, for how this works without the backend ever
+    running as root. `POST /api/local/system/reboot`,
+    `GET`/`POST /api/local/system/update-check` (`POST` triggers a fresh
+    check and returns it; `GET` returns the last cached result without
+    triggering one), `POST /api/local/system/factory-reset`.
   - `requirements.txt` — installed into a venv at build time by
     `../image-builder/stage-slide-announcer/01-system-files/00-run.sh`.
 - `frontend/` — a Vue 3 + Vite SPA (`npm run dev` for local development
@@ -38,6 +45,13 @@ image, deployed via atomic symlink-swap rather than A/B partitioning (see
       Wi-Fi" (scans and lists nearby access points, select one, enter its
       password if secured, connect and see the result), and "Forget This
       Network."
+    - **System** — "Check for Update" (triggers an OTA check, shows the
+      raw result — reports "not paired" today, since pairing doesn't exist
+      yet; that's the check actually working, not a bug), "Restart Device"
+      (two-step confirm, then reboots), and "Factory Reset" (type-to-confirm,
+      then wipes WiFi/pairing/cached slides/device identity and reboots
+      into a state indistinguishable from a fresh SD card — see
+      `../system/scripts/factory-reset-check.sh`).
     - **About** — device info (hostname, image version, device UUID);
       placeholder for pairing/unpair status once pairing exists.
   - Navigation assumes the on-device remote is a keyboard+pointer HID
@@ -119,6 +133,42 @@ release's `requirements.txt` — independent of whichever app release
 `updater/`, no OS reflash) is expected to be code-only; a `requirements.txt`
 change should ship alongside an OS update instead, since nothing currently
 rebuilds the venv outside of `00-run.sh`.
+
+## Privileged operations from the web UI
+
+The backend runs unprivileged, as the dedicated `slideannouncer` system
+user — no sudo, no setuid helper, no root shell anywhere in this process.
+Two things it needs to trigger (rebooting, running an OTA update check)
+genuinely require root, so instead of widening what the backend itself can
+do, it's granted exactly two narrow capabilities via polkit (see
+`../system/polkit/50-slide-announcer-system.rules`), the same pattern
+already used for NetworkManager control:
+
+- **`org.freedesktop.login1.reboot`** — lets `systemctl reboot`
+  (`system_control.reboot()`) work, via `systemd-logind`'s own D-Bus
+  action. Nothing else about system/session management is granted.
+- **`org.freedesktop.systemd1.manage-units`, scoped to unit names matching
+  `slide-announcer-*.service`** — lets the backend `systemctl start` its
+  *own* on-demand units, never arbitrary system units. Two examples today:
+  - `slide-announcer-update-check.service` (`system_control.trigger_update_check()`)
+    runs `system/scripts/update-check.py` **as root** (the unit has no
+    `User=`, so it defaults to root) to call `slide-announcer-update check`,
+    then writes the result to `/data/status/update-check.json` — the
+    unprivileged backend reads that file back rather than ever capturing a
+    root process's output directly.
+  - `slide-announcer-factory-reset-trigger.service` (`system_control.trigger_factory_reset()`)
+    sets `/boot/firmware/FACTORY_RESET` and reboots. The actual reset work
+    happens on the *next* boot, before `/data` is even mounted — see
+    `system/scripts/factory-reset-check.sh` and `../system/README.md`'s
+    entries on `slide-announcer-factory-reset-check.service` and
+    `slide-announcer-data-dirs.service` for that half of the design.
+
+This is the reusable shape for any future one-off privileged action
+(installing an update, forcing tryboot, etc.): write a new
+`slide-announcer-<name>.service` oneshot unit that does the actual root
+work and records its result to a status file on `/data`, and it's already
+covered by the existing polkit rule — no new grant needed, since the rule
+matches on the naming convention rather than a specific unit.
 
 **Not yet implemented** (Tier 2, per `SLIDE_ANNOUNCER.md`):
 - `backend/pairing/` — exchanging the numeric one-time code for a Sanctum

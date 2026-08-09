@@ -1,0 +1,33 @@
+// Lets the dedicated `slideannouncer` service user (the local backend,
+// local-app/backend/system_control.py) trigger two specific privileged
+// system actions without sudo or a setuid helper — reboot, and starting
+// our own on-demand systemd units (e.g. the OTA update-check unit) — while
+// staying unable to touch anything else on the system. See
+// local-app/README.md's "Privileged operations from the web UI" for the
+// full design.
+polkit.addRule(function(action, subject) {
+	if (subject.user !== "slideannouncer") {
+		return polkit.Result.NOT_HANDLED;
+	}
+
+	// systemd-logind's own reboot action — lets `systemctl reboot` work
+	// without granting anything about arbitrary unit management.
+	if (action.id === "org.freedesktop.login1.reboot") {
+		return polkit.Result.YES;
+	}
+
+	// systemd's "start/stop/restart any unit" action, narrowed here to
+	// only our own on-demand unit names via the "unit" detail systemd
+	// attaches to the action — never arbitrary system units. New
+	// privileged one-off operations (another update-check-style action)
+	// only ever need a new slide-announcer-*.service unit, not a change
+	// here.
+	if (action.id === "org.freedesktop.systemd1.manage-units") {
+		var unit = action.lookup("unit");
+		if (unit && /^slide-announcer-[a-z0-9-]+\.service$/.test(unit)) {
+			return polkit.Result.YES;
+		}
+	}
+
+	return polkit.Result.NOT_HANDLED;
+});

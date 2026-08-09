@@ -1,0 +1,7 @@
+[Unit]
+Description=Slide Announcer factory reset trigger (sets the reset flag, then reboots)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/touch /boot/firmware/FACTORY_RESET
+ExecStart=/usr/sbin/reboot
