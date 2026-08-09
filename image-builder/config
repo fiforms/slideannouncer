@@ -2,7 +2,7 @@
 # Consumed via `pi-gen/build-docker.sh -c image-builder/config` (see build.sh).
 
 ARCH=arm64
-RELEASE=bookworm
+RELEASE=trixie
 IMG_NAME=slideannouncer
 TARGET_HOSTNAME=slideannouncer
 
