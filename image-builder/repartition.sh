@@ -4,13 +4,26 @@
 # (see SLIDE_ANNOUNCER.md and image-builder/README.md):
 #
 #   p1  boot   FAT32  unchanged, copied as-is from pi-gen's output
-#   p2  rootA  ext4   fixed size, pi-gen's root content copied in, ACTIVE
-#   p3  rootB  ext4   same fixed size, empty — unused OTA placeholder
-#   p4  data   ext4   small placeholder here; grown to fill the real SD
-#                      card by slide-announcer-data-resize.service on the
-#                      device's first boot (can't be sized correctly inside
-#                      the .img file itself — "rest of the card" is only
-#                      known once it's on real hardware).
+#   p2  rootA  ext4   fixed size (reserved in the partition table for future
+#                      RAUC bundles), pi-gen's root content copied in then
+#                      shrunk to that content's actual size, ACTIVE
+#   p3  rootB  ext4   same fixed size reserved, but no filesystem is written
+#                      here at all — unused until the first OTA install
+#   p4  data   ext4   same story: partition table entry only, no filesystem.
+#                      slide-announcer-factory-reset-check.service formats it
+#                      fresh on the device's first boot (this script drops a
+#                      FACTORY_RESET flag onto the boot partition so that
+#                      path always runs once), then
+#                      slide-announcer-data-resize.service grows it to fill
+#                      the real SD card (can't be sized correctly inside the
+#                      .img file itself — "rest of the card" is only known
+#                      once it's on real hardware).
+#
+# The output .img file is truncated right after rootA's (shrunk) filesystem
+# — rootB and data have no bytes in the file at all, only partition-table
+# entries reserving their space, so flashing this image doesn't spend time
+# writing multiple gigabytes of zeros for partitions nothing reads before
+# the device's first boot or first OTA install.
 #
 # Must run as root (loop devices, mount). Not a pi-gen stage — pi-gen only
 # ever produces a 2-partition image sized tightly to content, so this is a
@@ -95,15 +108,17 @@ udevadm settle 2>/dev/null || true
 
 mkdosfs -n bootfs -F 32 -s 4 "${DST_LOOP}p1" > /dev/null
 mkfs.ext4 -q -F -L rootA "${DST_LOOP}p2"
-mkfs.ext4 -q -F -L rootB "${DST_LOOP}p3"
-mkfs.ext4 -q -F -L data "${DST_LOOP}p4"
-# Nothing is written to p4 beyond the bare filesystem — it stays exactly as
-# empty as a factory-reset reformat leaves it (see
-# system/scripts/factory-reset-check.sh). slide-announcer-data-dirs.service
-# creates /data/overlay/etc/{upper,work} (needed before /etc's overlay can
-# mount) on every boot, including this device's very first one, so there's
-# no separate build-time seed to keep in sync with that runtime path
-# anymore — one mechanism covers "brand new card" and "post-reset" alike.
+# p3 (rootB) and p4 (data) are deliberately left unformatted here — the
+# image file gets truncated right after rootA below, so any filesystem
+# written to them now would just be discarded anyway. rootB gets a real
+# filesystem for the first time via its first OTA install; data gets one
+# via slide-announcer-factory-reset-check.service on the device's first
+# boot (see the FACTORY_RESET flag dropped onto the boot partition below).
+# slide-announcer-data-dirs.service creates /data/overlay/etc/{upper,work}
+# (needed before /etc's overlay can mount) on every boot, including right
+# after that first-boot reformat, so there's no separate build-time seed to
+# keep in sync with that runtime path — one mechanism covers "brand new
+# card" and "post-reset" alike.
 
 mount "${SRC_LOOP}p1" "$SRC_BOOT_MNT" -t vfat -o ro
 mount "${SRC_LOOP}p2" "$SRC_ROOT_MNT" -t ext4 -o ro
@@ -152,8 +167,43 @@ mkdir -p "${BOOTFW}/slotA" "${BOOTFW}/slotB"
 rsync -rt --exclude /slotA --exclude /slotB --exclude /tryboot.txt \
 	"${BOOTFW}/" "${BOOTFW}/slotA/"
 
-echo "repartition.sh: wrote ${OUT_IMG}"
+# Every fresh build ships with this set, so slide-announcer-factory-reset-check.service
+# always formats /data on the device's first boot — see the comment on the
+# mkfs.ext4 calls above for why that's now the *only* place a data
+# filesystem gets created (repartition.sh no longer writes one at build
+# time). The service removes the flag itself once it's run.
+touch "${BOOTFW}/FACTORY_RESET"
+
+# --- shrink rootA to its actual content, then truncate the image file right
+# after it. rootA is mounted read-only on the device (see
+# stage-slide-announcer/01-system-files/00-run.sh), so it never needs to
+# grow back to fill its (fixed, future-proofed) partition-table size —
+# unlike /data, there's no first-boot step undoing this. rootB and data's
+# partition-table entries still reserve their full fixed sizes, they just
+# have no bytes in the file past this point.
+umount "${DST_ROOT_MNT}/boot/firmware"
+umount "$DST_ROOT_MNT"
+umount "$SRC_BOOT_MNT"
+umount "$SRC_ROOT_MNT"
+
+e2fsck -fy "${DST_LOOP}p2" || true
+resize2fs -M "${DST_LOOP}p2"
+ROOTA_FS_BYTES="$(dumpe2fs -h "${DST_LOOP}p2" 2>/dev/null | awk -F: '
+	/Block count/ { blocks = $2 }
+	/Block size/  { size = $2 }
+	END { print blocks * size }
+')"
+
+losetup -d "$DST_LOOP"
+losetup -d "$SRC_LOOP"
+DST_LOOP=""
+SRC_LOOP=""
+
+TRUNCATED_SIZE=$((ROOTA_START + ROOTA_FS_BYTES))
+truncate -s "$TRUNCATED_SIZE" "$OUT_IMG"
+
+echo "repartition.sh: wrote ${OUT_IMG} (truncated to ${TRUNCATED_SIZE}B after rootA's shrunk filesystem)"
 echo "  boot  PARTUUID=${NEW_BOOT_PARTUUID}"
-echo "  rootA LABEL=rootA  (active, $((FIXED_ROOT_SIZE_BYTES / 1024 / 1024))MiB; boot/firmware/slotA/ seeded to match)"
-echo "  rootB (unused placeholder, same size; boot/firmware/slotB/ empty until first OTA)"
-echo "  data  PARTUUID=${NEW_DATA_PARTUUID}  (${DATA_PLACEHOLDER_SIZE_MB}MiB placeholder, grows on first boot)"
+echo "  rootA LABEL=rootA  (active, shrunk to ${ROOTA_FS_BYTES}B content; partition table reserves $((FIXED_ROOT_SIZE_BYTES / 1024 / 1024))MiB; boot/firmware/slotA/ seeded to match)"
+echo "  rootB (partition table reserves $((FIXED_ROOT_SIZE_BYTES / 1024 / 1024))MiB, no filesystem yet; boot/firmware/slotB/ empty until first OTA)"
+echo "  data  PARTUUID=${NEW_DATA_PARTUUID}  (partition table reserves ${DATA_PLACEHOLDER_SIZE_MB}MiB, formatted by FACTORY_RESET flag on first boot, then grows)"

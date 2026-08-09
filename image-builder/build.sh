@@ -416,9 +416,21 @@ echo "==> Done: ${DEPLOY_DIR}/${OUT_NAME}"
 echo "==> Extracting rootA + boot files into a standalone bundle for RAUC"
 BUNDLE_DIR="${WORK}/bundle"
 mkdir -p "$BUNDLE_DIR"
+
+# rootA's partition-table entry still declares the full fixed size (5GiB by
+# default — reserved for future, larger RAUC bundles), but repartition.sh
+# truncated FINAL_IMG right after rootA's actual (shrunk) filesystem, so the
+# file has no bytes for the rest of that declared range. Reading rootA via
+# a loop partition device (sized off the partition table) would run past
+# the end of the backing file — read the exact byte range straight out of
+# FINAL_IMG instead, which is also the right amount to ship in the bundle.
+ROOTA_START="$(parted -ms "$FINAL_IMG" unit B print | awk -F: '$1 == "2" {print $2}' | tr -d B)"
+ROOTA_FS_BYTES="$(($(stat -c%s "$FINAL_IMG") - ROOTA_START))"
+dd if="$FINAL_IMG" of="${BUNDLE_DIR}/rootfs.img" bs=1M \
+	skip="$ROOTA_START" count="$ROOTA_FS_BYTES" iflag=skip_bytes,count_bytes status=none
+
 FINAL_LOOP="$(sudo losetup --show --find --partscan --read-only "$FINAL_IMG")"
 udevadm settle 2>/dev/null || true
-sudo dd if="${FINAL_LOOP}p2" of="${BUNDLE_DIR}/rootfs.img" bs=4M status=none
 
 BOOT_MNT="${WORK}/boot-mnt"
 mkdir -p "$BOOT_MNT"

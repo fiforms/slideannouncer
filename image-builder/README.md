@@ -64,27 +64,47 @@ to validate against real hardware, not a proven implementation.
                      (whichever slot is currently committed) plus
                      slotA/ and slotB/ subdirs (RAUC's "kernel" custom
                      slot target — see system/rauc/system.conf)
-  p2  rootA  ext4   fixed size (default 3GiB), pi-gen's root content, ACTIVE
-  p3  rootB  ext4   same fixed size, empty — unused until first OTA
-  p4  data   ext4   small placeholder; grown to fill the real SD card by
-                     slide-announcer-data-resize.service on first boot
+  p2  rootA  ext4   fixed size (default 3GiB) reserved in the partition
+                     table, pi-gen's root content copied in then shrunk to
+                     that content's actual size, ACTIVE
+  p3  rootB  ext4   same fixed size reserved, no filesystem written at all
+                     — unused until first OTA
+  p4  data   ext4   small placeholder size reserved, no filesystem written
+                     at all — formatted on first boot (see below), then
+                     grown to fill the real SD card by
+                     slide-announcer-data-resize.service
   ```
 
-  `data` gets a filesystem here but is otherwise left empty — even `/etc`'s
-  read-only-rootfs overlay upper/work directories (which have to exist
-  before the very first boot's overlay mount) are created at boot instead
-  (`slide-announcer-data-dirs.service`), not seeded here, so a brand-new
-  card and a post-factory-reset `/data` go through the exact same
-  boot-time path rather than two mechanisms that could drift apart. Also
-  seeds `boot/firmware/slotA/` to mirror the partition root (this build's
-  active slot) while `slotB/` starts empty. RAUC's own A/B bookkeeping needs
-  nothing pre-seeded on `/data` at all — see `system/rauc/rpi-tryboot-backend.sh`
-  for why (it's derived from the running kernel's `/proc/cmdline`
-  instead, specifically so a `/data` wipe/factory-reset can't desync it).
+  The output `.img` file is truncated right after rootA's shrunk
+  filesystem — rootB and `data` are only partition-table entries at that
+  point, with no bytes of their own in the file, so flashing doesn't spend
+  time writing several gigabytes of zeros for partitions nothing reads
+  before first boot/first OTA. rootA is mounted read-only on the device, so
+  it never needs to grow back to fill its reserved partition size the way
+  `data` does.
+
+  Because `data` has no filesystem in the shipped image, this script also
+  drops a `FACTORY_RESET` flag onto the boot partition so that
+  `slide-announcer-factory-reset-check.service` always formats it fresh on
+  the very first boot — the same path a manual factory reset already used,
+  now doing double duty. Even `/etc`'s read-only-rootfs overlay upper/work
+  directories (which have to exist before the very first boot's overlay
+  mount) are created at boot instead (`slide-announcer-data-dirs.service`),
+  not seeded here, so a brand-new card and a post-factory-reset `/data` go
+  through the exact same boot-time path rather than two mechanisms that
+  could drift apart. Also seeds `boot/firmware/slotA/` to mirror the
+  partition root (this build's active slot) while `slotB/` starts empty.
+  RAUC's own A/B bookkeeping needs nothing pre-seeded on `/data` at all —
+  see `system/rauc/rpi-tryboot-backend.sh` for why (it's derived from the
+  running kernel's `/proc/cmdline` instead, specifically so a `/data`
+  wipe/factory-reset can't desync it).
 
   Building this out now (rather than a single auto-expanding rootfs) means
   devices flashed today need no re-partitioning/data-migration for a RAUC
   OTA — just a normal install into the already-present `rootB`/`slotB/`.
+  The partitions are reserved at a fixed size larger than any current
+  content specifically so a future, larger rootfs still fits without a
+  layout change.
 - `build.sh` — top-level entrypoint. See "Building," below.
 - `generate-rauc-cert.sh` — generates RAUC bundle-signing cert/key
   material (`image-builder/certs/`, gitignored), in two modes: `dev` (a
