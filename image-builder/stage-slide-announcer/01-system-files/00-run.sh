@@ -244,6 +244,22 @@ systemctl mask rpi-resizerootfs.service 2>/dev/null || true
 # `mask` unconditionally symlinks to /dev/null regardless of preset state.
 systemctl mask getty@tty1.service
 
+# Stock Debian periodic units that are pure waste on this device: /var is a
+# tmpfs overlay (see system/README.md), so apt-daily/apt-daily-upgrade just
+# re-fetch package indexes and .deb files from Debian's mirrors every day
+# only to have them vanish on the next reboot — we never install via apt on
+# a running device anyway (RAUC owns updates). man-db and dpkg-db-backup
+# likewise churn tmpfs for a man-page index and a status backup nothing
+# reads. e2scrub assumes a writable ext4 root; rootA/rootB are mounted ro.
+# All enabled via vendor preset, not an explicit symlink, so `mask` (not
+# `disable`) is what actually takes effect offline — same reasoning as
+# getty@tty1 above.
+systemctl mask apt-daily.timer apt-daily.service
+systemctl mask apt-daily-upgrade.timer apt-daily-upgrade.service
+systemctl mask man-db.timer man-db.service
+systemctl mask dpkg-db-backup.timer dpkg-db-backup.service
+systemctl mask e2scrub_all.timer e2scrub_all.service e2scrub_reap.service
+
 systemctl enable slide-announcer-overlay-var-dirs.service
 systemctl enable slide-announcer-factory-reset-check.service
 systemctl enable slide-announcer-data-dirs.service
