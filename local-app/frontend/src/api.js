@@ -28,6 +28,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ssid }),
     }),
+  pair: (code, deviceName) =>
+    request('/api/local/pair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, device_name: deviceName }),
+    }),
+  unpair: () => request('/api/local/unpair', { method: 'POST' }),
+  syncStatus: () => request('/api/local/sync/status'),
   updateCheckStatus: () => request('/api/local/system/update-check'),
   triggerUpdateCheck: () => request('/api/local/system/update-check', { method: 'POST' }),
   reboot: () => request('/api/local/system/reboot', { method: 'POST' }),

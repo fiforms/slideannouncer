@@ -47,6 +47,24 @@ async function reboot() {
   }
 }
 
+const confirmingUnpair = ref(false)
+const unpairing = ref(false)
+const unpairError = ref(null)
+
+async function unpair() {
+  unpairing.value = true
+  unpairError.value = null
+  try {
+    await api.unpair()
+    await reboot()
+  } catch (err) {
+    unpairError.value = err.message
+    unpairing.value = false
+  } finally {
+    confirmingUnpair.value = false
+  }
+}
+
 const confirmingReset = ref(false)
 const resetConfirmText = ref('')
 const resetting = ref(false)
@@ -74,9 +92,9 @@ async function factoryReset() {
     <section class="block">
       <h2>Software Update</h2>
       <p class="hint">
-        Checks the AnnouncementSlides server for a newer OS image. Pairing
-        isn't implemented yet, so this will report "not paired" until it is
-        — that's expected, not a bug.
+        Checks the AnnouncementSlides server for a newer OS image. Reports
+        "not paired" until this device has been paired (see "Pair This
+        Device" on the home screen).
       </p>
       <button class="tile action" :disabled="checking" @click="checkForUpdate">
         {{ checking ? 'Checking…' : 'Check for Update' }}
@@ -110,6 +128,28 @@ async function factoryReset() {
         <button class="tile action" @click="confirmingReboot = false">Cancel</button>
       </div>
       <p v-if="rebootError" class="pill warn">{{ rebootError }}</p>
+    </section>
+
+    <section class="block">
+      <h2>Unpair Device</h2>
+      <p class="hint">
+        Disconnects this device from its site and reboots to the pairing
+        screen. Re-pairing (to this site or a different one) needs a fresh
+        code from the website. Lighter than Factory Reset below — this
+        leaves WiFi credentials and device identity alone.
+      </p>
+
+      <div v-if="unpairing" class="status-block">
+        <p class="pill warn">Unpairing…</p>
+      </div>
+      <div v-else-if="!confirmingUnpair" class="actions">
+        <button class="tile action danger" @click="confirmingUnpair = true">Unpair Device</button>
+      </div>
+      <div v-else class="actions">
+        <button class="tile action danger" @click="unpair">Yes, unpair now</button>
+        <button class="tile action" @click="confirmingUnpair = false">Cancel</button>
+      </div>
+      <p v-if="unpairError" class="pill warn">{{ unpairError }}</p>
     </section>
 
     <section class="block">

@@ -21,8 +21,15 @@ onMounted(async () => {
       <dt>Hostname</dt><dd>{{ status.hostname ?? '—' }}</dd>
       <dt>Image version</dt><dd>{{ status.image_version ?? '—' }}</dd>
       <dt>Device UUID</dt><dd>{{ status.device_uuid ?? '—' }}</dd>
+      <dt>Paired</dt><dd>{{ status.paired ? 'Yes' : 'No' }}</dd>
+      <dt>Last heartbeat</dt>
+      <dd>{{ status.heartbeat?.last_success_at ?? 'Never' }}</dd>
+      <dt v-if="status.heartbeat?.last_error">Last heartbeat error</dt>
+      <dd v-if="status.heartbeat?.last_error">{{ status.heartbeat.last_error }}</dd>
     </dl>
-    <p class="hint">Pairing and unpair status will appear here once device pairing is implemented.</p>
+    <p v-if="!status?.paired" class="hint">
+      Not paired yet — see "Pair This Device" on the home screen.
+    </p>
   </div>
 </template>
 

@@ -1,23 +1,36 @@
 """Local backend — WiFi/network settings API for the on-device settings menu
-(see SLIDE_ANNOUNCER.md, "Kiosk display", "Local settings menu"), plus the
-local-status endpoint the kiosk home page polls. Pairing and slide sync are
-still not implemented (that's a separate build against the not-yet-built
-server-side pairing API).
+(see SLIDE_ANNOUNCER.md, "Kiosk display", "Local settings menu"), the
+pairing screen's API, the heartbeat background task, and the local-status
+endpoint the kiosk home page polls. Slide sync/display are still stubs
+(separate build, see SLIDE_ANNOUNCER.md's Tier 2 "Slide sync daemon").
 """
+import asyncio
 import json
 import socket
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+import heartbeat
 import network
+import pairing
+import sync
 import system_control
-
-app = FastAPI()
 
 SETUP_MODE_STATUS = Path("/data/status/setup-mode.json")
 VERSION_FILE = Path("/opt/slide-announcer/VERSION")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(heartbeat.run_forever())
+    yield
+    task.cancel()
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/api/local/status")
@@ -29,14 +42,44 @@ def local_status():
         except json.JSONDecodeError:
             pass
 
+    paired = pairing.is_paired()
+
     return {
-        "status": "not_configured",
-        "message": "Slide Announcer image booted successfully. Pairing not yet implemented.",
+        "status": "paired" if paired else "not_paired",
+        "message": "Slide Announcer paired." if paired else "Slide Announcer image booted successfully. Not yet paired.",
         "hostname": socket.gethostname(),
         "image_version": VERSION_FILE.read_text().strip() if VERSION_FILE.exists() else None,
         "setup_mode": setup_info.get("setup_mode"),
         "device_uuid": setup_info.get("device_uuid"),
+        "paired": paired,
+        "heartbeat": heartbeat.read_status(),
+        "sync": sync.read_status(),
     }
+
+
+@app.get("/api/local/sync/status")
+def sync_status():
+    return sync.read_status()
+
+
+class PairRequest(BaseModel):
+    code: str
+    device_name: str
+
+
+@app.post("/api/local/pair")
+async def pair(body: PairRequest):
+    try:
+        data = await pairing.pair(body.code, body.device_name)
+    except pairing.PairingError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"ok": True, "slide_announcer_id": data["slide_announcer_id"]}
+
+
+@app.post("/api/local/unpair")
+async def unpair():
+    pairing.unpair_and_wipe()
+    return {"ok": True}
 
 
 @app.get("/api/local/network/status")

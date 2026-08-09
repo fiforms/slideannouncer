@@ -8,6 +8,7 @@ no network calls, no dependency on the (not yet built) pairing/sync API.
 See SLIDE_ANNOUNCER.md, "Device identity & anti-clone protection" and
 "First-boot / WiFi setup flow" for the full design this implements.
 """
+import grp
 import hashlib
 import hmac
 import json
@@ -21,10 +22,12 @@ from pathlib import Path
 import yaml
 
 BOOT_YAML = Path("/boot/firmware/slideannouncer.yaml")
+DATA_DIR = Path("/data")
 IDENTITY_KEY_PATH = Path("/data/identity.key")
 FIRSTBOOT_MARKER = Path("/data/.firstboot-complete")
 STATUS_DIR = Path("/data/status")
 SETUP_MODE_STATUS = STATUS_DIR / "setup-mode.json"
+BACKEND_GROUP = "slideannouncer"
 
 # Paths a real wipe-and-repair (per Heartbeat/Kiosk-display design) would
 # clear. None of these exist yet in the stub app, but clearing them here too
@@ -38,6 +41,30 @@ WIPE_ON_IDENTITY_MISMATCH = [
 
 def log(msg: str) -> None:
     print(f"firstboot: {msg}", flush=True)
+
+
+def ensure_data_group_writable() -> None:
+    """/data is created by mkfs (root:root, mode 0755) — the ext4 default
+    grants "other" read+traverse only, not write. The local-app backend
+    (system/slide-announcer-backend.service) runs as the unprivileged
+    `slideannouncer` user, and now needs to create new files directly
+    under /data (device-token) and /data/status (heartbeat.json) — see
+    pairing.py/heartbeat.py. Group-owning /data by that user's group and
+    making it group-writable is the minimal fix; called from
+    run_once_setup() so it reruns exactly when /data does (a factory
+    reset reformats /data, which wipes FIRSTBOOT_MARKER right along with
+    it, re-triggering this on the very next boot).
+    """
+    gid = grp.getgrnam(BACKEND_GROUP).gr_gid
+    os.chown(DATA_DIR, 0, gid)
+    DATA_DIR.chmod(0o775)
+
+
+def ensure_status_dir() -> None:
+    STATUS_DIR.mkdir(parents=True, exist_ok=True)
+    gid = grp.getgrnam(BACKEND_GROUP).gr_gid
+    os.chown(STATUS_DIR, 0, gid)
+    STATUS_DIR.chmod(0o775)
 
 
 def run_once_setup() -> None:
@@ -58,8 +85,8 @@ def run_once_setup() -> None:
     subprocess.run(["systemd-machine-id-setup"], check=True)
     dbus_machine_id.symlink_to("/etc/machine-id")
 
-    STATUS_DIR.mkdir(parents=True, exist_ok=True)
-    STATUS_DIR.chmod(0o755)
+    ensure_data_group_writable()
+    ensure_status_dir()
     FIRSTBOOT_MARKER.touch()
     log("first-boot setup complete")
 
@@ -187,8 +214,7 @@ def detect_setup_mode() -> None:
         mode = "ap-mode-fallback"
 
     log(f"detected setup mode: {mode}")
-    STATUS_DIR.mkdir(parents=True, exist_ok=True)
-    STATUS_DIR.chmod(0o755)
+    ensure_status_dir()
     SETUP_MODE_STATUS.write_text(
         json.dumps({"setup_mode": mode, "device_uuid": config.get("device_uuid")}, indent=2)
     )

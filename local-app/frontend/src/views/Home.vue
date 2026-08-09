@@ -26,9 +26,17 @@ onMounted(async () => {
       <dt>Image version</dt><dd>{{ status.image_version ?? '—' }}</dd>
       <dt>Device UUID</dt><dd>{{ status.device_uuid ?? '—' }}</dd>
       <dt>Setup mode detected</dt><dd>{{ status.setup_mode ?? '—' }}</dd>
+      <dt>Paired</dt><dd>{{ status.paired ? 'Yes' : 'No' }}</dd>
     </dl>
 
-    <router-link to="/settings" class="tile settings-link">Settings</router-link>
+    <p v-if="status?.paired" class="status">{{ status.sync?.message }}</p>
+
+    <div class="links">
+      <router-link v-if="status && !status.paired" to="/pairing" class="tile settings-link">
+        Pair This Device
+      </router-link>
+      <router-link to="/settings" class="tile settings-link">Settings</router-link>
+    </div>
   </div>
 </template>
 
@@ -37,6 +45,11 @@ onMounted(async () => {
   max-width: 32rem;
   margin: 10vh auto 0;
   text-align: center;
+}
+.links {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
 }
 h1 { font-size: 2rem; margin-bottom: 0.5rem; }
 .status { color: var(--text-dim); margin: 1rem 0; }
