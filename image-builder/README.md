@@ -142,6 +142,13 @@ field debugging, not deferred to Raspberry Pi OS's interactive first-boot
 wizard (which would otherwise contest the console with the kiosk on every
 fresh card). Not exposed remotely unless `SSH_DEV_BUILD=1` was used.
 
+For a real fleet image that still needs remote SSH access, set both
+`SLIDE_ANNOUNCER_ENABLE_SSH=1` and `SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH` in
+`.env` instead of `SSH_DEV_BUILD` — that loads the given public key into
+`slideadmin`'s `~/.ssh/authorized_keys` and disables SSH password
+authentication globally, so key-based login is the only way in. Leaving
+either one unset keeps SSH entirely disabled.
+
 Output — two artifacts, same version stamp:
 - `image-builder/deploy/slideannouncer-<build-date>-<git-hash>.img.xz` — the
   full boot+rootA+rootB+data disk, for initial flashing only.

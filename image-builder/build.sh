@@ -5,6 +5,11 @@
 #                               console-login password is still printed —
 #                               see image-builder/README.md)
 #   SSH_DEV_BUILD=1 ./build.sh same, plus SSH enabled with that same password
+#                               (a dev convenience — password auth stays on;
+#                               for a real fleet image, use
+#                               SLIDE_ANNOUNCER_ENABLE_SSH/
+#                               SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH in .env
+#                               instead, see .env.example)
 #   RESUME_WORK=<dir> ./build.sh
 #                               skip the pi-gen/Docker build and reuse an
 #                               already-decompressed raw.img from a previous
@@ -132,6 +137,35 @@ if [[ "$SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA" == *"["* ]]; then
 fi
 if [ -n "$SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA" ]; then
 	echo "==> Extra config.txt lines: ${SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA}"
+fi
+
+# SSH is off by default (see ENABLE_SSH=0 in ./config). It only turns on
+# when BOTH of these are set — a bare "enable SSH" flag with no key would
+# mean password auth over the network with no way to lock that down, and a
+# bare key with no flag would be silently inert, so neither alone does
+# anything. Once both are set, password authentication over SSH is
+# disabled globally (PUBKEY_ONLY_SSH below) — key-based login is the only
+# way in, on top of the normal slideadmin console password.
+SLIDE_ANNOUNCER_ENABLE_SSH="${SLIDE_ANNOUNCER_ENABLE_SSH:-0}"
+SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH="${SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH:-}"
+SSH_ENABLED=0
+if [ "$SLIDE_ANNOUNCER_ENABLE_SSH" = "1" ] && [ -n "$SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH" ]; then
+	if [ ! -f "$SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH" ]; then
+		echo "build.sh: SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH is not a file: ${SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH}" >&2
+		exit 1
+	fi
+	SSH_PUBLIC_KEY_CONTENT="$(cat "$SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH")"
+	case "$SSH_PUBLIC_KEY_CONTENT" in
+		ssh-rsa\ *|ssh-ed25519\ *|ecdsa-sha2-*\ *) ;;
+		*)
+			echo "build.sh: SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH doesn't look like an SSH public key (expected it to start with ssh-rsa/ssh-ed25519/ecdsa-sha2-...): ${SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH}" >&2
+			exit 1
+			;;
+	esac
+	SSH_ENABLED=1
+	echo "==> SSH enabled for slideadmin (key-based only, from ${SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH}) — password authentication disabled globally"
+elif [ "$SLIDE_ANNOUNCER_ENABLE_SSH" = "1" ] || [ -n "$SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH" ]; then
+	echo "==> Only one of SLIDE_ANNOUNCER_ENABLE_SSH/SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH is set — both are required, so SSH stays disabled" >&2
 fi
 
 cleanup() {
@@ -306,6 +340,21 @@ echo "==> Local account 'slideadmin' password (console/keyboard login only): ${U
 if [ "${SSH_DEV_BUILD:-0}" = "1" ]; then
 	echo "ENABLE_SSH=1" >> "$CONFIG_FILE"
 	echo "==> SSH_DEV_BUILD=1: SSH enabled too — same password as above"
+fi
+
+# Key-based SSH from .env (see the SLIDE_ANNOUNCER_ENABLE_SSH/
+# SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH validation above). PUBKEY_ONLY_SSH is
+# pi-gen's own knob for this — it rewrites /etc/ssh/sshd_config to disable
+# PasswordAuthentication and enable PubkeyAuthentication, globally, so this
+# takes precedence over SSH_DEV_BUILD's password-based access above (both
+# can be set at once — password login just stops working either way).
+# printf %q rather than a plain assignment: PUBKEY_SSH_FIRST_USER's value
+# has spaces (`ssh-ed25519 AAAA... comment`), and this file gets sourced as
+# a shell script by pi-gen's build.sh, so it needs to come out quoted.
+if [ "$SSH_ENABLED" = "1" ]; then
+	echo "ENABLE_SSH=1" >> "$CONFIG_FILE"
+	echo "PUBKEY_ONLY_SSH=1" >> "$CONFIG_FILE"
+	printf 'PUBKEY_SSH_FIRST_USER=%q\n' "$SSH_PUBLIC_KEY_CONTENT" >> "$CONFIG_FILE"
 fi
 
 if ! command -v qemu-aarch64-static >/dev/null 2>&1; then
