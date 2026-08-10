@@ -73,6 +73,52 @@ install -d "${ROOTFS_DIR}/etc/tmpfiles.d"
 install -m 644 files/system/rauc/slide-announcer-rauc.conf \
 	"${ROOTFS_DIR}/etc/tmpfiles.d/slide-announcer-rauc.conf"
 
+# Debian's rauc package (confirmed via `dpkg -L rauc`) ships only the
+# binary — no rauc.service unit, no D-Bus service/policy files. Without
+# these, `rauc install`/`rauc status` fail outright ("Failed to contact
+# rauc service: The name de.pengutronix.rauc was not provided by any
+# .service files"). Confirmed by testing TWICE now: first when this was
+# discovered and fixed as a manual live patch directly on a device's
+# filesystem, and again when an OTA-installed slot — a fresh copy from
+# THIS build pipeline, never touched by that live patch — hit the exact
+# same error, because the live patch was never captured here. These three
+# files are RAUC's own documented D-Bus integration layout, not invented.
+install -d "${ROOTFS_DIR}/usr/share/dbus-1/system-services" \
+	"${ROOTFS_DIR}/etc/dbus-1/system.d" \
+	"${ROOTFS_DIR}/etc/systemd/system"
+cat > "${ROOTFS_DIR}/usr/share/dbus-1/system-services/de.pengutronix.rauc.service" <<'EOF'
+[D-BUS Service]
+Name=de.pengutronix.rauc
+Exec=/usr/bin/rauc service
+User=root
+SystemdService=rauc.service
+EOF
+cat > "${ROOTFS_DIR}/etc/dbus-1/system.d/de.pengutronix.rauc.conf" <<'EOF'
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <policy user="root">
+    <allow own="de.pengutronix.rauc"/>
+  </policy>
+  <policy context="default">
+    <allow send_destination="de.pengutronix.rauc"/>
+    <allow receive_sender="de.pengutronix.rauc"/>
+  </policy>
+</busconfig>
+EOF
+cat > "${ROOTFS_DIR}/etc/systemd/system/rauc.service" <<'EOF'
+[Unit]
+Description=Robust Auto-Update Controller (RAUC) service
+
+[Service]
+Type=dbus
+BusName=de.pengutronix.rauc
+ExecStart=/usr/bin/rauc service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 # The AnnouncementSlides server this fleet talks to (build.sh validates
 # SLIDE_ANNOUNCER_SERVER_URL is set before staging this) — one server per
 # fleet, baked in at build time. Read by the local-app backend (pairing/
@@ -153,6 +199,22 @@ install -m 644 files/system/read-only-root/journald-volatile.conf \
 # in place rather than risking reordering root=/rootfstype=/etc.
 CMDLINE="${ROOTFS_DIR}/boot/firmware/cmdline.txt"
 sed -i 's/console=tty1/console=tty3/' "$CMDLINE"
+# Strip the stock "resize" cmdline token (pi-gen's stage2/01-sys-tweaks
+# enables it) the same way rpi-resizerootfs.service is masked below —
+# both exist for the classic Raspberry Pi OS first-boot "grow root to fill
+# the SD card" flow, which this project replaces with repartition.sh
+# sizing rootA at build time instead. Masking the service alone isn't
+# enough: on a REAL device that already booted once, whatever consumes
+# this token at runtime self-cleans it from the live cmdline.txt, but a
+# RAUC bundle is built from a fresh, never-booted pi-gen image on the
+# build host — that self-cleaning never runs there, so the bare "resize"
+# token was riding straight into every OTA bundle's boot files untouched.
+# Confirmed by testing: it caused a kernel panic ("Unable to mount root
+# fs on unknown-block(0,0)") on the very first real tryboot attempt, on a
+# rootB whose cmdline.txt still had it (rootA's own, from this project's
+# very first real device boot, didn't — this bug was previously masked
+# entirely by that one-time self-cleaning already having happened here).
+sed -i -E 's/ resize\b//' "$CMDLINE"
 # `ro`: belt-and-suspenders alongside /etc/fstab's ro root entry above — the
 # kernel mounts root directly from this cmdline (no initramfs in this
 # image), before /etc/fstab is even read, so this is what actually makes
@@ -275,6 +337,7 @@ systemctl enable slide-announcer-local-app-seed.service
 systemctl enable slide-announcer-backend.service
 systemctl enable slide-announcer-kiosk.service
 systemctl enable slide-announcer-tryboot-check.service
+systemctl enable rauc.service
 systemctl enable nginx.service
 systemctl enable seatd.service
 EOF

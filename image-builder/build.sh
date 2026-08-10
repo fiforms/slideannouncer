@@ -447,9 +447,27 @@ sudo umount "$BOOT_MNT"
 sudo chown -R "$(id -u):$(id -g)" "$BOOTFILES_DIR"
 
 # cmdline.txt's root= is device- and slot-specific (which of rootA/rootB
-# this bundle lands in on a given device isn't known until install time) —
-# templated here, filled in by the bundle hook's slot-install step below.
-sed -i -E 's/root=LABEL=root[AB]/root=LABEL=__ROOTLABEL__/' "${BOOTFILES_DIR}/cmdline.txt"
+# this bundle lands in on a given device isn't known until install time,
+# and the ACTUAL PARTUUID of that slot on that specific device isn't
+# known at build time either) — templated here as a placeholder, resolved
+# dynamically on-device by the bundle hook's slot-install step below via
+# blkid, after the rootfs slot's own install has already relabeled the
+# target partition. PARTUUID, not LABEL: confirmed by testing on real
+# hardware that root=LABEL=... does not reliably resolve during a tryboot
+# (os_prefix) boot — it panics ("Unable to mount root fs on
+# unknown-block(0,0)") even with a generous rootdelay=, while the
+# identical partition referenced by root=PARTUUID= boots clean every
+# time. Also strip any rauc.slot=rootfs.N already present: this file is
+# rsynced off the just-built image's OWN boot partition, which
+# repartition.sh already stamped with rauc.slot=rootfs.0 (since the build
+# machine's own rootA always says rootfs.0) — left in place, the hook
+# below would just append a second, conflicting rauc.slot= next to it
+# instead of replacing it, and a cmdline with two rauc.slot= arguments
+# produced exactly the same panic. That marker is inherently specific to
+# whichever slot a bundle actually installs into on a given device, never
+# something to inherit from the build machine's own current state.
+sed -i -E 's/root=PARTUUID=[0-9a-fA-F-]+/root=PARTUUID=__ROOTPARTUUID__/; s/ rauc\.slot=rootfs\.[01]//' \
+	"${BOOTFILES_DIR}/cmdline.txt"
 
 tar -C "$BOOTFILES_DIR" -czf "${BUNDLE_DIR}/bootfiles.tar.gz" .
 
@@ -478,19 +496,24 @@ sudo umount "$ROOTFS_MNT"
 #
 # slot-post-install on [image.rootfs]: RAUC's default install for an ext4
 # slot with a full raw filesystem image is a plain byte copy onto the slot
-# device — it does not reformat/relabel. This bundle's rootfs.img is dd'd
-# straight off the currently-active slot (see the dd call above), so BOTH
-# its ext4 superblock label AND its /etc/fstab root entry still carry THAT
-# slot's own label (e.g. "rootA") baked in verbatim — fstab isn't
-# generated per-build, it's just whatever was on the source slot's
-# filesystem when the bundle was made. Installed onto the other slot as-is,
-# this would leave two partitions claiming the same ext4 LABEL (and the
-# target slot's own label gone entirely, with fstab still pointing at the
-# wrong one) — breaking cmdline.txt's root=LABEL=rootX matching on
-# whichever slot most recently received an update. Fixing both, keyed off
-# RAUC_SLOT_BOOTNAME (system.conf's bootname=A/B for slot.rootfs.0/.1, not
-# the source image's own label), after every install handles this
-# regardless of which direction (A->B or B->A) the update runs.
+# device — it does not reformat/relabel/rewrite anything. This bundle's
+# rootfs.img is dd'd straight off the currently-active slot (see the dd
+# call above), so its ext4 superblock label AND all three of its
+# /etc/fstab device lines (root, /boot/firmware, /data) still carry
+# whatever the BUILD MACHINE's own values were — not just a stale label,
+# but literally a different disk's PARTUUIDs entirely, since every
+# device's NEW_DISK_ID is randomly assigned per build/per device (see
+# repartition.sh). Confirmed by testing: this left /data mounting against
+# a PARTUUID that doesn't exist on the actual device at all, which stalls
+# boot indefinitely (systemd-remount-fs/the /etc overlay's
+# requires-mounts-for=/data waiting on a device unit that can never
+# appear). Fixing all three lines by MOUNTPOINT (not by matching whatever
+# stale device spec happens to be there) and re-deriving each PARTUUID
+# fresh via blkid on THIS device, after every install, handles this
+# regardless of which direction (A->B or B->A) the update runs. e2label
+# is kept too, even though nothing below still depends on the ext4 label
+# for booting — purely so blkid/lsblk output stays human-readable for
+# whoever's debugging next.
 cat > "${BUNDLE_DIR}/hook.sh" <<'HOOKEOF'
 #!/bin/bash
 set -euo pipefail
@@ -514,19 +537,27 @@ slot-install)
 	# gid 1000: Operation not permitted", fatal under set -e once tar's own
 	# exit code reflects it).
 	tar --no-same-owner -xzf "${RAUC_IMAGE_NAME:?}" -C "$TARGET"
-	sed -i -E "s/__ROOTLABEL__/root${ROOTLABEL}/; s#(root=LABEL=root${ROOTLABEL})#\1 rauc.slot=rootfs.$([ "$ROOTLABEL" = A ] && echo 0 || echo 1)#" \
+	# Depends on the rootfs slot's own slot-post-install hook (below)
+	# having already relabeled the target partition — confirmed by testing
+	# that RAUC always installs [image.rootfs] before [image.kernel] (this
+	# manifest's own declaration order), so "root${ROOTLABEL}" already
+	# resolves to the just-written partition by the time this runs.
+	ROOT_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -L "root${ROOTLABEL}")")"
+	sed -i -E "s/__ROOTPARTUUID__/${ROOT_PARTUUID}/; s#(root=PARTUUID=${ROOT_PARTUUID})#\1 rauc.slot=rootfs.$([ "$ROOTLABEL" = A ] && echo 0 || echo 1)#" \
 		"${TARGET}/cmdline.txt"
 	;;
 slot-post-install)
 	e2label "${RAUC_SLOT_DEVICE:?}" "root${RAUC_SLOT_BOOTNAME:?}"
-	# /etc/fstab's own root entry has the exact same baked-in-label problem
-	# as the ext4 superblock above — it's dd'd verbatim from whichever slot
-	# this bundle was built from, so it always says "LABEL=root<source
-	# letter>" regardless of which slot it's actually installed onto.
 	# [image.rootfs]'s hooks=post-install makes RAUC auto-mount this slot
 	# and provide RAUC_SLOT_MOUNT_POINT for exactly this kind of fixup.
 	mount -o remount,rw "${RAUC_SLOT_MOUNT_POINT:?}"
-	sed -i -E "s/^LABEL=root[AB]/LABEL=root${RAUC_SLOT_BOOTNAME}/" \
+	ROOT_PARTUUID="$(blkid -s PARTUUID -o value "${RAUC_SLOT_DEVICE:?}")"
+	BOOT_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -L bootfs)")"
+	DATA_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -L data)")"
+	sed -i -E \
+		-e "s#^\S+(\s+/\s)#PARTUUID=${ROOT_PARTUUID}\1#" \
+		-e "s#^\S+(\s+/boot/firmware\s)#PARTUUID=${BOOT_PARTUUID}\1#" \
+		-e "s#^\S+(\s+/data\s)#PARTUUID=${DATA_PARTUUID}\1#" \
 		"${RAUC_SLOT_MOUNT_POINT}/etc/fstab"
 	;;
 esac

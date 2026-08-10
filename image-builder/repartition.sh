@@ -147,25 +147,31 @@ sed -i -E "s/PARTUUID=[0-9a-fA-F]{8}-01/PARTUUID=${NEW_BOOT_PARTUUID}/" \
 	"${DST_ROOT_MNT}/etc/fstab" "${DST_ROOT_MNT}/boot/firmware/cmdline.txt"
 sed -i "s/DATADEV/PARTUUID=${NEW_DATA_PARTUUID}/" "${DST_ROOT_MNT}/etc/fstab"
 
-# root= uses the ext4 LABEL, not a PARTUUID, unlike boot/data above — a
-# PARTUUID is unique per built image (NEW_DISK_ID, randomly assigned right
-# here), but a RAUC bundle is built once and installed fleet-wide into
-# whichever of rootA/rootB is currently inactive on each individual
-# device, so it can't carry a literal PARTUUID for "the slot it lands in."
-# LABEL=rootA/rootB is a fleet-wide constant instead (set by mkfs.ext4
-# above on every device), which is what makes image-builder/build.sh's
-# bundled boot files portable across the fleet at all — see its
-# bootfiles.tar.gz/hook.sh comments.
-sed -i -E "s/PARTUUID=[0-9a-fA-F]{8}-02/LABEL=rootA/" \
+# root= uses this device's real, freshly-computed rootA PARTUUID, not a
+# fleet-wide LABEL. An EARLIER version of this used LABEL=rootA/rootB
+# specifically because a RAUC bundle is built once and installed
+# fleet-wide into whichever of rootA/rootB is inactive on each device, so
+# it can't carry a literal PARTUUID for "the slot it lands in" at BUILD
+# time. But confirmed by testing on real hardware: root=LABEL=... simply
+# does not reliably resolve during a tryboot (os_prefix) boot — it panics
+# ("Unable to mount root fs on unknown-block(0,0)") even with a generous
+# rootdelay=, while the *identical* partition referenced by root=PARTUUID=
+# boots clean every time. So the bundle's install hook (build.sh's
+# hook.sh) resolves the ACTUAL target PARTUUID dynamically, on-device,
+# via blkid, at install time instead of relying on a build-time constant
+# — see its own comments for how.
+sed -i -E "s/PARTUUID=[0-9a-fA-F]{8}-02/PARTUUID=${NEW_ROOTA_PARTUUID}/" \
 	"${DST_ROOT_MNT}/etc/fstab" "${DST_ROOT_MNT}/boot/firmware/cmdline.txt"
 
-# RAUC's own internal "which slot is booted" detection doesn't reliably
-# parse root=LABEL=... (confirmed by testing) — per RAUC's docs, an
-# explicit rauc.slot=<name> cmdline argument is the supported way to tell
-# it directly. This build's active slot is always rootfs.0 (rootA);
+# Per RAUC's own docs, root=PARTUUID= root device paths ARE natively
+# resolvable for its internal "which slot is booted" detection (unlike
+# the LABEL= form this replaced, which was confirmed broken by testing) —
+# but rauc.slot= is kept anyway since it's already proven working and
+# there's no reason to swap out a validated mechanism while changing
+# something else. This build's active slot is always rootfs.0 (rootA);
 # image-builder/build.sh's OTA install hook sets this to whichever slot
 # it's actually installing into. See system/rauc/system.conf's comment.
-sed -i -E 's/(root=LABEL=rootA)/\1 rauc.slot=rootfs.0/' \
+sed -i -E "s#(root=PARTUUID=${NEW_ROOTA_PARTUUID})#\1 rauc.slot=rootfs.0#" \
 	"${DST_ROOT_MNT}/boot/firmware/cmdline.txt"
 
 # system.conf's rootfs slot devices are by-partuuid, not by-label (see its
