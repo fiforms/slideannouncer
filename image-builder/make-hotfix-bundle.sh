@@ -8,7 +8,12 @@
 # a real OS OTA. Don't use this for anything you'd want automatic rollback
 # on.
 #
-#   ./make-hotfix-bundle.sh <files-dir> <bundle-name> <required-version> <new-version>
+#   ./make-hotfix-bundle.sh <files-dir> <required-version> <new-version>
+#
+# Output filename encodes both versions:
+# slideannouncer-<new-version>.hotfix.from.<required-version>.raucb —
+# no separate free-text label, since the versions already say what a
+# human needs to know: what this hotfix requires and what it bumps to.
 #
 # <files-dir> is copied verbatim onto the device's root — e.g. a file at
 # <files-dir>/opt/slide-announcer/foo.py lands at /opt/slide-announcer/foo.py
@@ -34,11 +39,10 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="${HERE}/deploy"
 
-USAGE="usage: $0 <files-dir> <bundle-name> <required-version> <new-version>"
+USAGE="usage: $0 <files-dir> <required-version> <new-version>"
 FILES_DIR="${1:?$USAGE}"
-BUNDLE_NAME="${2:?$USAGE}"
-REQUIRED_VERSION="${3:?$USAGE}"
-NEW_VERSION="${4:?$USAGE}"
+REQUIRED_VERSION="${2:?$USAGE}"
+NEW_VERSION="${3:?$USAGE}"
 
 if [ ! -d "$FILES_DIR" ]; then
 	echo "make-hotfix-bundle.sh: ${FILES_DIR} is not a directory" >&2
@@ -129,7 +133,7 @@ hooks=install
 EOF
 
 mkdir -p "$DEPLOY_DIR"
-BUNDLE_OUT="${DEPLOY_DIR}/hotfix-${BUNDLE_NAME}.raucb"
+BUNDLE_OUT="${DEPLOY_DIR}/slideannouncer-${NEW_VERSION}.hotfix.from.${REQUIRED_VERSION}.raucb"
 echo "==> Building and signing hotfix bundle"
 rauc bundle --cert="$RAUC_CERT_PATH" --key="$RAUC_KEY_PATH" "$BUNDLE_DIR" "$BUNDLE_OUT"
 

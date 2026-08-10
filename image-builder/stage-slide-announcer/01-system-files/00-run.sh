@@ -17,16 +17,17 @@ cp files/local-app-release/local-app.tar.gz "${ROOTFS_DIR}/opt/slide-announcer/l
 cp files/local-app-release/VERSION "${ROOTFS_DIR}/opt/slide-announcer/local-app-release/VERSION"
 cp files/local-app-release/requirements.txt "${ROOTFS_DIR}/opt/slide-announcer/local-app-release/requirements.txt"
 
-# Version stamp: <kernel-version>-<build-date>-<git-hash>. BUILD_DATE/
-# GIT_HASH come from build.sh (host-side, so they reflect the
-# slideannouncer repo's commit, not pi-gen's); the kernel version has to be
-# read from inside the rootfs itself — `uname -r` in this script would only
-# report the x86 build host's kernel, not the image's.
+# Version stamp: this project's own semver (image-builder/VERSION,
+# bumped manually per release), not a kernel/build-date/git-hash
+# fingerprint — OTA bundles and hotfixes name themselves after this and
+# gate on it (see make-hotfix-bundle.sh), so it needs to be something a
+# human chose, not something that changes on every build. OS_VERSION
+# comes from build.sh (host-side) via BUILD_INFO; BUILD_DATE/GIT_HASH are
+# still in that file too, for build-log provenance only — see build.sh's
+# own comment.
 # shellcheck disable=SC1091
 . files/BUILD_INFO
-KERNEL_VERSION="$(ls "${ROOTFS_DIR}/lib/modules" 2>/dev/null | sort -V | tail -1)"
-KERNEL_VERSION="${KERNEL_VERSION:-unknown-kernel}"
-echo "${KERNEL_VERSION}-${BUILD_DATE}-${GIT_HASH}" > "${ROOTFS_DIR}/opt/slide-announcer/VERSION"
+echo "${OS_VERSION:?}" > "${ROOTFS_DIR}/opt/slide-announcer/VERSION"
 
 install -m 644 files/system/*.service "${ROOTFS_DIR}/etc/systemd/system/"
 install -d "${ROOTFS_DIR}/usr/local/sbin" "${ROOTFS_DIR}/usr/local/bin"

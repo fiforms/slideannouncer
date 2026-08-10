@@ -217,12 +217,18 @@ sudo -v
 ) &
 SUDO_KEEPALIVE_PID=$!
 
-# Build provenance: <kernel-version>-<build-date>-<git-hash> (kernel version
-# is filled in by 01-system-files/00-run.sh, from inside the built rootfs —
-# `uname -r` here would only tell us this x86 build host's kernel, not the
-# image's, since the build is cross-compiled under qemu rather than booted).
-# Computed unconditionally (even on RESUME_WORK) since it's also used below
-# for the final output filename.
+# OS_VERSION is this project's own semver (image-builder/VERSION), bumped
+# manually per release — NOT derived from the kernel/build-date/git-hash
+# below, which are kept only as build provenance (visible in the build
+# log, no longer part of any filename or the on-device VERSION stamp) so
+# OTA bundles/hotfixes can name themselves after, and gate on, a clean,
+# human-meaningful version instead of a build fingerprint.
+OS_VERSION="$(cat "${HERE}/VERSION")"
+
+# Build provenance (log/debugging only — see OS_VERSION above for what
+# actually names files and gets written to /opt/slide-announcer/VERSION).
+# Computed unconditionally (even on RESUME_WORK) since 00-run.sh expects
+# BUILD_INFO to exist either way.
 BUILD_DATE="$(date -u +%Y-%m-%d)"
 GIT_HASH="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
 # `git diff --quiet` alone would miss untracked files — and right now
@@ -262,10 +268,11 @@ cp "${REPO_ROOT}/local-app/deploy/VERSION" "${FILES_DIR}/local-app-release/VERSI
 cp "${REPO_ROOT}/local-app/backend/requirements.txt" "${FILES_DIR}/local-app-release/requirements.txt"
 
 {
+	echo "OS_VERSION=${OS_VERSION}"
 	echo "BUILD_DATE=${BUILD_DATE}"
 	echo "GIT_HASH=${GIT_HASH}"
 } > "${FILES_DIR}/BUILD_INFO"
-echo "==> Build provenance: date=${BUILD_DATE} git=${GIT_HASH}"
+echo "==> Building slideannouncer ${OS_VERSION} (provenance: date=${BUILD_DATE} git=${GIT_HASH})"
 
 # Only a public cert goes into the image's RAUC keyring (installed by
 # 00-run.sh) — RAUC_KEYRING_CERT_PATH, not RAUC_CERT_PATH (the two are the
@@ -399,7 +406,7 @@ FINAL_IMG="${WORK}/${IMG_NAME}.img"
 echo "==> Repartitioning into boot/rootA/rootB/data (requires root)"
 sudo "${HERE}/repartition.sh" "${WORK}/raw.img" "$FINAL_IMG"
 
-OUT_NAME="${IMG_NAME}-${BUILD_DATE}-${GIT_HASH}.img.xz"
+OUT_NAME="${IMG_NAME}-${OS_VERSION}.img.xz"
 echo "==> Compressing final image"
 xz -6 -T0 -c "$FINAL_IMG" > "${DEPLOY_DIR}/${OUT_NAME}"
 sudo chown "$(id -u):$(id -g)" "${DEPLOY_DIR}/${OUT_NAME}"
@@ -474,10 +481,12 @@ tar -C "$BOOTFILES_DIR" -czf "${BUNDLE_DIR}/bootfiles.tar.gz" .
 sudo losetup -d "$FINAL_LOOP"
 sudo chown "$(id -u):$(id -g)" "${BUNDLE_DIR}/rootfs.img"
 
-# Read the exact version stamp 00-run.sh wrote into the image itself
-# (kernel-version-build_date-git_hash) rather than reconstructing it here,
-# so the RAUC manifest's version always matches what a running device
-# reports via /opt/slide-announcer/VERSION.
+# Read the version stamp 00-run.sh wrote into the image itself (same
+# OS_VERSION value, just verified round-trip) rather than reusing the
+# host-side variable directly, so the RAUC manifest's version always
+# matches what a running device actually reports via
+# /opt/slide-announcer/VERSION — catches a packaging bug rather than
+# assuming it can't happen.
 ROOTFS_MNT="${WORK}/rootfs-mnt"
 mkdir -p "$ROOTFS_MNT"
 sudo mount -o ro,loop "${BUNDLE_DIR}/rootfs.img" "$ROOTFS_MNT"
@@ -594,7 +603,7 @@ filename=bootfiles.tar.gz
 hooks=install
 EOF
 
-BUNDLE_OUT="${DEPLOY_DIR}/${IMG_NAME}-${BUILD_DATE}-${GIT_HASH}.raucb"
+BUNDLE_OUT="${DEPLOY_DIR}/${IMG_NAME}-${OS_VERSION}.raucb"
 echo "==> Building and signing RAUC bundle"
 rauc bundle --cert="$RAUC_CERT_PATH" --key="$RAUC_KEY_PATH" "$BUNDLE_DIR" "$BUNDLE_OUT"
 
