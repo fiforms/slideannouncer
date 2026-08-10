@@ -479,14 +479,17 @@ sudo umount "$ROOTFS_MNT"
 # slot-post-install on [image.rootfs]: RAUC's default install for an ext4
 # slot with a full raw filesystem image is a plain byte copy onto the slot
 # device — it does not reformat/relabel. This bundle's rootfs.img is dd'd
-# straight off the currently-active slot (see the dd call above), so its
-# ext4 superblock still carries THAT slot's own label (e.g. "rootA") baked
-# in verbatim. Installed onto the other slot as-is, this would leave two
-# partitions claiming the same ext4 LABEL (and the target slot's own label
-# gone entirely) — breaking cmdline.txt's root=LABEL=rootX matching on
-# whichever slot most recently received an update. Relabeling after every
-# install, keyed off RAUC_SLOT_BOOTNAME (system.conf's bootname=A/B for
-# slot.rootfs.0/.1, not the source image's own label), fixes this
+# straight off the currently-active slot (see the dd call above), so BOTH
+# its ext4 superblock label AND its /etc/fstab root entry still carry THAT
+# slot's own label (e.g. "rootA") baked in verbatim — fstab isn't
+# generated per-build, it's just whatever was on the source slot's
+# filesystem when the bundle was made. Installed onto the other slot as-is,
+# this would leave two partitions claiming the same ext4 LABEL (and the
+# target slot's own label gone entirely, with fstab still pointing at the
+# wrong one) — breaking cmdline.txt's root=LABEL=rootX matching on
+# whichever slot most recently received an update. Fixing both, keyed off
+# RAUC_SLOT_BOOTNAME (system.conf's bootname=A/B for slot.rootfs.0/.1, not
+# the source image's own label), after every install handles this
 # regardless of which direction (A->B or B->A) the update runs.
 cat > "${BUNDLE_DIR}/hook.sh" <<'HOOKEOF'
 #!/bin/bash
@@ -503,6 +506,15 @@ slot-install)
 	;;
 slot-post-install)
 	e2label "${RAUC_SLOT_DEVICE:?}" "root${RAUC_SLOT_BOOTNAME:?}"
+	# /etc/fstab's own root entry has the exact same baked-in-label problem
+	# as the ext4 superblock above — it's dd'd verbatim from whichever slot
+	# this bundle was built from, so it always says "LABEL=root<source
+	# letter>" regardless of which slot it's actually installed onto.
+	# [image.rootfs]'s hooks=post-install makes RAUC auto-mount this slot
+	# and provide RAUC_SLOT_MOUNT_POINT for exactly this kind of fixup.
+	mount -o remount,rw "${RAUC_SLOT_MOUNT_POINT:?}"
+	sed -i -E "s/^LABEL=root[AB]/LABEL=root${RAUC_SLOT_BOOTNAME}/" \
+		"${RAUC_SLOT_MOUNT_POINT}/etc/fstab"
 	;;
 esac
 HOOKEOF
