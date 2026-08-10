@@ -93,8 +93,12 @@ echo "DATADEV  /data  ext4  defaults,noatime,nofail  0  2" >> "${ROOTFS_DIR}/etc
 # Read-only rootfs (see SLIDE_ANNOUNCER.md, Tier 1, "Read-only rootfs"): the
 # root filesystem itself is mounted ro (below), so anything that needs to
 # write to /etc or /var at runtime goes through a CoW overlay instead.
-# - /tmp, /var/tmp: plain volatile tmpfs, nothing here needs to survive a
-#   reboot.
+# - /tmp, /var/tmp, /mnt/rauc: plain volatile tmpfs, nothing here needs to
+#   survive a reboot. /mnt/rauc is where RAUC itself creates mount points
+#   (bundle, rootfs.N) during an install — on a read-only root it can't
+#   mkdir there at all (confirmed by testing: "Failed creating mount path
+#   '/mnt/rauc/bundle': Read-only file system"), so this needs to be
+#   writable the same way /tmp already is, not something RAUC-specific.
 # - /etc: upper layer lives on /data, not tmpfs — SSH host keys and
 #   machine-id (regenerated once by provisioning/firstboot.py) and any
 #   future NetworkManager connection profiles under
@@ -125,9 +129,11 @@ echo "DATADEV  /data  ext4  defaults,noatime,nofail  0  2" >> "${ROOTFS_DIR}/etc
 # /data doesn't mount, the device still boots with a read-only /etc rather
 # than dropping to an emergency shell; the /var overlay never needs nofail
 # since its tmpfs backing is always available.
+install -d "${ROOTFS_DIR}/mnt/rauc"
 cat >> "${ROOTFS_DIR}/etc/fstab" <<'EOF'
 tmpfs   /tmp        tmpfs    nosuid,nodev,mode=1777                                                                      0  0
 tmpfs   /var/tmp    tmpfs    nosuid,nodev,mode=1777                                                                      0  0
+tmpfs   /mnt/rauc   tmpfs    nosuid,nodev,mode=0700                                                                      0  0
 overlay /etc        overlay  lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,x-systemd.requires-mounts-for=/data,nofail    0  0
 overlay /var        overlay  lowerdir=/var,upperdir=/run/overlay-var/upper,workdir=/run/overlay-var/work,x-systemd.requires-mounts-for=/run/overlay-var,x-systemd.after=slide-announcer-overlay-var-dirs.service    0  0
 EOF
