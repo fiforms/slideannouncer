@@ -30,6 +30,7 @@ Subcommands:
 """
 import argparse
 import json
+import platform
 import subprocess
 import sys
 import urllib.error
@@ -68,13 +69,16 @@ def heartbeat():
     if not token:
         sys.exit(
             f"No device token at {DEVICE_TOKEN_FILE} — this device isn't "
-            "paired (pairing isn't implemented yet either; see "
-            "SLIDE_ANNOUNCER.md). To test the RAUC pipeline without "
-            "pairing, use 'install <url-or-path>' directly instead of "
-            "'check'/plain 'install'."
+            "paired yet (see local-app's Pairing screen, or "
+            "SLIDE_ANNOUNCER.md's Pairing flow). To test the RAUC pipeline "
+            "without pairing, use 'install <url-or-path>' directly instead "
+            "of 'check'/plain 'install'."
         )
 
-    body = json.dumps({"os_version": read_os_version()}).encode()
+    body = json.dumps({
+        "os_version": read_os_version(),
+        "architecture": platform.machine(),
+    }).encode()
     req = urllib.request.Request(
         f"{server_url}/api/slide-announcers/heartbeat",
         data=body,

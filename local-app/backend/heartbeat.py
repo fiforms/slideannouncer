@@ -17,6 +17,7 @@ section.
 """
 import asyncio
 import json
+import platform
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -47,6 +48,18 @@ def read_app_version() -> str | None:
     if APP_VERSION_FILE.exists():
         return APP_VERSION_FILE.read_text().strip()
     return None
+
+
+def read_architecture() -> str:
+    """`platform.machine()` (e.g. 'aarch64' on 64-bit Raspberry Pi OS,
+    'armv7l' on 32-bit) — reported verbatim, not mapped to a fixed name,
+    since the server's architecture field is a free-form string (see
+    SlideAnnouncerRelease::KINDS/CHANNELS vs. architecture having no
+    equivalent constant). Whatever this returns is exactly the string an
+    admin needs to type into the release-publish form's Architecture
+    field for a build to match this device.
+    """
+    return platform.machine()
 
 
 def read_cpu_temp_c() -> float | None:
@@ -88,6 +101,7 @@ async def send_once() -> None:
     payload = {
         "app_version": read_app_version(),
         "os_version": read_os_version(),
+        "architecture": read_architecture(),
         "cpu_temp_c": read_cpu_temp_c(),
     }
 
