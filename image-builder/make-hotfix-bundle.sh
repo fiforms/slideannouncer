@@ -70,7 +70,50 @@ trap 'rm -rf "$WORK"' EXIT
 
 BUNDLE_DIR="${WORK}/bundle"
 mkdir -p "$BUNDLE_DIR"
-tar -C "$FILES_DIR" -czf "${BUNDLE_DIR}/files.tar.gz" .
+
+# Work from a copy of FILES_DIR rather than tarring it directly — the
+# padding step below may need to drop an extra file in alongside the
+# caller's own content, and it has no business mutating the caller's
+# source tree (e.g. a hotfixes/<version>/files/ directory checked into
+# git) to do that.
+STAGE_DIR="${WORK}/files"
+mkdir -p "$STAGE_DIR"
+cp -a "${FILES_DIR}/." "$STAGE_DIR/"
+
+# --owner/--group/--numeric-owner: these files land on the device's rootfs,
+# which is root-owned throughout (see build.sh's pi-gen image, produced
+# inside Docker as root). Force root:root here regardless of whoever's
+# checkout uid built this bundle, rather than tar's default of embedding
+# the builder's ambient ownership — the on-device hook extracts as root, so
+# without this a hotfix's file ownership would depend on who ran this
+# script instead of being deterministic.
+tar --owner=0 --group=0 --numeric-owner -C "$STAGE_DIR" -czf "${BUNDLE_DIR}/files.tar.gz" .
+
+# RAUC's verity format refuses images whose *squashfs-compressed* size
+# comes out to one block or less ("squashfs size (4096) must be larger
+# than 4096 bytes") — this bundle format wraps everything in a squashfs
+# before applying dm-verity, even though files.tar.gz itself isn't one. A
+# small/surgical hotfix (the normal case — see this script's own header)
+# easily lands under that floor.
+#
+# Fix this by dropping an extra file of random (incompressible — so
+# squashfs can't compress it away like it would NULs) bytes into the
+# staged tree before tarring, sized to push the compressed total over the
+# floor. This must be a real file *inside* the tar, not bytes appended
+# after the gzip stream's end: appending trailing bytes after a valid
+# gzip stream round-trips fine through GNU tar on a dev workstation, but
+# on-device gzip treats that trailing garbage as fatal ("decompression
+# OK, trailing garbage ignored" followed by a nonzero exit), which takes
+# the whole `tar -xzf` down with it (see git history for the hotfix that
+# hit this on real hardware). The hook below deletes this file
+# immediately after extraction so it never actually lands on the device.
+MIN_IMAGE_SIZE=8192
+CURRENT_SIZE="$(stat -c%s "${BUNDLE_DIR}/files.tar.gz")"
+if [ "$CURRENT_SIZE" -lt "$MIN_IMAGE_SIZE" ]; then
+	PAD_SIZE=$((MIN_IMAGE_SIZE - CURRENT_SIZE + 512))
+	head -c "$PAD_SIZE" /dev/urandom > "${STAGE_DIR}/.rauc-hotfix-padding"
+	tar --owner=0 --group=0 --numeric-owner -C "$STAGE_DIR" -czf "${BUNDLE_DIR}/files.tar.gz" .
+fi
 
 # hooks=install fully overrides RAUC's default install for this slot (same
 # pattern as the real kernel slots in build.sh) — remount / rw only for the
@@ -106,6 +149,10 @@ slot-install)
 	# reboot or factory reset would otherwise undo.
 	mount --bind / /mnt/root
 	tar -xzf "${RAUC_IMAGE_NAME:?}" -C /mnt/root
+	# Build-time-only padding (see make-hotfix-bundle.sh) to satisfy RAUC's
+	# minimum bundle-image size — never meant to persist on-device. rm -f
+	# so this is a no-op on a hotfix large enough not to have needed it.
+	rm -f /mnt/root/.rauc-hotfix-padding
 	echo "@@NEW_VERSION@@" > /mnt/root/opt/slide-announcer/VERSION
 	;;
 esac

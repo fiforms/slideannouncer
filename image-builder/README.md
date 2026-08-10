@@ -6,16 +6,25 @@ image for a Raspberry Pi 4 (arm64, Trixie).
 **Implemented so far:** the pi-gen pipeline, custom stage, partition layout
 described below, RAUC bundle production (`system.conf`, signed `.raucb`
 output covering both rootfs and boot-partition kernel/initramfs content),
-and a full attempt at A/B slot switching via Raspberry Pi tryboot
+a surgical hotfix mechanism (`make-hotfix-bundle.sh`, `hotfixes/`) for
+patching a running rootfs in place without an A/B swap, and a full attempt
+at A/B slot switching via Raspberry Pi tryboot
 (`system/rauc/rpi-tryboot-backend.sh` + `rpi-tryboot-commit.sh`,
-`slide-announcer-update tryboot`). **HARDWARE-UNVERIFIED:** none of the
-tryboot-specific pieces (the `tryboot.txt`/`os_prefix` mechanism, the
+`slide-announcer-update tryboot`).
+
+The hotfix mechanism is **confirmed working end-to-end on real hardware**
+(2026-08-10): `rauc install` of a hotfix `.raucb` over HTTP, version-gate
+check, live-rootfs bind-mount write-through, and `/opt/slide-announcer/VERSION`
+bump all verified on an actual device.
+
+**HARDWARE-UNVERIFIED (tryboot only):** none of the tryboot-specific
+pieces (the `tryboot.txt`/`os_prefix` mechanism, the
 `/proc/device-tree/chosen/bootloader/tryboot` boot-detection flag, RAUC's
 exact custom-bootloader-backend and custom-slot-hook argv/env contracts)
 have been run through a real install → tryboot reboot → forced-bad-health
 → rollback cycle on actual hardware — see each script's own header and
-`SLIDE_ANNOUNCER.md`'s open questions. Treat this as a real first attempt
-to validate against real hardware, not a proven implementation.
+`SLIDE_ANNOUNCER.md`'s open questions. Treat this piece as a real first
+attempt to validate against real hardware, not a proven implementation.
 
 ## Contents
 
