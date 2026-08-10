@@ -139,6 +139,8 @@ rsync -rtx "${SRC_BOOT_MNT}/" "${DST_ROOT_MNT}/boot/firmware/"
 # now-stale, PARTUUIDs for its 2-partition layout) ---------------------------
 NEW_DISK_ID="$(dd if="$OUT_IMG" skip=440 bs=1 count=4 2>/dev/null | xxd -e | cut -f2 -d' ')"
 NEW_BOOT_PARTUUID="${NEW_DISK_ID}-01"
+NEW_ROOTA_PARTUUID="${NEW_DISK_ID}-02"
+NEW_ROOTB_PARTUUID="${NEW_DISK_ID}-03"
 NEW_DATA_PARTUUID="${NEW_DISK_ID}-04"
 
 sed -i -E "s/PARTUUID=[0-9a-fA-F]{8}-01/PARTUUID=${NEW_BOOT_PARTUUID}/" \
@@ -156,6 +158,21 @@ sed -i "s/DATADEV/PARTUUID=${NEW_DATA_PARTUUID}/" "${DST_ROOT_MNT}/etc/fstab"
 # bootfiles.tar.gz/hook.sh comments.
 sed -i -E "s/PARTUUID=[0-9a-fA-F]{8}-02/LABEL=rootA/" \
 	"${DST_ROOT_MNT}/etc/fstab" "${DST_ROOT_MNT}/boot/firmware/cmdline.txt"
+
+# RAUC's own internal "which slot is booted" detection doesn't reliably
+# parse root=LABEL=... (confirmed by testing) — per RAUC's docs, an
+# explicit rauc.slot=<name> cmdline argument is the supported way to tell
+# it directly. This build's active slot is always rootfs.0 (rootA);
+# image-builder/build.sh's OTA install hook sets this to whichever slot
+# it's actually installing into. See system/rauc/system.conf's comment.
+sed -i -E 's/(root=LABEL=rootA)/\1 rauc.slot=rootfs.0/' \
+	"${DST_ROOT_MNT}/boot/firmware/cmdline.txt"
+
+# system.conf's rootfs slot devices are by-partuuid, not by-label (see its
+# own comment for why) — fill in this device's actual computed PARTUUIDs,
+# same mechanism as fstab's DATADEV placeholder above.
+sed -i "s/@@ROOTA_PARTUUID@@/${NEW_ROOTA_PARTUUID}/; s/@@ROOTB_PARTUUID@@/${NEW_ROOTB_PARTUUID}/" \
+	"${DST_ROOT_MNT}/etc/rauc/system.conf"
 
 # --- seed the boot partition's per-slot kernel/initramfs/cmdline/config
 # directories (RAUC's "kernel" custom slot class — see
@@ -212,6 +229,6 @@ echo "${ROOTA_START} ${ROOTA_FS_BYTES}" > "${OUT_IMG}.rootA-range"
 
 echo "repartition.sh: wrote ${OUT_IMG} (truncated to ${TRUNCATED_SIZE}B after rootA's shrunk filesystem)"
 echo "  boot  PARTUUID=${NEW_BOOT_PARTUUID}"
-echo "  rootA LABEL=rootA  (active, shrunk to ${ROOTA_FS_BYTES}B content; partition table reserves $((FIXED_ROOT_SIZE_BYTES / 1024 / 1024))MiB; boot/firmware/slotA/ seeded to match)"
-echo "  rootB (partition table reserves $((FIXED_ROOT_SIZE_BYTES / 1024 / 1024))MiB, no filesystem yet; boot/firmware/slotB/ empty until first OTA)"
+echo "  rootA LABEL=rootA  PARTUUID=${NEW_ROOTA_PARTUUID}  (active, shrunk to ${ROOTA_FS_BYTES}B content; partition table reserves $((FIXED_ROOT_SIZE_BYTES / 1024 / 1024))MiB; boot/firmware/slotA/ seeded to match)"
+echo "  rootB PARTUUID=${NEW_ROOTB_PARTUUID}  (partition table reserves $((FIXED_ROOT_SIZE_BYTES / 1024 / 1024))MiB, no filesystem yet; boot/firmware/slotB/ empty until first OTA)"
 echo "  data  PARTUUID=${NEW_DATA_PARTUUID}  (partition table reserves ${DATA_PLACEHOLDER_SIZE_MB}MiB, formatted by FACTORY_RESET flag on first boot, then grows)"

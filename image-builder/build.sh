@@ -470,21 +470,39 @@ sudo umount "$ROOTFS_MNT"
 # already-mounted FAT32 partition" as a slot, so the "kernel" custom slot's
 # actual install logic ships inside the bundle itself (covered by the same
 # signature as every image in it) rather than living as a static
-# device-side script. HARDWARE-UNVERIFIED: the argv/env var contract below
-# (slot-install, RAUC_SLOT_DEVICE, RAUC_IMAGE_NAME) is reconstructed from
-# RAUC's general custom-slot hook conventions — verify against the
-# installed rauc version's own docs before trusting this on real hardware.
+# device-side script. Hook argv values (slot-install, slot-post-install) and
+# env vars (RAUC_SLOT_DEVICE, RAUC_SLOT_BOOTNAME, RAUC_IMAGE_NAME) are
+# confirmed against RAUC 1.13's own source (src/update_handler.c's
+# R_SLOT_HOOK_* defines) — the field's still HARDWARE-UNVERIFIED end-to-end
+# (see rpi-tryboot-backend.sh), but this contract itself is not a guess.
+#
+# slot-post-install on [image.rootfs]: RAUC's default install for an ext4
+# slot with a full raw filesystem image is a plain byte copy onto the slot
+# device — it does not reformat/relabel. This bundle's rootfs.img is dd'd
+# straight off the currently-active slot (see the dd call above), so its
+# ext4 superblock still carries THAT slot's own label (e.g. "rootA") baked
+# in verbatim. Installed onto the other slot as-is, this would leave two
+# partitions claiming the same ext4 LABEL (and the target slot's own label
+# gone entirely) — breaking cmdline.txt's root=LABEL=rootX matching on
+# whichever slot most recently received an update. Relabeling after every
+# install, keyed off RAUC_SLOT_BOOTNAME (system.conf's bootname=A/B for
+# slot.rootfs.0/.1, not the source image's own label), fixes this
+# regardless of which direction (A->B or B->A) the update runs.
 cat > "${BUNDLE_DIR}/hook.sh" <<'HOOKEOF'
 #!/bin/bash
 set -euo pipefail
 case "${1:-}" in
 slot-install)
-	TARGET="/boot/firmware/${RAUC_SLOT_DEVICE:?}"
-	ROOTLABEL="${RAUC_SLOT_DEVICE#slot}" # slotA -> A, slotB -> B
+	TARGET="${RAUC_SLOT_DEVICE:?}"
+	ROOTLABEL="${TARGET##*/slot}" # /boot/firmware/slotA -> A, slotB -> B
 	mkdir -p "$TARGET"
 	find "$TARGET" -mindepth 1 -delete
 	tar -xzf "${RAUC_IMAGE_NAME:?}" -C "$TARGET"
-	sed -i "s/__ROOTLABEL__/root${ROOTLABEL}/" "${TARGET}/cmdline.txt"
+	sed -i -E "s/__ROOTLABEL__/root${ROOTLABEL}/; s#(root=LABEL=root${ROOTLABEL})#\1 rauc.slot=rootfs.$([ "$ROOTLABEL" = A ] && echo 0 || echo 1)#" \
+		"${TARGET}/cmdline.txt"
+	;;
+slot-post-install)
+	e2label "${RAUC_SLOT_DEVICE:?}" "root${RAUC_SLOT_BOOTNAME:?}"
 	;;
 esac
 HOOKEOF
@@ -495,14 +513,25 @@ cat > "${BUNDLE_DIR}/manifest.raucm" <<EOF
 compatible=slideannouncer-rpi4
 version=${IMAGE_VERSION}
 
+# verity, not plain: `rauc install <url>` streams the bundle over HTTP
+# rather than downloading it whole first, and RAUC's streaming installer
+# only supports formats that can be authenticated block-by-block as they
+# arrive (confirmed by testing: plain format failed with "Bundle format
+# 'plain' not supported in streaming mode"). With verity, the manifest
+# lives in the bundle's CMS signature itself (readable without hashing the
+# full squashfs payload first), and a dm-verity hash tree authenticates
+# each block on demand — rauc bundle computes the verity-hash/salt/size
+# metadata automatically; nothing else in this bundle's construction
+# needs to change for this format.
 [bundle]
-format=plain
+format=verity
 
 [hooks]
 filename=hook.sh
 
 [image.rootfs]
 filename=rootfs.img
+hooks=post-install
 
 [image.kernel]
 filename=bootfiles.tar.gz

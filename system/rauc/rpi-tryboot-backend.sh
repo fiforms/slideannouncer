@@ -3,16 +3,23 @@
 # RAUC has no built-in tryboot support, so system.conf's
 # bootloader-custom-backend points here. Invoked by RAUC itself as:
 #   rpi-tryboot-backend.sh get-primary
-#   rpi-tryboot-backend.sh set-primary <slot-name>
+#   rpi-tryboot-backend.sh set-primary <bootname>
 #
-# HARDWARE-UNVERIFIED: this argv contract (get-primary/set-primary, slot
-# name on stdout/argv) is reconstructed from RAUC's general custom-
-# bootloader conventions, not confirmed against the installed rauc
-# version's own docs — check `man rauc` / rauc's source for the exact
-# calling convention before trusting this on real hardware. Likewise
+# get-primary/set-primary exchange bootnames ("A"/"B"), NOT slot names
+# ("rootfs.0"/"rootfs.1") — confirmed against RAUC 1.13's own source
+# (src/bootloaders/custom.c): get-primary's stdout is compared directly
+# against each slot's configured bootname= (g_strcmp0(ret_str,
+# slot->bootname)), and set-primary is invoked as
+# custom_backend_set("set-primary", slot->bootname, ...) — i.e. RAUC hands
+# this script the bootname it already resolved from system.conf, not the
+# slot's own class.index identifier. An earlier version of this script
+# guessed slot names instead and RAUC rejected the result with "custom
+# backend: 'rootfs.0' does not match any configured bootname" on real
+# hardware — that guess is gone now, this is the confirmed contract.
+#
 # `reboot "0 tryboot"` and the tryboot.txt/os_prefix mechanism below are
-# reconstructed from Raspberry Pi's general tryboot documentation, not
-# confirmed against this image's specific firmware/kernel. See
+# still reconstructed from Raspberry Pi's general tryboot documentation,
+# not confirmed against this image's specific firmware/kernel. See
 # SLIDE_ANNOUNCER.md's open questions — a real tryboot cycle (flash,
 # install, tryboot reboot, forced-bad health check, confirm fallback)
 # still needs to be run on actual hardware.
@@ -39,17 +46,6 @@ set -euo pipefail
 
 BOOTFW="/boot/firmware"
 
-slot_to_letter() {
-	case "$1" in
-	rootfs.0) echo A ;;
-	rootfs.1) echo B ;;
-	*)
-		echo "rpi-tryboot-backend.sh: unknown slot '$1'" >&2
-		exit 1
-		;;
-	esac
-}
-
 current_root_letter() {
 	local label
 	label="$(sed -n 's/.*\broot=LABEL=root\([AB]\)\b.*/\1/p' /proc/cmdline)"
@@ -62,19 +58,15 @@ current_root_letter() {
 
 case "${1:-}" in
 get-primary)
-	case "$(current_root_letter)" in
-	A) echo rootfs.0 ;;
-	B) echo rootfs.1 ;;
-	esac
+	current_root_letter
 	;;
 set-primary)
-	TARGET_SLOT="${2:?set-primary requires a slot name argument}"
-	LETTER="$(slot_to_letter "$TARGET_SLOT")"
+	LETTER="${2:?set-primary requires a bootname argument}"
 	printf '[tryboot]\nos_prefix=slot%s/\n' "$LETTER" >"${BOOTFW}/tryboot.txt"
-	echo "rpi-tryboot-backend.sh: staged slot ${LETTER} (${TARGET_SLOT}) for the next tryboot reboot" >&2
+	echo "rpi-tryboot-backend.sh: staged slot ${LETTER} for the next tryboot reboot" >&2
 	;;
 *)
-	echo "usage: $0 get-primary | set-primary <slot-name>" >&2
+	echo "usage: $0 get-primary | set-primary <bootname>" >&2
 	exit 1
 	;;
 esac
