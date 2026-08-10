@@ -229,12 +229,15 @@ printf '\n[all]\ndisable_splash=1\n' >> "${ROOTFS_DIR}/boot/firmware/config.txt"
 # Fleet-specific hardware config.txt lines (fan control overlays, etc. —
 # see SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA in .env.example), under their own
 # unconditional [all] section same as disable_splash above. This survives
-# RAUC OTA/tryboot switching for free rather than needing special-casing:
-# image-builder/repartition.sh mirrors this same partition-root config.txt
-# into boot/firmware/slotA/ for the initial image, and every future OTA
-# bundle is built from this same 00-run.sh too, so slotB/config.txt (and
-# the file rpi-tryboot-commit.sh copies back to the partition root on
-# commit) always carries whatever's set here at build time.
+# RAUC OTA/tryboot switching for free, more simply than it might sound:
+# config.txt lives at the boot partition's shared top level, is NOT part
+# of RAUC's per-slot "kernel" custom slot class (kernel/initramfs/.dtbs/
+# overlays/cmdline.txt only — see system/rauc/system.conf), and is never
+# touched by an OTA install or by rpi-tryboot-commit.sh's own commit step
+# (which only flips config.txt's permanent os_prefix= line, added by
+# repartition.sh after this script runs). So whatever's set here at build
+# time simply stays, untouched, across every future OTA and every tryboot
+# switch — there's nothing to keep in sync.
 if [ -s files/BOOT_CONFIG_EXTRA ]; then
 	printf '\n[all]\n' >> "${ROOTFS_DIR}/boot/firmware/config.txt"
 	cat files/BOOT_CONFIG_EXTRA >> "${ROOTFS_DIR}/boot/firmware/config.txt"

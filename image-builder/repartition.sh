@@ -3,7 +3,17 @@
 # 4-partition layout this project's design settles on ahead of RAUC itself
 # (see SLIDE_ANNOUNCER.md and image-builder/README.md):
 #
-#   p1  boot   FAT32  unchanged, copied as-is from pi-gen's output
+#   p1  boot   FAT32  copied from pi-gen's output, then split: kernel/
+#                      initramfs/.dtbs/overlays/cmdline.txt move into
+#                      slotA/ (RAUC's per-slot "kernel" class — see
+#                      system/rauc/system.conf), config.txt gains a
+#                      permanent os_prefix=slotA/ pointing at them.
+#                      config.txt itself and the VideoCore firmware blobs
+#                      (start*.elf/fixup*.dat/bootcode.bin) stay shared at
+#                      the top level — Raspberry Pi's os_prefix mechanism
+#                      doesn't cover those at all, and confirmed by
+#                      testing that moving them breaks boot outright (no
+#                      GPU firmware to load).
 #   p2  rootA  ext4   fixed size (reserved in the partition table for future
 #                      RAUC bundles), pi-gen's root content copied in then
 #                      shrunk to that content's actual size, ACTIVE
@@ -135,6 +145,41 @@ mkdir -p "${DST_ROOT_MNT}/boot/firmware"
 mount "${DST_LOOP}p1" "${DST_ROOT_MNT}/boot/firmware" -t vfat
 rsync -rtx "${SRC_BOOT_MNT}/" "${DST_ROOT_MNT}/boot/firmware/"
 
+BOOTFW="${DST_ROOT_MNT}/boot/firmware"
+
+# --- split the boot partition into "shared" (stays at the top level:
+# config.txt, VideoCore firmware blobs) vs. "per-slot" (kernel/initramfs/
+# .dtbs/overlays/cmdline.txt — RAUC's "kernel" custom slot class, see
+# system/rauc/system.conf) content, seeding slotA/ with the latter and
+# leaving slotB/ empty until the first real OTA. This is the ONLY copy of
+# any of these files anywhere on the boot partition — no top-level
+# duplicate, no third "promoted" copy created later at commit time either
+# (see rpi-tryboot-commit.sh).
+#
+# Confirmed by testing on real hardware: an unconditional os_prefix= in
+# config.txt (below), loading these exact file categories from a slot
+# subdirectory on a NORMAL (non-tryboot) boot, works correctly — GPU/DRM
+# included (/dev/dri populated, kiosk displays). A tryboot-*flagged*
+# os_prefix (tryboot.txt, used only for the brief pre-commit trial boot)
+# does NOT: kernel/cmdline/root all load and boot fine, but the DTB-fixup
+# step silently fails to apply the vc4-kms-v3d overlay, leaving zero DRM
+# devices ("Found 0 GPUs, cannot create backend") — a Raspberry Pi
+# firmware quirk specific to the tryboot flag, not to os_prefix in
+# general. rpi-tryboot-commit.sh's own header covers how this shapes the
+# commit flow now.
+#
+# Only kernels/initramfs/.dtbs/overlays/cmdline.txt are covered by
+# os_prefix at all (Raspberry Pi's own documented list) —
+# start*.elf/fixup*.dat/bootcode.bin (VideoCore firmware blobs) and
+# config.txt itself are NOT, and must stay shared at the top level
+# regardless of slot: moving those into slotA/ once, by mistake during
+# testing, left the device with no GPU firmware to load at all and no
+# network (nothing to SSH into) — confirmed the hard way.
+mkdir -p "${BOOTFW}/slotA" "${BOOTFW}/slotB"
+mv "${BOOTFW}"/kernel*.img "${BOOTFW}"/*.dtb "${BOOTFW}/cmdline.txt" \
+	"${BOOTFW}"/initramfs* "${BOOTFW}/overlays" "${BOOTFW}/slotA/"
+echo "os_prefix=slotA/" >>"${BOOTFW}/config.txt"
+
 # --- rewrite PARTUUIDs for the new disk (pi-gen already baked in its own,
 # now-stale, PARTUUIDs for its 2-partition layout) ---------------------------
 NEW_DISK_ID="$(dd if="$OUT_IMG" skip=440 bs=1 count=4 2>/dev/null | xxd -e | cut -f2 -d' ')"
@@ -144,7 +189,7 @@ NEW_ROOTB_PARTUUID="${NEW_DISK_ID}-03"
 NEW_DATA_PARTUUID="${NEW_DISK_ID}-04"
 
 sed -i -E "s/PARTUUID=[0-9a-fA-F]{8}-01/PARTUUID=${NEW_BOOT_PARTUUID}/" \
-	"${DST_ROOT_MNT}/etc/fstab" "${DST_ROOT_MNT}/boot/firmware/cmdline.txt"
+	"${DST_ROOT_MNT}/etc/fstab" "${BOOTFW}/slotA/cmdline.txt"
 sed -i "s/DATADEV/PARTUUID=${NEW_DATA_PARTUUID}/" "${DST_ROOT_MNT}/etc/fstab"
 
 # root= uses this device's real, freshly-computed rootA PARTUUID, not a
@@ -161,7 +206,7 @@ sed -i "s/DATADEV/PARTUUID=${NEW_DATA_PARTUUID}/" "${DST_ROOT_MNT}/etc/fstab"
 # via blkid, at install time instead of relying on a build-time constant
 # — see its own comments for how.
 sed -i -E "s/PARTUUID=[0-9a-fA-F]{8}-02/PARTUUID=${NEW_ROOTA_PARTUUID}/" \
-	"${DST_ROOT_MNT}/etc/fstab" "${DST_ROOT_MNT}/boot/firmware/cmdline.txt"
+	"${DST_ROOT_MNT}/etc/fstab" "${BOOTFW}/slotA/cmdline.txt"
 
 # Per RAUC's own docs, root=PARTUUID= root device paths ARE natively
 # resolvable for its internal "which slot is booted" detection (unlike
@@ -172,23 +217,13 @@ sed -i -E "s/PARTUUID=[0-9a-fA-F]{8}-02/PARTUUID=${NEW_ROOTA_PARTUUID}/" \
 # image-builder/build.sh's OTA install hook sets this to whichever slot
 # it's actually installing into. See system/rauc/system.conf's comment.
 sed -i -E "s#(root=PARTUUID=${NEW_ROOTA_PARTUUID})#\1 rauc.slot=rootfs.0#" \
-	"${DST_ROOT_MNT}/boot/firmware/cmdline.txt"
+	"${BOOTFW}/slotA/cmdline.txt"
 
 # system.conf's rootfs slot devices are by-partuuid, not by-label (see its
 # own comment for why) — fill in this device's actual computed PARTUUIDs,
 # same mechanism as fstab's DATADEV placeholder above.
 sed -i "s/@@ROOTA_PARTUUID@@/${NEW_ROOTA_PARTUUID}/; s/@@ROOTB_PARTUUID@@/${NEW_ROOTB_PARTUUID}/" \
 	"${DST_ROOT_MNT}/etc/rauc/system.conf"
-
-# --- seed the boot partition's per-slot kernel/initramfs/cmdline/config
-# directories (RAUC's "kernel" custom slot class — see
-# system/rauc/system.conf and rpi-tryboot-backend.sh): slotA/ mirrors
-# what's already at the partition root (this build's active slot); slotB/
-# starts empty, same as rootB, until the first real OTA populates it.
-BOOTFW="${DST_ROOT_MNT}/boot/firmware"
-mkdir -p "${BOOTFW}/slotA" "${BOOTFW}/slotB"
-rsync -rt --exclude /slotA --exclude /slotB --exclude /tryboot.txt \
-	"${BOOTFW}/" "${BOOTFW}/slotA/"
 
 # Every fresh build ships with this set, so slide-announcer-factory-reset-check.service
 # always formats /data on the device's first boot — see the comment on the
@@ -235,6 +270,6 @@ echo "${ROOTA_START} ${ROOTA_FS_BYTES}" > "${OUT_IMG}.rootA-range"
 
 echo "repartition.sh: wrote ${OUT_IMG} (truncated to ${TRUNCATED_SIZE}B after rootA's shrunk filesystem)"
 echo "  boot  PARTUUID=${NEW_BOOT_PARTUUID}"
-echo "  rootA LABEL=rootA  PARTUUID=${NEW_ROOTA_PARTUUID}  (active, shrunk to ${ROOTA_FS_BYTES}B content; partition table reserves $((FIXED_ROOT_SIZE_BYTES / 1024 / 1024))MiB; boot/firmware/slotA/ seeded to match)"
+echo "  rootA LABEL=rootA  PARTUUID=${NEW_ROOTA_PARTUUID}  (active, shrunk to ${ROOTA_FS_BYTES}B content; partition table reserves $((FIXED_ROOT_SIZE_BYTES / 1024 / 1024))MiB; boot/firmware/slotA/ holds its kernel/dtbs/overlays/cmdline.txt, config.txt's os_prefix points at it)"
 echo "  rootB PARTUUID=${NEW_ROOTB_PARTUUID}  (partition table reserves $((FIXED_ROOT_SIZE_BYTES / 1024 / 1024))MiB, no filesystem yet; boot/firmware/slotB/ empty until first OTA)"
 echo "  data  PARTUUID=${NEW_DATA_PARTUUID}  (partition table reserves ${DATA_PLACEHOLDER_SIZE_MB}MiB, formatted by FACTORY_RESET flag on first boot, then grows)"

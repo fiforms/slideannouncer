@@ -39,42 +39,59 @@
 # hardware — that guess is gone now, this is the confirmed contract.
 #
 # `reboot "0 tryboot"` and the tryboot.txt/os_prefix mechanism below are
-# still reconstructed from Raspberry Pi's general tryboot documentation,
-# not confirmed against this image's specific firmware/kernel. See
-# SLIDE_ANNOUNCER.md's open questions — a real tryboot cycle (flash,
-# install, tryboot reboot, forced-bad health check, confirm fallback)
-# still needs to be run on actual hardware.
+# confirmed working on real hardware for kernel/cmdline/root loading — a
+# tryboot-triggered boot correctly loads the staged slot and boots into
+# it. What's NOT reliable there is GPU/DRM: a tryboot-*flagged* os_prefix
+# boot's DTB-fixup step silently fails to apply the vc4-kms-v3d overlay
+# (confirmed by testing — zero DRM devices, no kiosk display), while the
+# identical files loaded via a PERMANENT, non-tryboot os_prefix boot
+# fine. See system/rauc/rpi-tryboot-commit.sh and repartition.sh's own
+# comments for how the overall design accounts for this — a tryboot
+# session is only ever used for a brief, headless-acceptable verification
+# window, never for anything that needs a working display.
 #
 # Deliberately stateless w.r.t. /data: get-primary derives "which slot is
-# currently running" from /proc/cmdline's root=LABEL=rootX, not from a
-# stored marker file. /data is a common factory-reset target ("wipe and
-# re-pair"), and a marker file there would go stale the moment that
+# currently running" from /proc/cmdline's rauc.slot=rootfs.N marker, not
+# from a stored marker file. /data is a common factory-reset target ("wipe
+# and re-pair"), and a marker file there would go stale the moment that
 # happens — reporting a slot as primary that isn't actually the one
 # mounted as / would make the NEXT install target (i.e. overwrite) the
 # slot that's genuinely running right now. Reading the live kernel
 # command line instead means there's nothing on /data for a reset to
 # desynchronize; the answer is always physically true by construction.
+# root=LABEL=rootX was the original source for this — switched to
+# rauc.slot= when cmdline.txt's root= itself moved to PARTUUID= (see
+# system.conf's own comment for why); confirmed by testing that this
+# script was never updated for that at the time, breaking `rauc status`
+# outright ("Failed getting primary slot: custom backend:
+# rpi-tryboot-backend.sh failed with exit code 1") since current_root_letter
+# was still matching a root=LABEL= pattern that no longer exists in
+# /proc/cmdline at all.
 #
 # set-primary only ever stages a *provisional* boot attempt (tryboot.txt,
 # read by the firmware for exactly one tryboot-triggered reboot) — it
-# deliberately does NOT touch the partition-root config.txt/cmdline.txt/
-# kernel/initramfs that every *normal* reboot reads, and it writes nothing
-# to /data either (rpi-tryboot-commit.sh re-derives which slot to commit
-# the same way, from /proc/cmdline on the tryboot'd boot itself — see its
-# header). So "do nothing after a tryboot attempt" already means "revert"
-# for free, and there's no persistent staging state anywhere to lose.
+# deliberately does NOT touch config.txt's own permanent os_prefix= line
+# that every *normal* reboot reads (only rpi-tryboot-commit.sh does that,
+# and only after a successful trial), and it writes nothing to /data
+# either (rpi-tryboot-commit.sh re-derives which slot to commit the same
+# way, from /proc/cmdline on the tryboot'd boot itself — see its header).
+# So "do nothing after a tryboot attempt" already means "revert" for
+# free, and there's no persistent staging state anywhere to lose.
 set -euo pipefail
 
 BOOTFW="/boot/firmware"
 
 current_root_letter() {
-	local label
-	label="$(sed -n 's/.*\broot=LABEL=root\([AB]\)\b.*/\1/p' /proc/cmdline)"
-	if [ -z "$label" ]; then
-		echo "rpi-tryboot-backend.sh: couldn't find root=LABEL=root[AB] in /proc/cmdline" >&2
+	local slotnum
+	slotnum="$(sed -n 's/.*\brauc\.slot=rootfs\.\([01]\)\b.*/\1/p' /proc/cmdline)"
+	case "$slotnum" in
+	0) echo A ;;
+	1) echo B ;;
+	*)
+		echo "rpi-tryboot-backend.sh: couldn't find rauc.slot=rootfs.[01] in /proc/cmdline" >&2
 		exit 1
-	fi
-	echo "$label"
+		;;
+	esac
 }
 
 case "${1:-}" in

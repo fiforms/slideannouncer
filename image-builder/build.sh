@@ -444,12 +444,15 @@ mkdir -p "$BOOT_MNT"
 sudo mount -o ro "${FINAL_LOOP}p1" "$BOOT_MNT"
 BOOTFILES_DIR="${BUNDLE_DIR}/bootfiles"
 mkdir -p "$BOOTFILES_DIR"
-# slotA/slotB/tryboot.txt (repartition.sh's per-device runtime state) never
-# ship in the bundle — only the top-level boot files (kernel, initramfs,
-# config.txt, cmdline.txt, overlays/) do; the device-side hook (below)
-# decides which slot directory they land in at install time.
-sudo rsync -rt --exclude /slotA --exclude /slotB --exclude /tryboot.txt \
-	"${BOOT_MNT}/" "${BOOTFILES_DIR}/"
+# Captured from slotA/ specifically, NOT the boot partition's top level —
+# repartition.sh's layout keeps kernel/initramfs/.dtbs/overlays/
+# cmdline.txt only in slotA/slotB (RAUC's per-slot "kernel" class), never
+# duplicated at the top level, which holds only config.txt and the
+# VideoCore firmware blobs (start*.elf/fixup*.dat/bootcode.bin) that
+# os_prefix doesn't cover at all — see repartition.sh's own comment for
+# why (confirmed by testing: moving those breaks boot outright). The
+# build host's own active slot is always slotA, per that same design.
+sudo rsync -rt "${BOOT_MNT}/slotA/" "${BOOTFILES_DIR}/"
 sudo umount "$BOOT_MNT"
 sudo chown -R "$(id -u):$(id -g)" "$BOOTFILES_DIR"
 
