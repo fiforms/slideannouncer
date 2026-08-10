@@ -507,8 +507,13 @@ slot-install)
 	# with RAUC_BUNDLE_MOUNT_POINT, which actually broke it: journalctl
 	# showed the doubled path this produced verbatim ("tar (child):
 	# /mnt/rauc/bundle//mnt/rauc/bundle/bootfiles.tar.gz: Cannot open").
-	# Use it as-is.
-	tar -xzf "${RAUC_IMAGE_NAME:?}" -C "$TARGET"
+	# Use it as-is. --no-same-owner: TARGET is FAT32 (/boot/firmware/...),
+	# which has no concept of Unix ownership at all — tar's default attempt
+	# to chown extracted files to their original uid/gid fails outright
+	# there (confirmed by testing: "Cannot change ownership to uid 1000,
+	# gid 1000: Operation not permitted", fatal under set -e once tar's own
+	# exit code reflects it).
+	tar --no-same-owner -xzf "${RAUC_IMAGE_NAME:?}" -C "$TARGET"
 	sed -i -E "s/__ROOTLABEL__/root${ROOTLABEL}/; s#(root=LABEL=root${ROOTLABEL})#\1 rauc.slot=rootfs.$([ "$ROOTLABEL" = A ] && echo 0 || echo 1)#" \
 		"${TARGET}/cmdline.txt"
 	;;
