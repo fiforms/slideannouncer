@@ -471,7 +471,8 @@ sudo umount "$ROOTFS_MNT"
 # actual install logic ships inside the bundle itself (covered by the same
 # signature as every image in it) rather than living as a static
 # device-side script. Hook argv values (slot-install, slot-post-install) and
-# env vars (RAUC_SLOT_DEVICE, RAUC_SLOT_BOOTNAME, RAUC_IMAGE_NAME) are
+# env vars (RAUC_SLOT_DEVICE, RAUC_SLOT_BOOTNAME, RAUC_IMAGE_NAME,
+# RAUC_BUNDLE_MOUNT_POINT) are
 # confirmed against RAUC 1.13's own source (src/update_handler.c's
 # R_SLOT_HOOK_* defines) — the field's still HARDWARE-UNVERIFIED end-to-end
 # (see rpi-tryboot-backend.sh), but this contract itself is not a guess.
@@ -500,7 +501,12 @@ slot-install)
 	ROOTLABEL="${TARGET##*/slot}" # /boot/firmware/slotA -> A, slotB -> B
 	mkdir -p "$TARGET"
 	find "$TARGET" -mindepth 1 -delete
-	tar -xzf "${RAUC_IMAGE_NAME:?}" -C "$TARGET"
+	# RAUC_IMAGE_NAME is a bare filename (e.g. "bootfiles.tar.gz"), not a
+	# path — confirmed by testing: passing it straight to tar failed
+	# ("Child process exited with code 2") because the hook's cwd isn't
+	# guaranteed to be where the bundle is mounted. RAUC_BUNDLE_MOUNT_POINT
+	# is where the image file actually lives.
+	tar -xzf "${RAUC_BUNDLE_MOUNT_POINT:?}/${RAUC_IMAGE_NAME:?}" -C "$TARGET"
 	sed -i -E "s/__ROOTLABEL__/root${ROOTLABEL}/; s#(root=LABEL=root${ROOTLABEL})#\1 rauc.slot=rootfs.$([ "$ROOTLABEL" = A ] && echo 0 || echo 1)#" \
 		"${TARGET}/cmdline.txt"
 	;;
