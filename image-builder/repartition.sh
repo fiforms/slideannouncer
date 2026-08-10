@@ -117,7 +117,26 @@ SRC_LOOP="$(losetup --show --find --partscan --read-only "$SRC_IMG")"
 udevadm settle 2>/dev/null || true
 
 mkdosfs -n bootfs -F 32 -s 4 "${DST_LOOP}p1" > /dev/null
-mkfs.ext4 -q -F -L rootA "${DST_LOOP}p2"
+
+# rootA's *filesystem* is deliberately created much smaller than its
+# partition (FIXED_ROOT_SIZE_BYTES, reserved above for future RAUC
+# bundles): mke2fs scales journal and inode-table size to the fs size
+# given at creation time, and that overhead doesn't shrink back down when
+# resize2fs -M shrinks the fs later (below) — creating it at the full
+# fixed partition size just bakes in oversized metadata that survives the
+# shrink, which is the actual reason that shrink alone used to land ~3GB
+# on ~2GB of real content instead of close to it. Sizing mkfs itself to
+# content (+10% padding) up front instead means resize2fs -M has almost
+# nothing left to trim.
+ROOTA_FS_BLOCK_SIZE=4096
+ROOTA_FS_SIZE_BYTES=$((ROOT_SIZE_ACTUAL + ROOT_SIZE_ACTUAL / 10))
+ROOTA_FS_SIZE_BYTES=$(( (ROOTA_FS_SIZE_BYTES + ROOTA_FS_BLOCK_SIZE - 1) \
+	/ ROOTA_FS_BLOCK_SIZE * ROOTA_FS_BLOCK_SIZE ))
+if [ "$ROOTA_FS_SIZE_BYTES" -gt "$FIXED_ROOT_SIZE_BYTES" ]; then
+	ROOTA_FS_SIZE_BYTES="$FIXED_ROOT_SIZE_BYTES"
+fi
+mkfs.ext4 -q -F -L rootA -b "$ROOTA_FS_BLOCK_SIZE" "${DST_LOOP}p2" \
+	$((ROOTA_FS_SIZE_BYTES / ROOTA_FS_BLOCK_SIZE))
 # p3 (rootB) and p4 (data) are deliberately left unformatted here — the
 # image file gets truncated right after rootA below, so any filesystem
 # written to them now would just be discarded anyway. rootB gets a real
