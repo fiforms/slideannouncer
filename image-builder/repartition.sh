@@ -202,6 +202,14 @@ SRC_LOOP=""
 TRUNCATED_SIZE=$((ROOTA_START + ROOTA_FS_BYTES))
 truncate -s "$TRUNCATED_SIZE" "$OUT_IMG"
 
+# rootA's partition-table entry still declares the full fixed size (parted
+# itself refuses to even print the table once a partition's declared end is
+# past a read-only-opened, truncated disk's actual size — "Can't have a
+# partition outside the disk!" — so callers that need rootA's real byte
+# range, like build.sh's RAUC-bundle extraction, can't re-derive it with
+# parted/fdisk afterward). Hand it over directly instead.
+echo "${ROOTA_START} ${ROOTA_FS_BYTES}" > "${OUT_IMG}.rootA-range"
+
 echo "repartition.sh: wrote ${OUT_IMG} (truncated to ${TRUNCATED_SIZE}B after rootA's shrunk filesystem)"
 echo "  boot  PARTUUID=${NEW_BOOT_PARTUUID}"
 echo "  rootA LABEL=rootA  (active, shrunk to ${ROOTA_FS_BYTES}B content; partition table reserves $((FIXED_ROOT_SIZE_BYTES / 1024 / 1024))MiB; boot/firmware/slotA/ seeded to match)"

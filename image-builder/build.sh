@@ -421,11 +421,11 @@ mkdir -p "$BUNDLE_DIR"
 # default — reserved for future, larger RAUC bundles), but repartition.sh
 # truncated FINAL_IMG right after rootA's actual (shrunk) filesystem, so the
 # file has no bytes for the rest of that declared range. Reading rootA via
-# a loop partition device (sized off the partition table) would run past
-# the end of the backing file — read the exact byte range straight out of
-# FINAL_IMG instead, which is also the right amount to ship in the bundle.
-ROOTA_START="$(parted -ms "$FINAL_IMG" unit B print | awk -F: '$1 == "2" {print $2}' | tr -d B)"
-ROOTA_FS_BYTES="$(($(stat -c%s "$FINAL_IMG") - ROOTA_START))"
+# a loop partition device (sized off the partition table), or re-deriving
+# its range with parted/fdisk against the now-truncated file, both run into
+# the same "partition outside the disk" problem — read the exact byte range
+# repartition.sh already worked out, straight out of FINAL_IMG.
+read -r ROOTA_START ROOTA_FS_BYTES < "${FINAL_IMG}.rootA-range"
 dd if="$FINAL_IMG" of="${BUNDLE_DIR}/rootfs.img" bs=1M \
 	skip="$ROOTA_START" count="$ROOTA_FS_BYTES" iflag=skip_bytes,count_bytes status=none
 
