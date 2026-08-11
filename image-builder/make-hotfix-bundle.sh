@@ -8,7 +8,7 @@
 # a real OS OTA. Don't use this for anything you'd want automatic rollback
 # on.
 #
-#   ./make-hotfix-bundle.sh <files-dir> <required-version> <new-version>
+#   ./make-hotfix-bundle.sh <files-dir> <required-version> <new-version> [script]
 #
 # Output filename encodes both versions:
 # slideannouncer-<new-version>.hotfix.from.<required-version>.raucb —
@@ -34,18 +34,36 @@
 # (or was never at the version it targets) just rejects it instead of
 # re-patching or drifting from what a `rauc status`/heartbeat report
 # actually says its version is.
+#
+# [script] is optional: a shell script run once, after the file drop and
+# before the VERSION bump, for anything a plain file copy can't do —
+# `systemctl enable` a unit the file drop just added, remove a file the
+# hotfix is retiring, etc. It runs on the DEVICE'S LIVE SHELL, not chrooted
+# into the patched rootfs (the bind-mount at /mnt/root is just files on
+# disk, nothing there is bootable/executable as its own root) — an exported
+# $ROOT points at /mnt/root, so the script must target it explicitly
+# (`systemctl --root="$ROOT" enable foo.service`, `rm -f "$ROOT/etc/...`),
+# the same way the hook's own extraction step does. A failing script (any
+# nonzero exit) aborts the hotfix before VERSION is bumped, same as a
+# failed extraction.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="${HERE}/deploy"
 
-USAGE="usage: $0 <files-dir> <required-version> <new-version>"
+USAGE="usage: $0 <files-dir> <required-version> <new-version> [script]"
 FILES_DIR="${1:?$USAGE}"
 REQUIRED_VERSION="${2:?$USAGE}"
 NEW_VERSION="${3:?$USAGE}"
+SCRIPT="${4:-}"
 
 if [ ! -d "$FILES_DIR" ]; then
 	echo "make-hotfix-bundle.sh: ${FILES_DIR} is not a directory" >&2
+	exit 1
+fi
+
+if [ -n "$SCRIPT" ] && [ ! -f "$SCRIPT" ]; then
+	echo "make-hotfix-bundle.sh: ${SCRIPT} is not a file" >&2
 	exit 1
 fi
 
@@ -88,6 +106,15 @@ cp -a "${FILES_DIR}/." "$STAGE_DIR/"
 # without this a hotfix's file ownership would depend on who ran this
 # script instead of being deterministic.
 tar --owner=0 --group=0 --numeric-owner -C "$STAGE_DIR" -czf "${BUNDLE_DIR}/files.tar.gz" .
+
+# Copied into the bundle directory (not referenced from its original path)
+# so it's self-contained inside the .raucb the same way files.tar.gz is —
+# the source tree that built this bundle (e.g. a hotfixes/<version>/
+# directory) has no bearing on what actually ships.
+if [ -n "$SCRIPT" ]; then
+	cp "$SCRIPT" "${BUNDLE_DIR}/script.sh"
+	chmod +x "${BUNDLE_DIR}/script.sh"
+fi
 
 # RAUC's verity format refuses images whose *squashfs-compressed* size
 # comes out to one block or less ("squashfs size (4096) must be larger
@@ -153,6 +180,15 @@ slot-install)
 	# minimum bundle-image size — never meant to persist on-device. rm -f
 	# so this is a no-op on a hotfix large enough not to have needed it.
 	rm -f /mnt/root/.rauc-hotfix-padding
+	# script.sh sits alongside the image file inside the mounted bundle, so
+	# find it relative to $RAUC_IMAGE_NAME rather than this hook's own
+	# path — RAUC controls how/where the bundle is mounted, not this
+	# script. Optional: most hotfixes are pure file drops with nothing to
+	# run.
+	SCRIPT_PATH="$(dirname "${RAUC_IMAGE_NAME:?}")/script.sh"
+	if [ -f "$SCRIPT_PATH" ]; then
+		ROOT=/mnt/root "$SCRIPT_PATH"
+	fi
 	echo "@@NEW_VERSION@@" > /mnt/root/opt/slide-announcer/VERSION
 	;;
 esac

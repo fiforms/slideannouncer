@@ -70,9 +70,6 @@ install -m 755 files/system/rauc/rpi-tryboot-backend.sh \
 	"${ROOTFS_DIR}/usr/lib/rauc/rpi-tryboot-backend.sh"
 install -m 755 files/system/rauc/rpi-tryboot-commit.sh \
 	"${ROOTFS_DIR}/usr/lib/rauc/rpi-tryboot-commit.sh"
-install -d "${ROOTFS_DIR}/etc/tmpfiles.d"
-install -m 644 files/system/rauc/slide-announcer-rauc.conf \
-	"${ROOTFS_DIR}/etc/tmpfiles.d/slide-announcer-rauc.conf"
 
 # Debian's rauc package (confirmed via `dpkg -L rauc`) ships only the
 # binary — no rauc.service unit, no D-Bus service/policy files. Without
@@ -343,6 +340,7 @@ systemctl mask e2scrub_all.timer e2scrub_all.service e2scrub_reap.service
 systemctl enable slide-announcer-overlay-var-dirs.service
 systemctl enable slide-announcer-factory-reset-check.service
 systemctl enable slide-announcer-data-dirs.service
+systemctl enable slide-announcer-rauc-dirs.service
 systemctl enable slide-announcer-data-resize.service
 systemctl enable slide-announcer-firstboot.service
 systemctl enable slide-announcer-local-app-seed.service

@@ -1,0 +1,20 @@
+[Unit]
+Description=Create /data/rauc for RAUC's persistent statusfile
+# A plain systemd-tmpfiles rule doesn't work here: systemd-tmpfiles-setup.service
+# runs at sysinit.target, before /data (a separate partition mounted by its
+# own data.mount unit under local-fs.target) is actually mounted — so the
+# rule either fails against the still-read-only rootfs or gets shadowed once
+# /data mounts on top, and /data/rauc never ends up on the real partition.
+# Same ordering problem slide-announcer-data-dirs.service already solves for
+# /data/overlay/etc/'s upper/work dirs — same fix here.
+DefaultDependencies=no
+After=data.mount
+Requires=data.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/mkdir -p -m 0755 /data/rauc
+
+[Install]
+WantedBy=local-fs-pre.target

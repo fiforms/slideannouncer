@@ -13,6 +13,14 @@ hotfixes/
                  ../../make-hotfix-bundle.sh
     files/     — copied verbatim onto the device's root by the hotfix;
                  same layout as make-hotfix-bundle.sh's <files-dir> argument
+    script.sh  — optional; passed as make-hotfix-bundle.sh's 4th argument.
+                 Runs once on-device after files/ is extracted and before
+                 VERSION is bumped, for anything a file copy alone can't do
+                 (systemctl enable/disable a unit, delete a file the hotfix
+                 is retiring). Not chrooted — runs on the live device shell
+                 against $ROOT (the patched rootfs's bind-mount), so target
+                 it explicitly: `systemctl --root="$ROOT" enable foo.service`,
+                 `rm -f "$ROOT/etc/..."`, never the live /etc directly.
 ```
 
 To build a hotfix, run its `build.sh` (needs `RAUC_CERT_PATH`/

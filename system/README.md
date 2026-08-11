@@ -101,9 +101,17 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
 - `rauc/` — `system.conf` (slot config, including the `kernel.0`/`kernel.1`
   custom slots for boot-partition content), `rpi-tryboot-backend.sh`
   (get/set-primary — stages a tryboot attempt) and `rpi-tryboot-commit.sh`
-  (runs at boot, commits a successful tryboot attempt), and a tmpfiles
-  rule for RAUC's persistent statusfile dir. **HARDWARE-UNVERIFIED** — see
-  `../image-builder/README.md`'s note and each script's own header.
+  (runs at boot, commits a successful tryboot attempt). **HARDWARE-UNVERIFIED**
+  — see `../image-builder/README.md`'s note and each script's own header.
+- `slide-announcer-rauc-dirs.service` — creates `/data/rauc` for RAUC's
+  persistent statusfile before RAUC ever runs. Not a plain tmpfiles.d rule:
+  `systemd-tmpfiles-setup.service` runs before `/data` mounts, so a bare
+  rule there either fails against the still-read-only rootfs or gets
+  shadowed once `/data` mounts on top — same class of ordering bug
+  `slide-announcer-data-dirs.service` already solves for `/etc`'s overlay
+  dirs, fixed the same way here. Found on real hardware: `rauc install`
+  failed with "Failed to create file '/data/rauc/central.json.XXXXXX':
+  No such file or directory".
 - `slide-announcer-tryboot-check.service` — runs `rpi-tryboot-commit.sh`
   every boot; a no-op unless this boot was a RAUC tryboot attempt.
 - `scripts/rauc-update.py` (installed as `/usr/local/sbin/slide-announcer-update`)
