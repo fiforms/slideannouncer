@@ -46,16 +46,7 @@ set -euo pipefail
 TRYBOOT_FLAG="/proc/device-tree/chosen/bootloader/tryboot"
 BOOTFW="/boot/firmware"
 
-# Confirmed by testing on real hardware: this property is a devicetree cell
-# (4 raw bytes, big-endian — 00 00 00 01 when set), not text, so comparing
-# its content against the ASCII string "1" always failed, even on a genuine
-# tryboot boot — silently sending every tryboot straight through the
-# "nothing to commit" exit below and leaving it uncommitted forever. Read
-# the bytes as hex and check they're not all-zero instead of decoding them
-# as an integer — od's -tu4 decodes using the HOST's native byte order,
-# which would misread this big-endian cell on a little-endian Pi.
-TRYBOOT_HEX="$(od -An -tx1 "$TRYBOOT_FLAG" 2>/dev/null | tr -d ' \n')"
-if [ ! -f "$TRYBOOT_FLAG" ] || [ -z "$TRYBOOT_HEX" ] || [ "$TRYBOOT_HEX" = "00000000" ]; then
+if [ ! -f "$TRYBOOT_FLAG" ] || [ "$(tr -d '\0' <"$TRYBOOT_FLAG" 2>/dev/null)" != "1" ]; then
 	exit 0 # normal boot, nothing to commit
 fi
 

@@ -7,11 +7,12 @@ Tier 1, "Update safety") — this just wraps the pieces that already exist
 person can run over SSH/console to test the pipeline end to end before any
 of that automation gets built on top of it.
 
-system/rauc/rpi-tryboot-backend.sh and rpi-tryboot-commit.sh's install →
-tryboot reboot → commit cycle is confirmed working end-to-end on real
-hardware (2026-08-11) — see those files' own headers. Still unverified:
-the forced-bad-health → rollback path, since today's post-tryboot health
-check is just a placeholder ("we reached this unit").
+Known limitation: system/rauc/rpi-tryboot-backend.sh and rpi-tryboot-commit.sh
+are a real (not stub) but HARDWARE-UNVERIFIED implementation of Raspberry
+Pi tryboot A/B switching — see those files' own headers. A real tryboot
+cycle (install, tryboot reboot, forced-bad health check, confirm rollback)
+hasn't been run on actual hardware yet; this CLI is exactly the tool for
+doing that testing.
 
 Subcommands:
     check                   call the server heartbeat, print the OS update
@@ -26,21 +27,34 @@ Subcommands:
     mark-good               `rauc status mark-good`
 
 `install`/`status`/`mark-good` go through RAUC's own D-Bus service (which
-runs as root regardless of caller) and need no privilege here. `tryboot`
-needs none either — it starts slide-announcer-tryboot.service (a root
-oneshot unit that runs the actual `reboot "0 tryboot"`, since that writes
-straight to /run/systemd/reboot-param, bypassing D-Bus entirely) via
-`systemctl start`, authorized for this account by
-system/polkit/50-slide-announcer-system.rules rather than sudo.
+runs as root regardless of caller) and need no privilege here. Only
+`tryboot` needs root — `reboot <cmd>` writes straight to
+/run/systemd/reboot-param, bypassing D-Bus entirely — and re-execs itself
+under sudo automatically if not already run as root.
 """
 import argparse
 import json
+import os
 import platform
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+NEEDS_ROOT = {"tryboot"}
+
+
+def ensure_root(command):
+    """Re-exec under sudo instead of failing partway through 'tryboot'
+    (reaching `reboot`'s "Failed to write reboot parameter file: Permission
+    denied" only after printing its warning). install/status/mark-good go
+    through RAUC's own D-Bus service and don't need this — only the raw
+    `reboot <cmd>` call here writes to a root-owned file directly.
+    """
+    if command not in NEEDS_ROOT or os.geteuid() == 0:
+        return
+    os.execvp("sudo", ["sudo", sys.executable, os.path.abspath(__file__), *sys.argv[1:]])
 
 SERVER_URL_FILE = Path("/etc/slide-announcer/server-url")
 DEVICE_TOKEN_FILE = Path("/data/device-token")
@@ -148,7 +162,7 @@ def cmd_install(args):
         print(
             "\nInstall succeeded — rpi-tryboot-backend.sh has staged the "
             "new slot (/boot/firmware/tryboot.txt). Nothing has rebooted "
-            "yet. Run 'slide-announcer-update tryboot' to actually "
+            "yet. Run 'sudo slide-announcer-update tryboot' to actually "
             "boot into it, or 'status' to inspect RAUC's view first."
         )
     sys.exit(result.returncode)
@@ -162,24 +176,15 @@ def cmd_tryboot(args):
             "Pass --yes to actually do it."
         )
     print(
-        "Rebooting via tryboot. Check 'slide-announcer-update status' and "
-        "'journalctl -u slide-announcer-tryboot-check' once it's back up "
-        "to confirm the new slot committed."
+        "Rebooting via tryboot — HARDWARE-UNVERIFIED (see "
+        "system/rauc/rpi-tryboot-backend.sh's header). If this doesn't "
+        "come back up with the new slot committed (check "
+        "'slide-announcer-update status' and "
+        "'journalctl -u slide-announcer-tryboot-check' after it reboots), "
+        "the tryboot.txt/os_prefix mechanism needs a closer look against "
+        "this device's actual firmware."
     )
-    # --no-block: slide-announcer-tryboot.service's own ExecStart reboots
-    # the machine, so a plain (blocking) `systemctl start` sometimes has its
-    # job canceled by the shutdown before it can report success back here
-    # — a false-negative "failed to start" printed on the way out, even
-    # though the reboot itself already fired. --no-block just enqueues the
-    # job and returns immediately, before that race can happen.
-    result = subprocess.run(["systemctl", "start", "--no-block", "slide-announcer-tryboot.service"])
-    if result.returncode != 0:
-        sys.exit(
-            "Failed to start slide-announcer-tryboot.service — check "
-            "system/polkit/50-slide-announcer-system.rules is installed "
-            "and covers this account."
-        )
-    sys.exit(0)
+    sys.exit(subprocess.run(["reboot", "0 tryboot"]).returncode)
 
 
 def cmd_status(args):
@@ -215,6 +220,7 @@ def main():
     sub.add_parser("mark-good", help="rauc status mark-good").set_defaults(func=cmd_mark_good)
 
     args = parser.parse_args()
+    ensure_root(args.command)
     args.func(args)
 
 

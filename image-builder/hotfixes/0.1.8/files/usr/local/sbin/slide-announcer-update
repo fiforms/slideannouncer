@@ -7,11 +7,12 @@ Tier 1, "Update safety") — this just wraps the pieces that already exist
 person can run over SSH/console to test the pipeline end to end before any
 of that automation gets built on top of it.
 
-system/rauc/rpi-tryboot-backend.sh and rpi-tryboot-commit.sh's install →
-tryboot reboot → commit cycle is confirmed working end-to-end on real
-hardware (2026-08-11) — see those files' own headers. Still unverified:
-the forced-bad-health → rollback path, since today's post-tryboot health
-check is just a placeholder ("we reached this unit").
+Known limitation: system/rauc/rpi-tryboot-backend.sh and rpi-tryboot-commit.sh
+are a real (not stub) but HARDWARE-UNVERIFIED implementation of Raspberry
+Pi tryboot A/B switching — see those files' own headers. A real tryboot
+cycle (install, tryboot reboot, forced-bad health check, confirm rollback)
+hasn't been run on actual hardware yet; this CLI is exactly the tool for
+doing that testing.
 
 Subcommands:
     check                   call the server heartbeat, print the OS update
@@ -162,17 +163,15 @@ def cmd_tryboot(args):
             "Pass --yes to actually do it."
         )
     print(
-        "Rebooting via tryboot. Check 'slide-announcer-update status' and "
-        "'journalctl -u slide-announcer-tryboot-check' once it's back up "
-        "to confirm the new slot committed."
+        "Rebooting via tryboot — HARDWARE-UNVERIFIED (see "
+        "system/rauc/rpi-tryboot-backend.sh's header). If this doesn't "
+        "come back up with the new slot committed (check "
+        "'slide-announcer-update status' and "
+        "'journalctl -u slide-announcer-tryboot-check' after it reboots), "
+        "the tryboot.txt/os_prefix mechanism needs a closer look against "
+        "this device's actual firmware."
     )
-    # --no-block: slide-announcer-tryboot.service's own ExecStart reboots
-    # the machine, so a plain (blocking) `systemctl start` sometimes has its
-    # job canceled by the shutdown before it can report success back here
-    # — a false-negative "failed to start" printed on the way out, even
-    # though the reboot itself already fired. --no-block just enqueues the
-    # job and returns immediately, before that race can happen.
-    result = subprocess.run(["systemctl", "start", "--no-block", "slide-announcer-tryboot.service"])
+    result = subprocess.run(["systemctl", "start", "slide-announcer-tryboot.service"])
     if result.returncode != 0:
         sys.exit(
             "Failed to start slide-announcer-tryboot.service — check "

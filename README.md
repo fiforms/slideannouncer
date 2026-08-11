@@ -13,10 +13,11 @@ server release.
 **Status: early implementation.** Image build, first-boot provisioning,
 device identity, on-device WiFi/network settings, and a first pass at RAUC
 OTA are implemented; pairing and slide sync are not yet — see each
-directory's README for specifics. Of the RAUC OTA paths, the hotfix
-mechanism (`image-builder/make-hotfix-bundle.sh`) is confirmed working
-end-to-end on real hardware (2026-08-10); the full-image/tryboot A/B path
-remains hardware-unverified.
+directory's README for specifics. Of the RAUC OTA paths, both the hotfix
+mechanism (`image-builder/make-hotfix-bundle.sh`, 2026-08-10) and the
+full-image/tryboot A/B path (2026-08-11) are now confirmed working
+end-to-end on real hardware — install, tryboot reboot, and commit
+(`os_prefix` flip + `mark-good`) all verified.
 
 See [`SLIDE_ANNOUNCER.md`](https://github.com/fiforms/announcementslides/blob/master/SLIDE_ANNOUNCER.md)
 in the main repo for the full design: the three update tiers (OS image,

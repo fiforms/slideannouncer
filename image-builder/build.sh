@@ -503,8 +503,9 @@ sudo umount "$ROOTFS_MNT"
 # device-side script. Hook argv values (slot-install, slot-post-install) and
 # env vars (RAUC_SLOT_DEVICE, RAUC_SLOT_BOOTNAME, RAUC_IMAGE_NAME) are
 # confirmed against RAUC 1.13's own source (src/update_handler.c's
-# R_SLOT_HOOK_* defines) — the field's still HARDWARE-UNVERIFIED end-to-end
-# (see rpi-tryboot-backend.sh), but this contract itself is not a guess.
+# R_SLOT_HOOK_* defines) — this contract itself was not a guess, and the
+# full install/tryboot/commit cycle is now confirmed end-to-end on real
+# hardware too (see rpi-tryboot-backend.sh and rpi-tryboot-commit.sh).
 #
 # slot-post-install on [image.rootfs]: RAUC's default install for an ext4
 # slot with a full raw filesystem image is a plain byte copy onto the slot

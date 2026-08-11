@@ -1,0 +1,13 @@
+[Unit]
+Description=Slide Announcer tryboot reboot (triggered on demand — see slide-announcer-update's tryboot subcommand)
+# On-demand only, like slide-announcer-update-check.service — never
+# WantedBy anything, never enabled at boot. Exists so that reboot's raw
+# "0 tryboot" argument (which writes /run/systemd/reboot-param directly,
+# bypassing D-Bus/logind entirely) can run as root without the caller
+# needing to be root themselves: the caller only needs permission to
+# `systemctl start` this unit (see system/polkit/50-slide-announcer-system.rules),
+# not permission to reboot the machine arbitrarily.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/reboot "0 tryboot"

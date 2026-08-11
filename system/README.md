@@ -111,8 +111,11 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
 - `rauc/` — `system.conf` (slot config, including the `kernel.0`/`kernel.1`
   custom slots for boot-partition content), `rpi-tryboot-backend.sh`
   (get/set-primary — stages a tryboot attempt) and `rpi-tryboot-commit.sh`
-  (runs at boot, commits a successful tryboot attempt). **HARDWARE-UNVERIFIED**
-  — see `../image-builder/README.md`'s note and each script's own header.
+  (runs at boot, commits a successful tryboot attempt). Confirmed working
+  end-to-end on real hardware (2026-08-11) — see
+  `../image-builder/README.md`'s note and each script's own header. The
+  forced-bad-health → rollback path is still unverified (today's health
+  check is a placeholder).
 - `slide-announcer-rauc-dirs.service` — creates `/data/rauc` for RAUC's
   persistent statusfile before RAUC ever runs. Not a plain tmpfiles.d rule:
   `systemd-tmpfiles-setup.service` runs before `/data` mounts, so a bare

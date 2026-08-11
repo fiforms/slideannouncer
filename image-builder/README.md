@@ -17,14 +17,20 @@ The hotfix mechanism is **confirmed working end-to-end on real hardware**
 check, live-rootfs bind-mount write-through, and `/opt/slide-announcer/VERSION`
 bump all verified on an actual device.
 
-**HARDWARE-UNVERIFIED (tryboot only):** none of the tryboot-specific
-pieces (the `tryboot.txt`/`os_prefix` mechanism, the
-`/proc/device-tree/chosen/bootloader/tryboot` boot-detection flag, RAUC's
-exact custom-bootloader-backend and custom-slot-hook argv/env contracts)
-have been run through a real install → tryboot reboot → forced-bad-health
-→ rollback cycle on actual hardware — see each script's own header and
-`SLIDE_ANNOUNCER.md`'s open questions. Treat this piece as a real first
-attempt to validate against real hardware, not a proven implementation.
+The tryboot path is now also **confirmed working end-to-end on real
+hardware** (2026-08-11): `rauc install` staging the inactive slot,
+`tryboot.txt`/`os_prefix` (a full `config.txt` copy with only `os_prefix`
+swapped), the `/proc/device-tree/chosen/bootloader/tryboot` boot-detection
+flag (a 4-byte big-endian devicetree cell, not text), and the commit step
+(`config.txt` flip + `rauc status mark-good` + normal reboot) all verified
+on an actual device — see each script's own header for what testing
+surfaced and fixed along the way.
+
+**Still unverified:** the forced-bad-health → rollback path. The
+post-tryboot health check `rpi-tryboot-commit.sh` runs is currently just a
+placeholder ("we reached this unit"), so every tryboot so far has taken the
+commit branch — no real failure has ever been forced through it. See
+`SLIDE_ANNOUNCER.md`'s open questions.
 
 ## Contents
 
