@@ -190,6 +190,15 @@ install -d "${ROOTFS_DIR}/etc/systemd/journald.conf.d"
 install -m 644 files/system/read-only-root/journald-volatile.conf \
 	"${ROOTFS_DIR}/etc/systemd/journald.conf.d/slide-announcer-volatile.conf"
 
+# Repoint rpi-swap's "zram+file" backing file off its default /var/swap —
+# /var's tmpfs upper means that file is backed by RAM, not disk (see
+# system/read-only-root/rpi-swap-data.conf for the full story). Drop-in,
+# not an edit to the vendor's /etc/rpi/swap.conf, per swap.conf(5)'s own
+# recommendation.
+install -d "${ROOTFS_DIR}/etc/rpi/swap.conf.d"
+install -m 644 files/system/read-only-root/rpi-swap-data.conf \
+	"${ROOTFS_DIR}/etc/rpi/swap.conf.d/slide-announcer-data.conf"
+
 # cloud-init-local.service has no ordering against /etc's overlay mount by
 # default (see system/read-only-root/cloud-init-etc-overlay.conf) — without
 # this, a FACTORY_RESET boot can lose the NoCloud network-config's WiFi

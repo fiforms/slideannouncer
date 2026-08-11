@@ -86,6 +86,16 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
 - `read-only-root/journald-volatile.conf` — journald drop-in forcing
   `Storage=volatile`, since `/var/log/journal` would never persist across a
   reboot anyway once `/var` is overlay-tmpfs.
+- `read-only-root/rpi-swap-data.conf` — `rpi-swap` (this image's actual swap
+  mechanism, a zram + file-backed-overflow hybrid — not `dphys-swapfile`,
+  which isn't installed here) drop-in at `/etc/rpi/swap.conf.d/`, repointing
+  the file half of that hybrid off its default `/var/swap` (RAM, since
+  `/var`'s upper is tmpfs) to a fixed 2048MB file on `/data` (real disk,
+  cheap even on the smallest supported card — see the drop-in's own
+  comment). No
+  manual ordering against `data.mount` needed — `rpi-swap-generator`
+  derives each unit's `RequiresMountsFor=` from this file's `Path=` fresh
+  on every boot/`daemon-reload`.
 - `read-only-root/cloud-init-etc-overlay.conf` — `cloud-init-local.service`
   drop-in (`After=`/`Requires=etc.mount`). Stock `cloud-init-local.service`
   has `DefaultDependencies=no` and no ordering against `/etc`'s overlay
