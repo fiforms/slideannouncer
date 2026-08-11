@@ -86,6 +86,18 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
 - `read-only-root/journald-volatile.conf` — journald drop-in forcing
   `Storage=volatile`, since `/var/log/journal` would never persist across a
   reboot anyway once `/var` is overlay-tmpfs.
+- `read-only-root/cloud-init-etc-overlay.conf` — `cloud-init-local.service`
+  drop-in (`After=`/`Requires=etc.mount`). Stock `cloud-init-local.service`
+  has `DefaultDependencies=no` and no ordering against `/etc`'s overlay
+  mount, since on a normal system `/etc` is just part of the root
+  filesystem. Here it's `etc.mount`, only ready after
+  `slide-announcer-factory-reset-check.service` -> `data.mount` ->
+  `slide-announcer-data-dirs.service` -> `etc.mount`. Without this,
+  cloud-init can win the race and write the NoCloud network-config's
+  WiFi profile before that chain finishes — usually harmless since the
+  chain is normally fast, but a `FACTORY_RESET` boot adds a real
+  `mkfs.ext4` ahead of `etc.mount`, which was enough to lose the profile
+  and require a second reboot to pick up WiFi.
 - `rauc/` — `system.conf` (slot config, including the `kernel.0`/`kernel.1`
   custom slots for boot-partition content), `rpi-tryboot-backend.sh`
   (get/set-primary — stages a tryboot attempt) and `rpi-tryboot-commit.sh`

@@ -193,6 +193,14 @@ install -d "${ROOTFS_DIR}/etc/systemd/journald.conf.d"
 install -m 644 files/system/read-only-root/journald-volatile.conf \
 	"${ROOTFS_DIR}/etc/systemd/journald.conf.d/slide-announcer-volatile.conf"
 
+# cloud-init-local.service has no ordering against /etc's overlay mount by
+# default (see system/read-only-root/cloud-init-etc-overlay.conf) — without
+# this, a FACTORY_RESET boot can lose the NoCloud network-config's WiFi
+# profile to a race and need a second reboot to pick it up.
+install -d "${ROOTFS_DIR}/etc/systemd/system/cloud-init-local.service.d"
+install -m 644 files/system/read-only-root/cloud-init-etc-overlay.conf \
+	"${ROOTFS_DIR}/etc/systemd/system/cloud-init-local.service.d/slide-announcer-etc-overlay.conf"
+
 # Quiet boot: move kernel/systemd console messages off tty1 (our kiosk's
 # display) onto tty3 instead (still there via Ctrl+Alt+F3 for debugging,
 # just not visible on the physical display), and suppress most kernel log
