@@ -1,0 +1,14 @@
+[Unit]
+Description=Periodic trigger for slide-announcer-os-updater.service
+
+[Timer]
+# Offset from slide-announcer-local-app-updater.timer's 5/15 schedule so
+# the app-tier updater generally gets first crack within a given idle
+# window — a scheduling nicety, not the actual ordering guarantee (that's
+# os-updater.py's own app_update_available deferral check).
+OnBootSec=10min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

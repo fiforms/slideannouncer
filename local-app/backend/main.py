@@ -1,8 +1,8 @@
 """Local backend — WiFi/network settings API for the on-device settings menu
 (see SLIDE_ANNOUNCER.md, "Kiosk display", "Local settings menu"), the
-pairing screen's API, the heartbeat background task, and the local-status
-endpoint the kiosk home page polls. Slide sync/display are still stubs
-(separate build, see SLIDE_ANNOUNCER.md's Tier 2 "Slide sync daemon").
+pairing screen's API, the heartbeat and slide-sync background tasks, and
+the local-status endpoint the kiosk home page polls. Kiosk display itself
+is still unbuilt (separate build, see SLIDE_ANNOUNCER.md's "Kiosk display").
 """
 import asyncio
 import json
@@ -25,9 +25,11 @@ VERSION_FILE = Path("/opt/slide-announcer/VERSION")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = asyncio.create_task(heartbeat.run_forever())
+    heartbeat_task = asyncio.create_task(heartbeat.run_forever())
+    sync_task = asyncio.create_task(sync.run_forever())
     yield
-    task.cancel()
+    heartbeat_task.cancel()
+    sync_task.cancel()
 
 
 app = FastAPI(lifespan=lifespan)

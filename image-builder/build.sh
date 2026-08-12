@@ -254,6 +254,10 @@ rm -rf "$FILES_DIR"
 mkdir -p "$FILES_DIR"
 rsync -a --exclude 'backend/venv' "${REPO_ROOT}/system/" "${FILES_DIR}/system/"
 rsync -a "${REPO_ROOT}/provisioning/" "${FILES_DIR}/provisioning/"
+# Fixed OS-image infra, like local-app-seed.py — deliberately NOT part of
+# the versioned local-app release tarball below, so a bad app update can
+# never take the update mechanism itself down with it.
+rsync -a "${REPO_ROOT}/updater/" "${FILES_DIR}/updater/" --exclude 'README.md'
 # The device gets no local-app *source* at all — only the built release
 # tarball, baked in read-only at a fixed rootfs path, plus requirements.txt
 # (to build the venv, itself fixed OS-image infra independent of the app

@@ -1,0 +1,8 @@
+[Unit]
+Description=Slide Announcer automatic OS update check/install (Tier 1)
+After=slide-announcer-backend.service
+Requires=slide-announcer-backend.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/slide-announcer-os-updater

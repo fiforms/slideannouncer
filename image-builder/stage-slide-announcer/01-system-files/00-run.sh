@@ -6,6 +6,12 @@
 install -d "${ROOTFS_DIR}/opt/slide-announcer"
 cp -r files/provisioning "${ROOTFS_DIR}/opt/slide-announcer/provisioning"
 
+# The local-app self-updater (slide-announcer-local-app-updater.service) —
+# fixed OS-image infra like provisioning/ above, deliberately outside the
+# versioned /data/local-app/releases/<version>/ tree it manages, so a bad
+# app release can never take the update mechanism itself down with it.
+cp -r files/updater "${ROOTFS_DIR}/opt/slide-announcer/updater"
+
 # local-app itself is never installed onto rootfs — only its built release
 # tarball, read-only at a fixed path. system/scripts/local-app-seed.py (run
 # every boot, before the backend/kiosk services) extracts this onto /data
@@ -29,13 +35,14 @@ cp files/local-app-release/requirements.txt "${ROOTFS_DIR}/opt/slide-announcer/l
 . files/BUILD_INFO
 echo "${OS_VERSION:?}" > "${ROOTFS_DIR}/opt/slide-announcer/VERSION"
 
-install -m 644 files/system/*.service "${ROOTFS_DIR}/etc/systemd/system/"
+install -m 644 files/system/*.service files/system/*.timer "${ROOTFS_DIR}/etc/systemd/system/"
 install -d "${ROOTFS_DIR}/usr/local/sbin" "${ROOTFS_DIR}/usr/local/bin"
 install -m 755 files/system/scripts/data-resize.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-data-resize.sh"
 install -m 755 files/system/scripts/kiosk-start.sh "${ROOTFS_DIR}/usr/local/bin/slide-announcer-kiosk-start.sh"
 install -m 755 files/system/scripts/rauc-update.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-update"
 install -m 755 files/system/scripts/local-app-seed.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-local-app-seed"
 install -m 755 files/system/scripts/update-check.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-update-check"
+install -m 755 files/system/scripts/os-updater.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-os-updater"
 install -m 755 files/system/scripts/factory-reset-check.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-factory-reset-check"
 
 install -d "${ROOTFS_DIR}/etc/nginx/sites-available"
@@ -356,6 +363,8 @@ systemctl enable slide-announcer-local-app-seed.service
 systemctl enable slide-announcer-backend.service
 systemctl enable slide-announcer-kiosk.service
 systemctl enable slide-announcer-tryboot-check.service
+systemctl enable slide-announcer-local-app-updater.timer
+systemctl enable slide-announcer-os-updater.timer
 systemctl enable rauc.service
 systemctl enable nginx.service
 systemctl enable seatd.service

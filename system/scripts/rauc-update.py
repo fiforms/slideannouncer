@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Slide Announcer RAUC update CLI (Tier 1 OS OTA) — manual/testing use.
 
-No automatic timer or idle-window gating exists yet (see SLIDE_ANNOUNCER.md,
-Tier 1, "Update safety") — this just wraps the pieces that already exist
-(the heartbeat contract from Part 1, and `rauc` itself) into something a
-person can run over SSH/console to test the pipeline end to end before any
-of that automation gets built on top of it.
+Automatic installation now exists as a separate script/unit,
+os-updater.py (slide-announcer-os-updater.service/.timer) — it wraps the
+same `rauc install`/tryboot calls this CLI does, on a timer, gated by
+os_auto_update_enabled and the idle window (see SLIDE_ANNOUNCER.md, Tier 1,
+"Update safety"). This CLI remains useful for manual testing/intervention
+(e.g. a device with auto-update disabled, or forcing an install of a
+specific bundle) independent of that automation.
 
 system/rauc/rpi-tryboot-backend.sh and rpi-tryboot-commit.sh's install →
 tryboot reboot → commit cycle is confirmed working end-to-end on real
