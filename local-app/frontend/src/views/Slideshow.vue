@@ -108,6 +108,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  cursor: none;
 }
 .slide-image {
   width: 100%;
