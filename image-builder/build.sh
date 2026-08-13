@@ -392,7 +392,13 @@ echo "==> Running pi-gen (Docker)"
 (cd "$PI_GEN_DIR" && ./build-docker.sh -c "$CONFIG_FILE")
 
 echo "==> Locating pi-gen's raw image output"
-RAW_XZ="$(find "${PI_GEN_DIR}/deploy" -maxdepth 1 -name "*${IMG_NAME}*.img.xz" ! -name '*-lite*' | head -n1)"
+# pi-gen/deploy accumulates one dated image per run (never cleaned between
+# builds) and its filename carries the build DATE, not this project's
+# OS_VERSION — so multiple old images can match this glob. `find | head -n1`
+# picked whatever the filesystem happened to list first, which silently
+# grabbed a stale prior build instead of the one just produced. Sort by
+# mtime and take the newest.
+RAW_XZ="$(find "${PI_GEN_DIR}/deploy" -maxdepth 1 -name "*${IMG_NAME}*.img.xz" ! -name '*-lite*' -printf '%T@ %p\n' | sort -rn | head -n1 | cut -d' ' -f2-)"
 if [ -z "$RAW_XZ" ]; then
 	echo "Could not find pi-gen output image in ${PI_GEN_DIR}/deploy" >&2
 	exit 1
@@ -500,6 +506,16 @@ sudo mount -o ro,loop "${BUNDLE_DIR}/rootfs.img" "$ROOTFS_MNT"
 IMAGE_VERSION="$(cat "${ROOTFS_MNT}/opt/slide-announcer/VERSION")"
 sudo umount "$ROOTFS_MNT"
 
+# If these don't match, the rootfs baked into the image is stale relative to
+# what this build run intended (e.g. a resumed pi-gen container skipped the
+# stage that stamps VERSION) — fail loudly instead of silently shipping a
+# mislabeled bundle.
+if [ "$IMAGE_VERSION" != "$OS_VERSION" ]; then
+	echo "ERROR: version mismatch — built rootfs reports VERSION=${IMAGE_VERSION} but this build run is OS_VERSION=${OS_VERSION}." >&2
+	echo "This usually means pi-gen reused a stale/resumed work container and skipped stamping the version. Remove the pigen_work container (docker rm -v pigen_work) and rebuild from clean." >&2
+	exit 1
+fi
+
 # Bundle hook: RAUC has no built-in notion of "a directory inside an
 # already-mounted FAT32 partition" as a slot, so the "kernel" custom slot's
 # actual install logic ships inside the bundle itself (covered by the same
@@ -586,7 +602,7 @@ cat > "${BUNDLE_DIR}/manifest.raucm" <<EOF
 compatible=slideannouncer-rpi4
 version=${IMAGE_VERSION}
 
-# verity, not plain: `rauc install <url>` streams the bundle over HTTP
+# verity, not plain: "rauc install <url>" streams the bundle over HTTP
 # rather than downloading it whole first, and RAUC's streaming installer
 # only supports formats that can be authenticated block-by-block as they
 # arrive (confirmed by testing: plain format failed with "Bundle format
@@ -624,4 +640,14 @@ else
 	# this run — the account was already provisioned in the earlier build
 	# raw.img came from, and that password was only ever printed there.
 	echo "==> RESUME_WORK build: 'slideadmin' password unchanged from the original build (see its output)"
+fi
+
+# pi-gen/deploy accumulates one dated .img.xz (+ .info) per run and is never
+# cleaned by pi-gen itself — left alone, these pile up and eat disk (and is
+# exactly what caused build.sh to grab a stale prior build's image above).
+# Only safe to do once we've actually consumed this run's output above (i.e.
+# not a RESUME_WORK run, which never touches pi-gen/deploy at all).
+if [ -z "$RESUME_WORK" ]; then
+	echo "==> Cleaning up pi-gen/deploy (consumed raw images no longer needed)"
+	find "${PI_GEN_DIR}/deploy" -maxdepth 1 \( -name "*${IMG_NAME}*.img.xz" -o -name "*${IMG_NAME}*.info" \) -delete
 fi
