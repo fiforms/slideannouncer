@@ -314,6 +314,15 @@ NMEOF
 useradd --system --create-home --home-dir /var/lib/slide-announcer \
 	--groups video,render,input,dialout,netdev slideannouncer
 
+# labwc config for the kiosk session (see system/labwc/rc.xml for why this
+# exists and what it blocks) — labwc reads $HOME/.config/labwc/rc.xml by
+# default, and systemd sets HOME from the passwd entry above for
+# slide-announcer-kiosk.service's User=slideannouncer.
+install -d -o slideannouncer -g slideannouncer /var/lib/slide-announcer/.config
+install -d -o slideannouncer -g slideannouncer /var/lib/slide-announcer/.config/labwc
+install -m 644 -o slideannouncer -g slideannouncer files/system/labwc/rc.xml \
+	/var/lib/slide-announcer/.config/labwc/rc.xml
+
 # Lets the interactive `slideadmin` console/SSH account read
 # /data/device-token (owner slideannouncer, mode 640 — see pairing.py's
 # docstring) so `slide-announcer-update check`/`install`

@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<!--
+  Installed to /var/lib/slide-announcer/.config/labwc/rc.xml (the
+  `slideannouncer` service user's home) by 00-run.sh. Deliberately omits
+  <default/> from <keyboard>: this kiosk has exactly one fullscreen
+  Chromium surface and no window-switching/tiling needs, so there is no
+  reason to load labwc's stock WM keybindings (Alt-Tab, etc.) at all only
+  to fight them later. The only bindings defined are the ones below,
+  meant to swallow specific browser-native shortcuts before Chromium ever
+  sees the keypress.
+
+  A matched labwc keybind is handled by the compositor and not forwarded
+  to the focused client (this is how any Wayland WM implements Alt-Tab
+  without every app needing to know about it) — see ToggleKeybinds in
+  labwc-actions(5), whose entire purpose is temporarily turning that
+  interception off so a nested VM/VNC client can receive bindings
+  normally, which only makes sense if interception is what happens by
+  default.
+
+  Each binding below runs `true` (a real action, so the key is
+  genuinely consumed) rather than the documented `None` action, since
+  `None`'s documented purpose is "clear an earlier defined binding" — it
+  reads as unbinding a key back to no compositor action at all (i.e. the
+  keypress would then fall through to Chromium), the opposite of what we
+  want here. `Execute command="true"` has no ambiguity: it always
+  matches, always runs, and has zero visible side effects.
+
+  Blocks: F1 (opens a Chromium Help window with an address bar and full
+  browsing), F3 (find-in-page bar), F7 (caret browsing toggle), F12
+  (DevTools — already blocked by Chromium's kiosk flag and by
+  DeveloperToolsAvailability in chromium-policies/slide-announcer.json,
+  blocked here too for the same "consumed before Chromium sees it at
+  all" reason), the remaining
+  function keys as a blanket policy, and Alt-F4, which closes the
+  Chromium window without doing anything to labwc/the kiosk service, so
+  systemd doesn't notice and the display is just left blank/inoperable
+  until someone reboots it.
+
+  Not yet hardware-tested (see SLIDE_ANNOUNCER.md's standing "needs a
+  hands-on smoke test on the actual target Pi hardware" note) — verify a
+  real keyboard's F-keys and Alt-F4 are actually swallowed, and that
+  Chromium's own in-page shortcuts (arrow keys, etc. used by
+  remoteNav.js) are unaffected, before relying on this for a fleet.
+-->
+<labwc_config>
+  <keyboard>
+    <keybind key="F1"><action name="Execute" command="true" /></keybind>
+    <keybind key="F2"><action name="Execute" command="true" /></keybind>
+    <keybind key="F3"><action name="Execute" command="true" /></keybind>
+    <keybind key="F4"><action name="Execute" command="true" /></keybind>
+    <keybind key="F5"><action name="Execute" command="true" /></keybind>
+    <keybind key="F6"><action name="Execute" command="true" /></keybind>
+    <keybind key="F7"><action name="Execute" command="true" /></keybind>
+    <keybind key="F8"><action name="Execute" command="true" /></keybind>
+    <keybind key="F9"><action name="Execute" command="true" /></keybind>
+    <keybind key="F10"><action name="Execute" command="true" /></keybind>
+    <keybind key="F11"><action name="Execute" command="true" /></keybind>
+    <keybind key="F12"><action name="Execute" command="true" /></keybind>
+    <keybind key="A-F4"><action name="Execute" command="true" /></keybind>
+  </keyboard>
+</labwc_config>

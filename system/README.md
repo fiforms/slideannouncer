@@ -67,9 +67,19 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   https://bugs.chromium.org/p/chromium/issues/detail?id=552451. Deliberately
   *not* using `URLBlocklist`/`URLAllowlist` to contain F1's "opens a fully
   browsable window" risk, since planned features may need real internet/
-  network access from the kiosk frontend itself; closing off F1 (and F3/F7)
-  is meant to happen at the key-remapping/input layer instead, still to be
-  explored.
+  network access from the kiosk frontend itself; those keys (plus Alt-F4,
+  which closes the Chromium window outright) are instead swallowed one
+  layer down, in the compositor — see `labwc/rc.xml`, below.
+- `labwc/rc.xml` — installed to
+  `/var/lib/slide-announcer/.config/labwc/rc.xml` (the `slideannouncer`
+  user's home) by `00-run.sh`. Binds F1-F12 and Alt-F4 to a real,
+  visible-effect-free action (`Execute command="true"`) so the compositor
+  consumes those keys before Chromium's own accelerator table ever sees
+  them — this is how F1/F3/F7/F12/Alt-F4 actually get blocked, since none
+  of them have a Chromium policy on Linux (see `chromium-policies/`,
+  above). Deliberately omits `<default/>`, so no other labwc keybindings
+  (Alt-Tab, etc.) get loaded either — this kiosk has one fullscreen
+  surface and nothing to switch between.
 - `nginx-slide-announcer.conf` — serves `/data/local-app/current/frontend`
   (the Vue SPA, following the `current` symlink at request time — see
   `../local-app/README.md`) and reverse-proxies `/api/*` to the backend on
