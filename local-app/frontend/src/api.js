@@ -36,6 +36,7 @@ export const api = {
     }),
   unpair: () => request('/api/local/unpair', { method: 'POST' }),
   syncStatus: () => request('/api/local/sync/status'),
+  slideshow: () => request('/api/local/slideshow'),
   updateCheckStatus: () => request('/api/local/system/update-check'),
   triggerUpdateCheck: () => request('/api/local/system/update-check', { method: 'POST' }),
   reboot: () => request('/api/local/system/reboot', { method: 'POST' }),

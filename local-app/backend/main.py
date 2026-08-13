@@ -1,8 +1,9 @@
 """Local backend — WiFi/network settings API for the on-device settings menu
 (see SLIDE_ANNOUNCER.md, "Kiosk display", "Local settings menu"), the
-pairing screen's API, the heartbeat and slide-sync background tasks, and
-the local-status endpoint the kiosk home page polls. Kiosk display itself
-is still unbuilt (separate build, see SLIDE_ANNOUNCER.md's "Kiosk display").
+pairing screen's API, the heartbeat and slide-sync background tasks, the
+local-status endpoint the kiosk home page polls, and the slideshow endpoint
+the kiosk display (frontend/src/views/Slideshow.vue) polls for the cached
+playlist/settings sync.py maintains on disk.
 """
 import asyncio
 import json
@@ -62,6 +63,11 @@ def local_status():
 @app.get("/api/local/sync/status")
 def sync_status():
     return sync.read_status()
+
+
+@app.get("/api/local/slideshow")
+def slideshow():
+    return {"playlist": sync.read_playlist(), "settings": sync.read_settings()}
 
 
 class PairRequest(BaseModel):

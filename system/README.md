@@ -55,11 +55,21 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   nginx-served app. Runs as the dedicated `slideannouncer` user via
   `seatd`, no display manager/logind session involved.
 - `chromium-policies/slide-announcer.json` — Chromium enterprise policy
-  (installed to `/etc/chromium/policies/managed/`) disabling the password
+  (installed to `/etc/chromium/policies/managed/`): disables the password
   manager and autofill, so entering the WiFi password in Settings >
   Network doesn't trigger a "Save password?" bubble — a kiosk has no user
-  account concept to save it for. Policy, not a command-line flag: modern
-  Chromium removed the flags that used to do this.
+  account concept to save it for (policy, not a command-line flag: modern
+  Chromium removed the flags that used to do this); `DeveloperToolsAvailability: 2`
+  as defense-in-depth alongside `--kiosk`'s own DevTools block. Browser-
+  native function-key shortcuts (F1 Help, F3 find-in-page, F7 caret
+  browsing) have no Chromium policy to disable the key itself on Linux —
+  longstanding open upstream request,
+  https://bugs.chromium.org/p/chromium/issues/detail?id=552451. Deliberately
+  *not* using `URLBlocklist`/`URLAllowlist` to contain F1's "opens a fully
+  browsable window" risk, since planned features may need real internet/
+  network access from the kiosk frontend itself; closing off F1 (and F3/F7)
+  is meant to happen at the key-remapping/input layer instead, still to be
+  explored.
 - `nginx-slide-announcer.conf` — serves `/data/local-app/current/frontend`
   (the Vue SPA, following the `current` symlink at request time — see
   `../local-app/README.md`) and reverse-proxies `/api/*` to the backend on

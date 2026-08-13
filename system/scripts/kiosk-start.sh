@@ -1,6 +1,6 @@
 #!/bin/bash
 # Starts the labwc Wayland compositor with Chromium autostarted in kiosk
-# mode against the locally-served stub page. Runs as the dedicated
+# mode against the locally-served slideshow page. Runs as the dedicated
 # `slideannouncer` user via seatd (no logind session/graphical login involved).
 set -euo pipefail
 
@@ -19,7 +19,7 @@ CHROMIUM_CMD=(
 	--disable-infobars
 	--disable-session-crashed-bubble
 	--check-for-update-interval=31536000
-	--app=http://localhost/
+	--app=http://localhost/kiosk
 )
 
 exec labwc -s "${CHROMIUM_CMD[*]}"

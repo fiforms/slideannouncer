@@ -9,7 +9,14 @@ image, deployed via atomic symlink-swap rather than A/B partitioning (see
   - `GET /api/local/status` — hostname, `image_version`, and the
     `setup_mode`/`device_uuid` that `provisioning/firstboot.py`
     detected/generated, read from `/data/status/setup-mode.json`. Polled by
-    the kiosk home page.
+    the kiosk home page and by the slideshow's "needs attention" indicator.
+  - `pairing.py`/`sync.py` — pairing (`POST /api/local/pair`,
+    `POST /api/local/unpair`) and the slide sync daemon (background task,
+    started in `main.py`'s lifespan alongside the heartbeat). `sync.py`
+    maintains `/data/slides/{manifest,settings,active-playlist}.json` and
+    the cached media under `/data/slides/media/` (nginx-aliased at
+    `/media/`); `GET /api/local/slideshow` (`{playlist, settings}`) and
+    `GET /api/local/sync/status` expose that state to the frontend.
   - `network.py` — NetworkManager control via `nmcli` subprocess calls,
     run as the `slideannouncer` user via the polkit rule in
     `../system/polkit/50-networkmanager-slide-announcer.rules`.
@@ -37,6 +44,15 @@ image, deployed via atomic symlink-swap rather than A/B partitioning (see
   works.
   - `/` — the kiosk home page: polls `/api/local/status` and shows
     hostname/device UUID/detected setup mode, plus a link into Settings.
+  - `/kiosk` — the actual slideshow renderer (`views/Slideshow.vue`), what
+    `slide-announcer-kiosk.service`'s Chromium instance points at. Polls
+    `GET /api/local/slideshow` (every 60s, matching the sync daemon's own
+    cadence) for the playlist/settings and `GET /api/local/status` (every
+    15s) for the "needs attention" corner indicator; crossfades through
+    `active-playlist.json`'s slides at `settings.interval_seconds` (default
+    10s), mirroring `resources/js/Components/SlideshowModal.vue`'s timing on
+    the main website. No on-screen controls — this is unattended; Settings
+    stays reachable only via the Menu remote button (`remoteNav.js`).
   - `/settings` — a smart-TV style settings menu (left-hand category rail
     + content pane), implementing `SLIDE_ANNOUNCER.md`'s "local settings
     menu" for real:
@@ -171,12 +187,10 @@ covered by the existing polkit rule — no new grant needed, since the rule
 matches on the naming convention rather than a specific unit.
 
 **Not yet implemented** (Tier 2, per `SLIDE_ANNOUNCER.md`):
-- `backend/pairing/` — exchanging the numeric one-time code for a Sanctum
-  token via `POST /api/slide-announcers/pair`.
-- `backend/sync/` — the slide sync daemon.
-- `frontend/kiosk/` — the real slideshow renderer + "needs attention"
-  overlay (today's home page is the pre-pairing status/settings screen,
-  not the slideshow).
+- Neither `pairing.py`, `sync.py`, nor the `/kiosk` slideshow renderer have
+  a real device smoke test yet (see "Still needs a hands-on smoke test on
+  the actual target Pi hardware" in `SLIDE_ANNOUNCER.md`'s "Kiosk display").
+  No automated tests exist in this submodule at all currently.
 - The setup-mode-driven first-boot flows (headless config /
   HID-attached setup / AP-mode fallback) don't yet route into the
   Settings/Network screens above automatically — `provisioning/firstboot.py`

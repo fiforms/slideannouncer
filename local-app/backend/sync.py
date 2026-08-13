@@ -1,6 +1,7 @@
 """Slide sync daemon — polls `GET /api/slide-announcers/slides` on a 60s
 baseline (see SLIDE_ANNOUNCER.md, "Slide sync daemon") and maintains the
-on-disk slide cache the (not yet built) kiosk frontend will render from.
+on-disk slide cache the kiosk frontend (frontend/src/views/Slideshow.vue,
+served via `GET /api/local/slideshow` in main.py) renders from.
 
 Runs as a background asyncio task inside this backend, alongside
 heartbeat.py (same lifespan-task pattern in main.py, same "a bug here must
@@ -90,6 +91,14 @@ def read_status() -> dict:
         "last_success_at": None,
         "last_error": None,
     })
+
+
+def read_playlist() -> list:
+    return _read_json(PLAYLIST_FILE, [])
+
+
+def read_settings() -> dict:
+    return _read_json(SETTINGS_FILE, {})
 
 
 def _local_filename(slide: dict) -> str:

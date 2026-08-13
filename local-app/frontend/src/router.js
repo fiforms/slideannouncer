@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Home from './views/Home.vue'
 import Pairing from './views/Pairing.vue'
+import Slideshow from './views/Slideshow.vue'
 import SettingsLayout from './views/settings/SettingsLayout.vue'
 import NetworkStatus from './views/settings/NetworkStatus.vue'
 import WifiList from './views/settings/WifiList.vue'
@@ -13,6 +14,7 @@ export default createRouter({
   routes: [
     { path: '/', component: Home },
     { path: '/pairing', component: Pairing },
+    { path: '/kiosk', component: Slideshow },
     {
       path: '/settings',
       component: SettingsLayout,
