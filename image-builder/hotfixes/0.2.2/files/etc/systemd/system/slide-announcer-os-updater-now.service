@@ -1,0 +1,13 @@
+[Unit]
+Description=Slide Announcer OS update — apply now (triggered on demand from the Settings UI)
+# On-demand only, like slide-announcer-update-check.service — never
+# WantedBy anything, never enabled at boot. --force bypasses the idle
+# window and cross-tier defer that slide-announcer-os-updater.service
+# (the nightly-timer unit running the same script without the flag) obeys
+# — see os-updater.py's main().
+After=slide-announcer-backend.service
+Requires=slide-announcer-backend.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/slide-announcer-os-updater --force

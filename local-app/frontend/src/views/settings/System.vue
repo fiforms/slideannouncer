@@ -1,10 +1,52 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { api } from '../../api.js'
 
 const checking = ref(false)
 const checkError = ref(null)
 const checkResult = ref(null)
+const versions = ref({ image_version: null, app_version: null })
+
+const applyError = ref(null)
+const updateRunning = ref(false)
+const progress = ref(null)
+let progressTimer = null
+
+// checkResult.data is the structured heartbeat response update-check.py
+// pulls out of the CLI's stdout (see that script's _leading_json) — null
+// when the device isn't paired yet (the CLI exits with a plain-text error
+// instead of JSON in that case), so every field below is optional-chained.
+const updateInfo = computed(() => checkResult.value?.data ?? null)
+
+const osUpdate = computed(() => {
+  const info = updateInfo.value
+  if (!info?.os_update_available) return null
+  return { version: info.latest_os_version, releaseType: info.os_release_type }
+})
+
+const appUpdate = computed(() => {
+  const info = updateInfo.value
+  if (!info?.app_update_available) return null
+  return { version: info.latest_app_version }
+})
+
+// Same priority the backend's trigger_update_apply() applies: an OS
+// update (hotfix or full) goes first, then the local-app update — never
+// both from one click.
+const nextUpdate = computed(() => {
+  if (osUpdate.value) return { kind: 'os', ...osUpdate.value }
+  if (appUpdate.value) return { kind: 'app', ...appUpdate.value }
+  return null
+})
+
+async function loadVersions() {
+  try {
+    const status = await api.localStatus()
+    versions.value = { image_version: status.image_version, app_version: status.app_version }
+  } catch {
+    // leave blank rather than erroring out the page
+  }
+}
 
 async function loadLastCheck() {
   try {
@@ -15,7 +57,52 @@ async function loadLastCheck() {
   }
 }
 
-onMounted(loadLastCheck)
+// Polls /api/local/system/update-progress — the single source of truth
+// for "is an update running right now" (backed by a real is-active check
+// on the device, not just this tab's own memory of having clicked
+// something), so a page reload or a second browser tab still shows an
+// update that's already in flight, including one the nightly timer
+// started rather than a click here.
+async function pollProgress() {
+  try {
+    const data = await api.updateProgress()
+    updateRunning.value = data.running
+    progress.value = data.progress
+    if (!data.running) {
+      stopPolling()
+      await loadVersions()
+      await loadLastCheck()
+    }
+  } catch {
+    // transient poll failure — next tick tries again
+  }
+}
+
+function startPolling() {
+  if (progressTimer) return
+  pollProgress()
+  progressTimer = setInterval(pollProgress, 2000)
+}
+
+function stopPolling() {
+  if (progressTimer) {
+    clearInterval(progressTimer)
+    progressTimer = null
+  }
+}
+
+onMounted(async () => {
+  loadVersions()
+  loadLastCheck()
+  const data = await api.updateProgress().catch(() => null)
+  if (data) {
+    updateRunning.value = data.running
+    progress.value = data.progress
+  }
+  if (data?.running) startPolling()
+})
+
+onUnmounted(stopPolling)
 
 async function checkForUpdate() {
   checking.value = true
@@ -28,6 +115,19 @@ async function checkForUpdate() {
   } finally {
     checking.value = false
   }
+}
+
+async function updateNow() {
+  applyError.value = null
+  try {
+    await api.triggerUpdateApply()
+  } catch (err) {
+    // A 409 here means something's already running (another click, or the
+    // nightly timer beat us to it) — not a real failure, so still start
+    // polling to show its progress instead of just leaving an error up.
+    applyError.value = err.message
+  }
+  startPolling()
 }
 
 const confirmingReboot = ref(false)
@@ -92,25 +192,82 @@ async function factoryReset() {
     <section class="block">
       <h2>Software Update</h2>
       <p class="hint">
-        Checks the AnnouncementSlides server for a newer OS image. Reports
-        "not paired" until this device has been paired (see "Pair This
-        Device" on the home screen).
+        Checks the AnnouncementSlides server for a newer OS image or local
+        app release. Reports "not paired" until this device has been paired
+        (see "Pair This Device" on the home screen).
       </p>
-      <button class="tile action" :disabled="checking" @click="checkForUpdate">
+
+      <div class="result tile">
+        <div class="row">
+          <span class="label">Current OS version</span>
+          <span>{{ versions.image_version || '—' }}</span>
+        </div>
+        <div class="row">
+          <span class="label">Current app version</span>
+          <span>{{ versions.app_version || '—' }}</span>
+        </div>
+      </div>
+
+      <button class="tile action" :disabled="checking || updateRunning" @click="checkForUpdate">
         {{ checking ? 'Checking…' : 'Check for Update' }}
       </button>
 
       <p v-if="checkError" class="pill warn">{{ checkError }}</p>
 
-      <div v-if="checkResult" class="result tile">
+      <!-- An update is running (this tab's click, another tab's click, or the
+           nightly timer) — the progress block replaces the check result
+           entirely while it's active, since neither is meaningful until it's
+           done. -->
+      <div v-if="updateRunning" class="result tile">
         <div class="row">
-          <span class="label">Exit code</span>
-          <span :class="checkResult.exit_code === 0 ? 'pill ok' : 'pill warn'">
-            {{ checkResult.exit_code }}
+          <span class="label">
+            {{ progress?.kind === 'os' ? `OS ${progress.release_type || ''} update`.trim() : 'Local app update' }}
+            in progress
+          </span>
+          <span v-if="progress?.version">v{{ progress.version }}</span>
+        </div>
+        <p class="hint" style="margin: 0 0 0.6rem;">{{ progress?.phase || 'Working…' }}</p>
+        <div class="progress-track">
+          <div
+            class="progress-fill"
+            :class="{ indeterminate: progress?.percent == null }"
+            :style="progress?.percent != null ? { width: progress.percent + '%' } : {}"
+          />
+        </div>
+        <p v-if="progress?.percent != null" class="hint" style="margin: 0.35rem 0 0; text-align: right;">
+          {{ progress.percent }}%
+        </p>
+      </div>
+
+      <div v-else-if="checkResult && !updateInfo" class="result tile">
+        <p class="pill warn">{{ checkResult.output || 'Update check did not return a usable result.' }}</p>
+      </div>
+
+      <div v-else-if="updateInfo" class="result tile">
+        <div v-if="nextUpdate" class="row">
+          <span class="label">Update available</span>
+          <span class="pill warn">
+            {{ nextUpdate.kind === 'os' ? `OS ${nextUpdate.releaseType}` : 'Local app' }}
+            v{{ nextUpdate.version }}
           </span>
         </div>
-        <pre class="output">{{ checkResult.output }}</pre>
+        <p v-else class="pill ok">Up to date — no update available.</p>
+
+        <p v-if="nextUpdate?.kind === 'os' && nextUpdate.releaseType === 'full'" class="hint">
+          This is a full OS image update — the device will reboot on its own partway through.
+        </p>
+
+        <button v-if="nextUpdate" class="tile action" @click="updateNow">Update Now</button>
       </div>
+
+      <p v-if="applyError" class="pill warn">{{ applyError }}</p>
+      <p v-if="!updateRunning && progress?.done" class="pill ok">
+        {{ progress.result === 'installed' || progress.result === 'success'
+          ? 'Update installed.'
+          : progress.result === 'tryboot_triggered'
+            ? 'Update staged — rebooting to apply it.'
+            : `Update result: ${progress.result || 'unknown'}` }}
+      </p>
     </section>
 
     <section class="block">
@@ -224,16 +381,27 @@ h2 {
   margin-bottom: 0.5rem;
 }
 .label { color: var(--text-dim); }
-.output {
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 0.85rem;
-  color: #c7d1dd;
-  max-height: 16rem;
-  overflow-y: auto;
-  margin: 0;
-}
 .status-block { margin-top: 0.5rem; }
+.progress-track {
+  height: 0.6rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent, #6c8cff);
+  transition: width 0.4s ease;
+}
+.progress-fill.indeterminate {
+  width: 40%;
+  animation: progress-indeterminate 1.2s ease-in-out infinite;
+}
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
 .confirm-form {
   display: flex;
   flex-direction: column;

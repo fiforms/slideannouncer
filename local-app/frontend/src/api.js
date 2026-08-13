@@ -39,6 +39,8 @@ export const api = {
   slideshow: () => request('/api/local/slideshow'),
   updateCheckStatus: () => request('/api/local/system/update-check'),
   triggerUpdateCheck: () => request('/api/local/system/update-check', { method: 'POST' }),
+  triggerUpdateApply: () => request('/api/local/system/update-apply', { method: 'POST' }),
+  updateProgress: () => request('/api/local/system/update-progress'),
   reboot: () => request('/api/local/system/reboot', { method: 'POST' }),
   factoryReset: () => request('/api/local/system/factory-reset', { method: 'POST' }),
 }

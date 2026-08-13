@@ -1,0 +1,15 @@
+[Unit]
+Description=Slide Announcer local-app update — apply now (triggered on demand from the Settings UI)
+# On-demand only, like slide-announcer-update-check.service — never
+# WantedBy anything, never enabled at boot. --force bypasses the idle
+# window that slide-announcer-local-app-updater.service (the timer-driven
+# unit running the same script without the flag) obeys — see
+# local_app_updater.py's main().
+After=slide-announcer-local-app-seed.service slide-announcer-backend.service
+Requires=slide-announcer-local-app-seed.service
+
+[Service]
+Type=oneshot
+User=slideannouncer
+Group=slideannouncer
+ExecStart=/opt/slide-announcer/venv/bin/python3 /opt/slide-announcer/updater/local_app_updater.py --force

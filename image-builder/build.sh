@@ -547,6 +547,26 @@ fi
 # is kept too, even though nothing below still depends on the ext4 label
 # for booting — purely so blkid/lsblk output stays human-readable for
 # whoever's debugging next.
+#
+# The exact same staleness hits /etc/rauc/system.conf's own
+# [slot.rootfs.0]/[slot.rootfs.1] device= lines, for the same underlying
+# reason (baked in by repartition.sh at THIS RELEASE's build time, not
+# this device's), but it went unfixed here for a long time — confirmed
+# on real hardware (2026-08-13): a device on its second full-OS OTA had
+# fstab/cmdline.txt correctly pointing at its real disk's PARTUUIDs (the
+# fix below already covered those) while system.conf still referenced the
+# unrelated build machine's disk id, so `rauc install`'s NEXT run failed
+# outright ("Destination device ... for slot 'rootfs.0' not found") even
+# though the device itself booted and ran fine. Fixed the same way as the
+# fstab lines: by LOCATION (each PARTUUID substituted only within its own
+# [slot.rootfs.N] stanza, never by matching the stale value, since that
+# value is different garbage on every release build) rather than assuming
+# anything about what's currently there. blkid -L rootA/rootB (not
+# RAUC_SLOT_DEVICE) for both, since by this point in slot-post-install
+# both partitions carry valid, correctly-labeled filesystems regardless of
+# which one this particular install just wrote — the just-installed one
+# from the e2label call two lines up, the other from whenever it was last
+# installed (or the original flash, if it never has been).
 cat > "${BUNDLE_DIR}/hook.sh" <<'HOOKEOF'
 #!/bin/bash
 set -euo pipefail
@@ -592,6 +612,17 @@ slot-post-install)
 		-e "s#^\S+(\s+/boot/firmware\s)#PARTUUID=${BOOT_PARTUUID}\1#" \
 		-e "s#^\S+(\s+/data\s)#PARTUUID=${DATA_PARTUUID}\1#" \
 		"${RAUC_SLOT_MOUNT_POINT}/etc/fstab"
+	# system.conf's own [slot.rootfs.0]/[slot.rootfs.1] device= lines are
+	# just as stale as fstab's were (see this hook's header comment) —
+	# same fix, by LOCATION (each address range scoped to its own
+	# [slot.rootfs.N] stanza) rather than by matching whatever garbage
+	# value happens to already be there.
+	ROOTA_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -L rootA)")"
+	ROOTB_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -L rootB)")"
+	sed -i -E \
+		-e "/^\[slot\.rootfs\.0\]/,/^\[/{s#^device=/dev/disk/by-partuuid/[0-9a-fA-F-]+#device=/dev/disk/by-partuuid/${ROOTA_PARTUUID}#}" \
+		-e "/^\[slot\.rootfs\.1\]/,/^\[/{s#^device=/dev/disk/by-partuuid/[0-9a-fA-F-]+#device=/dev/disk/by-partuuid/${ROOTB_PARTUUID}#}" \
+		"${RAUC_SLOT_MOUNT_POINT}/etc/rauc/system.conf"
 	;;
 esac
 HOOKEOF

@@ -52,6 +52,7 @@ def local_status():
         "message": "Slide Announcer paired." if paired else "Slide Announcer image booted successfully. Not yet paired.",
         "hostname": socket.gethostname(),
         "image_version": VERSION_FILE.read_text().strip() if VERSION_FILE.exists() else None,
+        "app_version": heartbeat.read_app_version(),
         "setup_mode": setup_info.get("setup_mode"),
         "device_uuid": setup_info.get("device_uuid"),
         "paired": paired,
@@ -158,6 +159,25 @@ async def system_update_check_trigger():
     except system_control.SystemCommandError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"result": result}
+
+
+@app.post("/api/local/system/update-apply")
+async def system_update_apply():
+    try:
+        result = await system_control.trigger_update_apply()
+    except system_control.UpdateAlreadyRunningError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except system_control.SystemCommandError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"result": result}
+
+
+@app.get("/api/local/system/update-progress")
+async def system_update_progress():
+    return {
+        "running": await system_control.currently_running_update() is not None,
+        "progress": system_control.read_update_progress(),
+    }
 
 
 @app.post("/api/local/system/reboot")
