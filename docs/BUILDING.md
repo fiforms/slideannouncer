@@ -226,14 +226,14 @@ triggers the actual reboot; on the way back up,
 B as the new default and call `rauc status mark-good`. Check
 `journalctl -u slide-announcer-tryboot-check` and
 `sudo slide-announcer-update status` after it comes back to see whether
-that happened. **This whole cycle is hardware-unverified** — see
-`system/rauc/rpi-tryboot-backend.sh` and `rpi-tryboot-commit.sh`'s own
-headers for exactly which pieces (the `tryboot.txt`/`os_prefix` mechanism,
-the tryboot boot-detection flag, RAUC's custom-hook contract) are
-reconstructed from general documentation rather than confirmed against
-this specific hardware/firmware/RAUC version. If it doesn't come back up
-at all, or comes back on the old slot, that's exactly the kind of thing
-this first pass needs a real device to find.
+that happened. **This whole cycle is now confirmed working end-to-end on
+real hardware** (0.1.10 → 0.2.1, 2026-08-13): install, tryboot reboot,
+and commit (`os_prefix` flip + `mark-good`) all verified, and a
+subsequent power cycle confirmed the committed slot stays the default —
+see `system/rauc/rpi-tryboot-backend.sh` and `rpi-tryboot-commit.sh`'s
+own headers for the specifics that were confirmed along the way. The
+forced-bad-health → automatic-rollback path is still unverified, since
+today's health check is just a placeholder ("we reached this unit").
 
 A signature/hash failure at the `install` step instead (e.g. after
 re-signing with a different cert, or corrupting the bundle) is what proves

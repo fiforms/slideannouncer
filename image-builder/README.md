@@ -24,7 +24,10 @@ swapped), the `/proc/device-tree/chosen/bootloader/tryboot` boot-detection
 flag (a 4-byte big-endian devicetree cell, not text), and the commit step
 (`config.txt` flip + `rauc status mark-good` + normal reboot) all verified
 on an actual device — see each script's own header for what testing
-surfaced and fixed along the way.
+surfaced and fixed along the way. Reconfirmed 2026-08-13 with a real field
+OTA on a paired production device (0.1.10 → 0.2.1): device came up on
+0.2.0 and resumed slide sync/display, and a subsequent power cycle stayed
+on 0.2.0, confirming the commit persists across a normal reboot.
 
 **Still unverified:** the forced-bad-health → rollback path. The
 post-tryboot health check `rpi-tryboot-commit.sh` runs is currently just a

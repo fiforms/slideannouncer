@@ -176,9 +176,12 @@ rationale.
 **Not yet implemented:** the slide sync daemon and real kiosk slideshow
 rendering (Tier 2); automatic OS update checks/idle-window gating (Tier 1
 still needs `slide-announcer-update` triggered by hand). RAUC's A/B
-tryboot switching itself has a full attempt at an implementation now (see
-`rauc/`, above) but is hardware-unverified — no real device has run an
-install → tryboot → health-check → commit/rollback cycle yet.
+tryboot switching itself (see `rauc/`, above) is confirmed working
+end-to-end on real hardware — install → tryboot → commit has been run on
+an actual device (0.1.10 → 0.2.1, 2026-08-13), including a subsequent
+power cycle confirming the committed slot stays the default. The
+forced-bad-health → rollback path is still unverified (today's health
+check is a placeholder — see above).
 
 See the main repo's `SLIDE_ANNOUNCER.md` for how these units interact across
 update tiers (e.g. why local-app restarts are gated to an idle window).

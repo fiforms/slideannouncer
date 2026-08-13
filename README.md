@@ -17,7 +17,11 @@ directory's README for specifics. Of the RAUC OTA paths, both the hotfix
 mechanism (`image-builder/make-hotfix-bundle.sh`, 2026-08-10) and the
 full-image/tryboot A/B path (2026-08-11) are now confirmed working
 end-to-end on real hardware — install, tryboot reboot, and commit
-(`os_prefix` flip + `mark-good`) all verified.
+(`os_prefix` flip + `mark-good`) all verified. Reconfirmed 2026-08-13 with
+a real field OTA on a paired device (0.1.10 → 0.2.1): slideshow resumed
+correctly post-update, and a subsequent power cycle stayed on 0.2.0,
+confirming the commit persists across a normal reboot, not just the
+tryboot boot itself.
 
 See [`SLIDE_ANNOUNCER.md`](https://github.com/fiforms/announcementslides/blob/master/SLIDE_ANNOUNCER.md)
 in the main repo for the full design: the three update tiers (OS image,
