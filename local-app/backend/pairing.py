@@ -6,9 +6,13 @@ code path shared by an explicit local "Unpair" action and a revoked-token
 revocation section and "Kiosk display."
 
 The device token itself (proof of pairing) lives at /data/device-token,
-chmod 600 — same ext4 persistence rationale as identity.key: it must
-survive an OS update and never end up on the FAT32 boot partition, which
-is world-readable by design.
+chmod 640 (owner slideannouncer, group-readable) — same ext4 persistence
+rationale as identity.key: it must survive an OS update and never end up
+on the FAT32 boot partition, which is world-readable by design. Group-
+readable rather than owner-only so the interactive `slideadmin` account
+(in the `slideannouncer` group — see image-builder's 00-run.sh) can run
+`slide-announcer-update check`/`install` over SSH without sudo; see that
+CLI's own docstring.
 """
 import shutil
 from pathlib import Path
@@ -84,7 +88,7 @@ async def pair(code: str, device_name: str) -> dict:
     data = resp.json()
     DEVICE_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     DEVICE_TOKEN_FILE.write_text(data["token"])
-    DEVICE_TOKEN_FILE.chmod(0o600)
+    DEVICE_TOKEN_FILE.chmod(0o640)
     return data
 
 

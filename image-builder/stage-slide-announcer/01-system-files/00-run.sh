@@ -314,6 +314,14 @@ NMEOF
 useradd --system --create-home --home-dir /var/lib/slide-announcer \
 	--groups video,render,input,dialout,netdev slideannouncer
 
+# Lets the interactive `slideadmin` console/SSH account read
+# /data/device-token (owner slideannouncer, mode 640 — see pairing.py's
+# docstring) so `slide-announcer-update check`/`install`
+# (system/scripts/rauc-update.py) can read the pairing token without sudo,
+# the same way system/polkit/50-slide-announcer-system.rules already
+# covers slideadmin for the reboot/tryboot side of that same CLI.
+usermod -aG slideannouncer slideadmin
+
 chown -R slideannouncer:slideannouncer /opt/slide-announcer
 
 # Fixed OS-image infra, independent of which app release is current on
