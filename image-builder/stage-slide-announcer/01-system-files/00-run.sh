@@ -138,8 +138,30 @@ install -m 644 files/SERVER_URL "${ROOTFS_DIR}/etc/slide-announcer/server-url"
 # mountpoint itself has to exist in the rootfs content too — root is ro (see
 # below), so systemd can't create it on demand at boot the way it would on a
 # writable root.
+#
+# passno=0 (last field): a nonzero passno makes systemd's fstab-generator
+# auto-create a systemd-fsck@....service unit ordered before data.mount,
+# entirely independent of slide-announcer-factory-reset-check.service
+# (which only declares Before=data.mount, not Before=systemd-fsck@...) —
+# so nothing guarantees the reformat wins the race against that
+# auto-generated fsck. Invisible on a genuinely blank card. Suspected (not
+# yet confirmed root cause — needs a hands-on repro) to explain a real
+# first-boot hang seen on a card reused from a previous, already-grown
+# /data: fsck would trip on the stale, much-larger ext4 signature still
+# sitting at this same on-disk offset, fail hard against the new (small,
+# 128MB) partition size, and take data.mount down before
+# factory-reset-check's mkfs ever runs — cascading into firstboot/
+# local-app-seed/kiosk (all of which depend on /data), and since
+# getty@tty1 is deliberately masked (the kiosk owns tty1), nothing is ever
+# left to paint that display — just a permanently black screen until a
+# manual power cycle gives the kernel a from-scratch partition scan.
+# passno=0 removes the auto-fsck unit outright; ext4's journal replay on
+# mount already covers unclean-shutdown recovery at the kernel level
+# regardless of passno, and factory-reset-check.service's unconditional
+# mkfs -F is already the sole authority over this partition's filesystem
+# state on a flagged boot.
 install -d "${ROOTFS_DIR}/data"
-echo "DATADEV  /data  ext4  defaults,noatime,nofail  0  2" >> "${ROOTFS_DIR}/etc/fstab"
+echo "DATADEV  /data  ext4  defaults,noatime,nofail  0  0" >> "${ROOTFS_DIR}/etc/fstab"
 
 # Read-only rootfs (see SLIDE_ANNOUNCER.md, Tier 1, "Read-only rootfs"): the
 # root filesystem itself is mounted ro (below), so anything that needs to
