@@ -574,6 +574,25 @@ case "${1:-}" in
 slot-install)
 	TARGET="${RAUC_SLOT_DEVICE:?}"
 	ROOTLABEL="${TARGET##*/slot}" # /boot/firmware/slotA -> A, slotB -> B
+	# /boot/firmware is ro by default as of this release (see 00-run.sh's
+	# fstab entry) — but this hook can also run on a device still booted
+	# into an OS build from before that existed, where it's already rw.
+	# Inlined rather than calling slide-announcer-bootfw-remount: that
+	# helper is only guaranteed to exist on a device already running the
+	# same release this hook ships in, not on whatever's live right now.
+	#
+	# Deliberately does NOT remount back to ro afterward the way every
+	# other writer of this partition does: system.conf's
+	# bootloader-custom-backend is a FIXED path on whatever's currently
+	# running (/usr/lib/rauc/rpi-tryboot-backend.sh), and RAUC calls that
+	# script's set-primary right after this hook finishes, still within
+	# the same `rauc install` — on a device mid-upgrade FROM a pre-this-
+	# release OS, that's the OLD backend script, which doesn't know to
+	# remount rw itself and would break on a ro partition. Leaving it rw
+	# here and letting the next boot's fstab mount reassert ro is a much
+	# smaller exposure window (until that reboot, which a tryboot cycle
+	# triggers almost immediately anyway) than risking that ordering.
+	mount -o remount,rw /boot/firmware 2>/dev/null || true
 	mkdir -p "$TARGET"
 	find "$TARGET" -mindepth 1 -delete
 	# RAUC_IMAGE_NAME is already an absolute path (e.g.

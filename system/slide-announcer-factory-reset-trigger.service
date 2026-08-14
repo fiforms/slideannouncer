@@ -3,5 +3,10 @@ Description=Slide Announcer factory reset trigger (sets the reset flag, then reb
 
 [Service]
 Type=oneshot
+# /boot/firmware is ro by default (see 00-run.sh's fstab entry) —
+# bracket the touch with slide-announcer-bootfw-remount the same way
+# every other writer of this partition does.
+ExecStart=/usr/local/sbin/slide-announcer-bootfw-remount rw
 ExecStart=/usr/bin/touch /boot/firmware/FACTORY_RESET
+ExecStart=/usr/local/sbin/slide-announcer-bootfw-remount ro
 ExecStart=/usr/sbin/reboot

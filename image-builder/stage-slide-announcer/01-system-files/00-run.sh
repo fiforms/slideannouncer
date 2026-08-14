@@ -44,6 +44,7 @@ install -m 755 files/system/scripts/local-app-seed.py "${ROOTFS_DIR}/usr/local/s
 install -m 755 files/system/scripts/update-check.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-update-check"
 install -m 755 files/system/scripts/os-updater.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-os-updater"
 install -m 755 files/system/scripts/factory-reset-check.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-factory-reset-check"
+install -m 755 files/system/scripts/bootfw-remount.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-bootfw-remount"
 
 install -d "${ROOTFS_DIR}/etc/nginx/sites-available"
 install -m 644 files/system/nginx-slide-announcer.conf "${ROOTFS_DIR}/etc/nginx/sites-available/slide-announcer.conf"
@@ -214,6 +215,20 @@ EOF
 # — pi-gen's own export-image/04-set-partuuid step substitutes the real
 # PARTUUID afterward, once the image is exported.
 sed -i 's#\(ROOTDEV\s*/\s*ext4\s*\)defaults,noatime#\1ro,noatime#' "${ROOTFS_DIR}/etc/fstab"
+
+# /boot/firmware ro by default, same reasoning as root above but for a much
+# more fragile filesystem (FAT32 has no journal) that's rarely powered off
+# cleanly on this hardware. Nothing needs it writable during normal
+# operation — the only writers are RAUC's kernel-slot OTA install (hook.sh,
+# baked per-release in build.sh), rpi-tryboot-backend.sh/rpi-tryboot-commit.sh,
+# and factory-reset-check.sh/slide-announcer-factory-reset-trigger.service —
+# and every one of those now brackets its own writes with
+# slide-announcer-bootfw-remount rw/ro (see that script's own comment).
+# Leaving it rw at all times bought nothing for that vast majority of
+# uptime where nothing writes here at all, while this partition holds
+# whichever slot's kernel/dtb/cmdline is currently active — corruption
+# here is a bricked device, more severe than /data's.
+sed -i -E 's#(BOOTDEV\s+/boot/firmware\s+vfat\s+)defaults#\1ro#' "${ROOTFS_DIR}/etc/fstab"
 
 install -d "${ROOTFS_DIR}/etc/systemd/journald.conf.d"
 install -m 644 files/system/read-only-root/journald-volatile.conf \

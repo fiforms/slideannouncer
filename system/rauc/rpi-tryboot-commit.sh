@@ -89,6 +89,10 @@ if [ ! -f "${BOOTFW}/tryboot.txt" ]; then
 	echo "rpi-tryboot-commit.sh: ${BOOTFW}/tryboot.txt missing — not committing" >&2
 	exit 1
 fi
+# BOOTFW is ro by default (see 00-run.sh's fstab entry) — trap ensures the
+# remount back to ro still happens if either write below fails partway.
+slide-announcer-bootfw-remount rw
+trap 'slide-announcer-bootfw-remount ro' EXIT
 cp "${BOOTFW}/tryboot.txt" "${BOOTFW}/config.txt"
 rm -f "${BOOTFW}/tryboot.txt"
 

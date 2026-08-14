@@ -112,6 +112,10 @@ set-primary)
 		echo "rpi-tryboot-backend.sh: no os_prefix=slotA/ or slotB/ line found in ${BOOTFW}/config.txt — refusing to stage tryboot.txt" >&2
 		exit 1
 	fi
+	# BOOTFW is ro by default (see 00-run.sh's fstab entry) — trap ensures
+	# the remount back to ro still happens if the sed below fails partway.
+	slide-announcer-bootfw-remount rw
+	trap 'slide-announcer-bootfw-remount ro' EXIT
 	sed -E "s#^os_prefix=slot[AB]/\$#os_prefix=slot${LETTER}/#" "${BOOTFW}/config.txt" >"${BOOTFW}/tryboot.txt"
 	echo "rpi-tryboot-backend.sh: staged slot ${LETTER} for the next tryboot reboot" >&2
 	;;
@@ -126,6 +130,8 @@ get-state)
 set-state)
 	LETTER="${2:?set-state requires a bootname argument}"
 	STATE="${3:?set-state requires good or bad}"
+	slide-announcer-bootfw-remount rw
+	trap 'slide-announcer-bootfw-remount ro' EXIT
 	echo "$STATE" >"${BOOTFW}/state-${LETTER}"
 	;;
 *)

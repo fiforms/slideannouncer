@@ -49,5 +49,10 @@ fi
 echo "slide-announcer-factory-reset: mkfs.ext4 -F ${DATA_DEV}"
 mkfs.ext4 -F -L data "$DATA_DEV"
 
+# /boot/firmware is ro by default (see 00-run.sh's fstab entry) — bracket
+# just the flag removal, with a trap so the remount back to ro still
+# happens even if `rm` somehow fails.
+slide-announcer-bootfw-remount rw
+trap 'slide-announcer-bootfw-remount ro' EXIT
 rm -f "$FLAG"
 echo "slide-announcer-factory-reset: done — /data will mount fresh this boot"
