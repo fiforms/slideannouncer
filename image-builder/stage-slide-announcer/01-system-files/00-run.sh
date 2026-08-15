@@ -243,6 +243,15 @@ install -d "${ROOTFS_DIR}/etc/rpi/swap.conf.d"
 install -m 644 files/system/read-only-root/rpi-swap-data.conf \
 	"${ROOTFS_DIR}/etc/rpi/swap.conf.d/slide-announcer-data.conf"
 
+# rpi-resize-swap-file.service has no ordering against
+# slide-announcer-data-resize.service by default — without this, its fixed
+# 2048MiB swapfile (rpi-swap-data.conf above) can be attempted before
+# /data has actually grown past its 128MiB placeholder, exhausting it
+# outright. See rpi-resize-swap-file-order.conf's own comment.
+install -d "${ROOTFS_DIR}/etc/systemd/system/rpi-resize-swap-file.service.d"
+install -m 644 files/system/read-only-root/rpi-resize-swap-file-order.conf \
+	"${ROOTFS_DIR}/etc/systemd/system/rpi-resize-swap-file.service.d/slide-announcer-data-resize-order.conf"
+
 # cloud-init-local.service has no ordering against /etc's overlay mount by
 # default (see system/read-only-root/cloud-init-etc-overlay.conf) — without
 # this, a FACTORY_RESET boot can lose the NoCloud network-config's WiFi

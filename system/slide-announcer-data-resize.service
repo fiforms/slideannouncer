@@ -5,6 +5,18 @@ After=local-fs-pre.target
 Before=slide-announcer-firstboot.service
 Requires=data.mount
 After=data.mount
+# growpart (called by this unit's own script) creates its own scratch dir
+# under /tmp — DefaultDependencies=no means this unit isn't automatically
+# ordered against tmp.mount the way a normal unit would be, so without
+# this it can race ahead of tmp.mount and hit a plain (read-only root)
+# /tmp directory instead of the real tmpfs. Confirmed on real hardware:
+# removing /data's fsck-vs-mkfs race (see factory-reset-check.service)
+# made data.mount complete fast enough to expose this — growpart's mkdir
+# failed with "Read-only file system", /data never grew past its 128MiB
+# placeholder, and rpi-resize-swap-file.service's fixed 2048MiB swapfile
+# (sized assuming /data was already grown) then blew out that placeholder
+# entirely, taking the /etc overlay down with it via ENOSPC.
+RequiresMountsFor=/tmp
 ConditionPathExists=!/data/.data-resized
 
 [Service]
