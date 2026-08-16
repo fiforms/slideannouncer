@@ -12,15 +12,17 @@ export WLR_LIBINPUT_NO_DEVICES=1
 export WLR_SEATD=1
 
 # This theme (installed by 01-system-files' 00-run.sh to
-# /usr/share/icons/slide-announcer-blank) blanks only the idle/resting
-# arrow to a fully transparent 1x1 image, so it's invisible from the very
-# first compositor frame without waiting on a real input event — unlike
-# Chromium's CSS `cursor: none` (Slideshow.vue), which only ever took
-# effect after a genuine pointer event. Every other cursor name (hover,
-# text, busy, resize, …) is deliberately left undefined here, so Chromium
-# falls back to its own bundled visible cursors for those — link hover and
-# the like on Settings/Pairing still show normal feedback. A real mouse
-# still moves/clicks normally throughout; only the idle arrow is invisible.
+# /usr/share/icons/slide-announcer-blank) is the entire Adwaita cursor set
+# with only cursors/default overwritten by a fully transparent 1x1 image,
+# so the idle arrow is invisible from the very first compositor frame
+# without waiting on a real input event — unlike Chromium's CSS
+# `cursor: none` (Slideshow.vue), which only ever took effect after a
+# genuine pointer event. Every other shape (hover, text, busy, resize, …)
+# is a real Adwaita cursor, not left undefined — confirmed on real hardware
+# that a name this theme doesn't define at all renders as nothing rather
+# than falling back to Chromium's own cursors, so link hover/text fields on
+# Settings/Pairing would otherwise be invisible too. A real mouse still
+# moves/clicks normally throughout; only the idle arrow is invisible.
 export XCURSOR_THEME=slide-announcer-blank
 export XCURSOR_SIZE=24
 

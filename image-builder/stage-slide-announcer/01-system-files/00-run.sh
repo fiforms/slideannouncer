@@ -478,28 +478,27 @@ EOF
 install -m 644 files/system/labwc/rc.xml \
 	"${ROOTFS_DIR}/var/lib/slide-announcer/.config/labwc/rc.xml"
 
-# "slide-announcer-blank" cursor theme: blanks only the idle/resting arrow
-# (default, left_ptr, top_left_arrow — the synonyms toolkits use for the
-# plain unhovered pointer) to a fully transparent 1x1 image, so nothing is
-# drawn for the mouse pointer before a real mouse moves. Deliberately
-# doesn't define pointer/text/wait/resize/etc. at all: Chromium only
-# queries the system cursor theme for a name if it finds one there —
-# leaving the rest of them out of this theme entirely means Chromium falls
-# through to its own bundled visible bitmap cursors for hover/text/busy
-# states, so link/button hover and everything else on Settings/Pairing
-# still shows normal cursor feedback. kiosk-start.sh points XCURSOR_THEME
-# at this. Installed under /usr/share/icons so it resolves regardless of
-# $HOME (unlike ~/.icons, which only slideannouncer's own session would
-# search). Only one actual image is committed to the repo (cursors/default)
-# since every blanked name needs identical (fully transparent) pixel data —
-# the other two are symlinked to it here rather than storing byte-identical
-# binary files in git.
+# "slide-announcer-blank" cursor theme: the entire Adwaita cursor set
+# (adwaita-icon-theme, installed via 00-packages — already unpacked into
+# this chroot by the time this line runs) copied in wholesale, with only
+# cursors/default overwritten by a fully transparent 1x1 image. Adwaita's
+# own left_ptr/top_left_arrow/arrow/move/dnd-move are symlinks to default
+# already, so overwriting that one file blanks all of them for free.
+# Confirmed on real hardware that a cursor name this theme doesn't define
+# at all renders as nothing rather than falling back to Chromium's own
+# cursors, which is why the real set is copied wholesale here instead of
+# hand-picking a couple of names — every shape (hover, text, busy,
+# resize, …) keeps working normally except the blanked idle arrow.
+# kiosk-start.sh points XCURSOR_THEME at this. Installed under
+# /usr/share/icons so it resolves regardless of $HOME (unlike ~/.icons,
+# which only slideannouncer's own session would search). Only
+# cursors/default is committed to the repo — everything else is copied
+# fresh from adwaita-icon-theme here, so git never carries a second copy
+# of cursor bitmaps that already ship in a Debian package.
 install -d "${ROOTFS_DIR}/usr/share/icons/slide-announcer-blank/cursors"
 install -m 644 files/system/cursor-theme/slide-announcer-blank/index.theme \
 	"${ROOTFS_DIR}/usr/share/icons/slide-announcer-blank/index.theme"
+cp -a "${ROOTFS_DIR}/usr/share/icons/Adwaita/cursors/." \
+	"${ROOTFS_DIR}/usr/share/icons/slide-announcer-blank/cursors/"
 install -m 644 files/system/cursor-theme/slide-announcer-blank/cursors/default \
 	"${ROOTFS_DIR}/usr/share/icons/slide-announcer-blank/cursors/default"
-
-for name in left_ptr top_left_arrow; do
-	ln -sf default "${ROOTFS_DIR}/usr/share/icons/slide-announcer-blank/cursors/${name}"
-done
