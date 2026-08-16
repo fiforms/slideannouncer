@@ -6,17 +6,30 @@ Before=slide-announcer-firstboot.service
 Requires=data.mount
 After=data.mount
 # growpart (called by this unit's own script) creates its own scratch dir
-# under /tmp — DefaultDependencies=no means this unit isn't automatically
-# ordered against tmp.mount the way a normal unit would be, so without
-# this it can race ahead of tmp.mount and hit a plain (read-only root)
-# /tmp directory instead of the real tmpfs. Confirmed on real hardware:
-# removing /data's fsck-vs-mkfs race (see factory-reset-check.service)
-# made data.mount complete fast enough to expose this — growpart's mkdir
-# failed with "Read-only file system", /data never grew past its 128MiB
-# placeholder, and rpi-resize-swap-file.service's fixed 2048MiB swapfile
-# (sized assuming /data was already grown) then blew out that placeholder
-# entirely, taking the /etc overlay down with it via ENOSPC.
-RequiresMountsFor=/tmp
+# under /tmp by default — DefaultDependencies=no means this unit isn't
+# automatically ordered against tmp.mount the way a normal unit would be,
+# so without this it can race ahead of tmp.mount and hit a plain
+# (read-only root) /tmp directory instead of the real tmpfs. Confirmed on
+# real hardware: removing /data's fsck-vs-mkfs race (see
+# factory-reset-check.service) made data.mount complete fast enough to
+# expose this — growpart's mkdir failed with "Read-only file system",
+# /data never grew past its 128MiB placeholder, and
+# rpi-resize-swap-file.service's fixed 2048MiB swapfile (sized assuming
+# /data was already grown) then blew out that placeholder entirely,
+# taking the /etc overlay down with it via ENOSPC.
+#
+# An earlier version of this fix added RequiresMountsFor=/tmp here
+# instead — confirmed by testing that this creates a genuine systemd
+# ordering cycle against tmp.mount (likely via this unit's own
+# Before=slide-announcer-firstboot.service, which pulls in basic.target's
+# default After=local-fs.target chain the same way tmp.mount does,
+# forming a loop). systemd's cycle-breaker then dropped tmp.mount from
+# the boot transaction outright — worse than the original race, since
+# /tmp could end up not mounted as tmpfs at all. The script instead points
+# growpart's scratch dir at /run (see slide-announcer-data-resize.sh),
+# which sidesteps the ordering question entirely: /run is a tmpfs systemd
+# itself sets up before any unit ordering begins, not an fstab-driven
+# local-fs mount with a dependency graph to race against.
 ConditionPathExists=!/data/.data-resized
 
 [Service]

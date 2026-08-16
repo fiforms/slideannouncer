@@ -12,6 +12,15 @@
 # raspberrypi-sys-mods root-partition auto-resize, which this image masks.
 set -euo pipefail
 
+# growpart defaults its own scratch dir to ${TMPDIR:-/tmp} — this unit has
+# DefaultDependencies=no (see its own comment) and isn't guaranteed to run
+# after tmp.mount, so /tmp could still be the plain (read-only) root
+# filesystem directory at this point rather than the real tmpfs. /run is
+# always a tmpfs by the time any unit runs at all, set up by systemd
+# itself before ordering begins — pointing growpart there instead avoids
+# the race entirely rather than trying to out-order it.
+export TMPDIR=/run
+
 MARKER=/data/.data-resized
 [ -f "$MARKER" ] && exit 0
 
