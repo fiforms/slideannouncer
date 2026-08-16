@@ -2,7 +2,7 @@
 # Builds the 0.2.6 hotfix bundle. See hotfixes/README.md for the convention
 # this directory follows.
 #
-# Carries two OS-image-side fixes onto an already-provisioned device
+# Carries three OS-image-side fixes onto an already-provisioned device
 # without a full reimage:
 #
 # - updater/local_app_updater.py: the local-app self-updater demanded exact
@@ -10,11 +10,20 @@
 #   "0.2.6") and a release tarball's own VERSION content, which
 #   local-app/package.sh always suffixes with a git hash (and "-dirty" if
 #   applicable) — so no release built by this project's own tooling could
-#   ever pass. Also read update-availability only from heartbeat.py's own
-#   up-to-5-minutes-stale background cache, so clicking "Update Now" right
-#   after a fresh "Check for Update" could silently no-op against
-#   pre-release info. Both fixed — see the file's own version_core()/
-#   read_heartbeat_update_info() comments.
+#   ever pass. Fixed via the same version_core()-based comparison
+#   local-app-seed.py already used correctly.
+# - system/scripts/os-updater.py and updater/local_app_updater.py both read
+#   update-availability only from heartbeat.py's own up-to-5-minutes-stale
+#   background cache — so clicking "Update Now" right after a fresh "Check
+#   for Update" found a brand new release could silently no-op (exit
+#   before ever writing progress, leaving the two tiers' shared
+#   PROGRESS_FILE showing stale content from whichever tier last actually
+#   ran) even though `slide-announcer-update install` — always a live
+#   heartbeat call, no caching — installed the exact same release fine
+#   moments later. Confirmed by testing on this exact hotfix release. Both
+#   now prefer update-check.json (fresh at the moment "Update Now" became
+#   clickable) on the on-demand/--force path — see each file's own
+#   read_heartbeat_update_info() comment.
 # - provisioning/firstboot.py: /boot/firmware writes now go through
 #   slide-announcer-bootfw-remount (a write this file makes was missed in
 #   the original /boot/firmware-read-only-by-default change), and
