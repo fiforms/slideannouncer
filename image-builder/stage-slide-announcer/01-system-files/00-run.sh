@@ -391,8 +391,21 @@ chown -R slideannouncer:slideannouncer /opt/slide-announcer/venv
 
 # The stock root-resize first-boot unit conflicts with our fixed-size rootA
 # design (see image-builder/repartition.sh) — only /data auto-expands here.
+# rpi-resizerootfs.service was this mechanism's unit name on an earlier
+# Raspberry Pi OS release this image was built against; confirmed on real
+# hardware that the current release instead ships it as two separate
+# units, rpi-resize.service and systemd-growfs-root.service — masking only
+# the old name left both of the real ones unmasked, failing (harmlessly —
+# root's fixed size is intentional, so there was never anything to grow)
+# on every single boot instead of being silently skipped. Mask all three;
+# whichever name doesn't exist on a given release just no-ops via the
+# 2>/dev/null.
 systemctl disable rpi-resizerootfs.service 2>/dev/null || true
 systemctl mask rpi-resizerootfs.service 2>/dev/null || true
+systemctl disable rpi-resize.service 2>/dev/null || true
+systemctl mask rpi-resize.service 2>/dev/null || true
+systemctl disable systemd-growfs-root.service 2>/dev/null || true
+systemctl mask systemd-growfs-root.service 2>/dev/null || true
 
 # Our kiosk owns tty1 exclusively. `mask` (not `disable`) — getty@tty1 is
 # enabled via systemd's vendor preset rather than an explicit symlink, and

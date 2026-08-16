@@ -115,7 +115,17 @@ def load_boot_config() -> dict:
 
 
 def save_boot_config(data: dict) -> None:
-    BOOT_YAML.write_text(yaml.safe_dump(data, sort_keys=False))
+    # /boot/firmware is ro by default (see 00-run.sh's fstab entry) —
+    # bracket this write the same way every other writer of this partition
+    # does (rpi-tryboot-backend.sh, rpi-tryboot-commit.sh,
+    # factory-reset-check.sh, slide-announcer-factory-reset-trigger.service).
+    # try/finally so the remount back to ro still happens even if the write
+    # itself fails partway.
+    subprocess.run(["slide-announcer-bootfw-remount", "rw"], check=True)
+    try:
+        BOOT_YAML.write_text(yaml.safe_dump(data, sort_keys=False))
+    finally:
+        subprocess.run(["slide-announcer-bootfw-remount", "ro"], check=True)
 
 
 def compute_check(identity_key: bytes, device_uuid: str, mac: str) -> str:
