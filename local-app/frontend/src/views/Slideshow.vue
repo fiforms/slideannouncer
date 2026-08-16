@@ -67,6 +67,14 @@ async function refreshStatus() {
 }
 
 onMounted(async () => {
+  // Chromium only re-evaluates CSS `cursor` on a pointer event, so on a
+  // fresh boot (no physical mouse touched yet) the OS-default arrow sits
+  // at its initial position instead of picking up .kiosk's `cursor: none`.
+  // A synthetic mousemove is enough to make it recompute and hide the
+  // cursor — the real pointer is untouched and still works normally the
+  // moment someone moves it.
+  window.dispatchEvent(new MouseEvent('mousemove'))
+
   await refreshPlaylist()
   await refreshStatus()
   refreshTimer = setInterval(refreshPlaylist, REFRESH_INTERVAL_MS)
