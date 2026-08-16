@@ -140,8 +140,17 @@ async function reboot() {
   try {
     await api.reboot()
   } catch (err) {
-    // The device may drop the connection mid-reboot before the response
-    // even lands — that's the expected outcome here, not a failure.
+    // fetch() itself throws TypeError for a genuine network-level failure
+    // (connection dropped because the device is actually rebooting) —
+    // expected, not a failure. api.js's request() throws a plain Error for
+    // anything else (an HTTP error response the backend actually sent,
+    // e.g. systemctl reboot rejected by polkit) — that must be surfaced,
+    // not silently treated as "rebooting" when the device never actually
+    // will.
+    if (!(err instanceof TypeError)) {
+      rebootError.value = err.message
+      rebooting.value = false
+    }
   } finally {
     confirmingReboot.value = false
   }
@@ -157,10 +166,15 @@ async function unpair() {
   try {
     await api.unpair()
     await reboot()
+    // reboot() never throws (it swallows its own errors, surfacing a real
+    // failure via rebootError instead — see its own comment) — so if the
+    // device didn't actually reboot, unpairing.value must be cleared here,
+    // not just on this function's own catch path, or "Unpairing…" is left
+    // stuck forever with no indication rebootError is the real story.
   } catch (err) {
     unpairError.value = err.message
-    unpairing.value = false
   } finally {
+    unpairing.value = false
     confirmingUnpair.value = false
   }
 }
@@ -176,8 +190,14 @@ async function factoryReset() {
   try {
     await api.factoryReset()
   } catch (err) {
-    // Same as reboot() above — the device reboots as part of this, so a
-    // dropped connection here is the expected outcome, not a failure.
+    // Same as reboot() above: fetch()'s own TypeError means the device
+    // actually dropped the connection rebooting (expected), but anything
+    // else is a real backend-reported failure and must be surfaced, not
+    // silently treated as "resetting" when the device never actually will.
+    if (!(err instanceof TypeError)) {
+      resetError.value = err.message
+      resetting.value = false
+    }
   } finally {
     confirmingReset.value = false
     resetConfirmText.value = ''
