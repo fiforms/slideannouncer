@@ -43,12 +43,18 @@ trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "${STAGE}/backend" "${STAGE}/frontend"
 rsync -a --exclude venv --exclude '__pycache__' "${HERE}/backend/" "${STAGE}/backend/"
 rsync -a "${HERE}/frontend/dist/" "${STAGE}/frontend/"
-# Distinct from any real release's X.Y.Z-<hash> shape (see package.sh) so
-# it's never mistaken for one — this is a throwaway dev push, not
-# something local-app-seed.py's version comparison should ever reason
-# about (it only runs at boot, against the OS image's embedded release,
-# and never touches releases/dev at all).
-echo "dev-$(date +%Y%m%d-%H%M%S)" > "${STAGE}/VERSION"
+# Must start with a real X.Y.Z — local-app-seed.py's version_core() runs on
+# every boot (not just once at push time) and re-seeds /data/local-app from
+# this OS image's own embedded release whenever it can't parse `current`'s
+# VERSION as X.Y.Z. A plain "dev-<timestamp>" (this script's first attempt)
+# fails that parse, so every reboot silently discarded the dev push and
+# fell back to whatever's embedded in the image — confirmed on real
+# hardware. Using local-app/VERSION's own X.Y.Z as the core, with the
+# timestamp only as a trailing, ignored-by-the-parser suffix (same shape
+# package.sh's <base>-<git-hash> already uses), reads as "already current
+# or newer" instead, so a reboot leaves it alone.
+VERSION_BASE="$(cat "${HERE}/VERSION")"
+echo "${VERSION_BASE}-dev-$(date +%Y%m%d-%H%M%S)" > "${STAGE}/VERSION"
 
 echo "==> Pushing to ${TARGET}:/data/local-app/releases/dev"
 ssh "$TARGET" "mkdir -p /data/local-app/releases/dev"
