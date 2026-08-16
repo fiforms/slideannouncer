@@ -151,6 +151,25 @@ async def connect(ssid: str, password: str | None) -> None:
     (bad password, SSID out of range, etc.) — passed through to the UI.
     """
     device = await _wifi_device()
+
+    # `nmcli device wifi connect` reuses an existing connection profile for
+    # this SSID by name rather than always creating a fresh one. Confirmed
+    # by testing: a failed attempt (wrong password) can leave behind a
+    # broken profile — NetworkManager creates it before the WPA handshake
+    # fails, and can't re-prompt for secrets in this non-interactive
+    # context ("nmcli cannot ask without '--ask' option") — and every
+    # subsequent attempt then reuses THAT broken profile instead of a
+    # clean one, failing a different way each time (up to and including
+    # "802-11-wireless-security.key-mgmt: property is missing" once the
+    # profile is malformed enough). Delete any existing profile for this
+    # SSID first so every explicit connect attempt from the UI starts from
+    # a clean slate — best-effort, since the common case (first-ever
+    # attempt) has nothing to delete.
+    try:
+        await _run("connection", "delete", ssid)
+    except NetworkCommandError:
+        pass
+
     args = ["device", "wifi", "connect", ssid, "ifname", device]
     if password:
         args += ["password", password]
