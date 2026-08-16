@@ -38,6 +38,7 @@ os_release_type in the heartbeat response (SlideAnnouncerHeartbeatController):
 import argparse
 import fcntl
 import json
+import os
 import re
 import subprocess
 import sys
@@ -110,9 +111,26 @@ def acquire_lock():
     another update (either tier) already holds it — see this file's
     PROGRESS_FILE/LOCK_FILE comment. Caller must keep the handle alive for
     as long as the lock should be held; closing it (or process exit)
-    releases it automatically."""
+    releases it automatically.
+
+    This lock file is shared with updater/local_app_updater.py, which runs
+    as the unprivileged `slideannouncer` user, while this script runs as
+    root (no User= — it needs `rauc install`). Confirmed by testing:
+    whichever tier creates the file first stamps it with default
+    (umask-masked, typically 644) permissions, and the other tier's user
+    then can't open it for writing at all — PermissionError, not a lock
+    contention BlockingIOError, so it looks like a crash rather than "the
+    other tier has this right now." Force the mode to 0o666 explicitly
+    (bypassing umask) so whichever tier gets here first leaves it openable
+    by both.
+    """
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    handle = open(LOCK_FILE, "w")
+    old_umask = os.umask(0)
+    try:
+        fd = os.open(LOCK_FILE, os.O_CREAT | os.O_RDWR, 0o666)
+    finally:
+        os.umask(old_umask)
+    handle = os.fdopen(fd, "w")
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:

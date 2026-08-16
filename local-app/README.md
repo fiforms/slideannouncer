@@ -131,7 +131,8 @@ covers two cases with one mechanism:
 - **A RAUC OS update ships a newer local-app than what's on `/data`** —
   the device picks it up automatically on the reboot into the new slot, no
   separate app-update round trip needed. Conversely, if a live device
-  already got a *newer* app from the (not yet built) OTA updater than
+  already got a *newer* app from the OTA updater (`updater/local_app_updater.py`,
+  confirmed working end-to-end on real hardware — see below) than
   what's baked into the OS image it's currently running, an OS update
   must never silently regress it back down — hence "never downgrades," not
   just "sync to whatever the image has."
@@ -190,7 +191,14 @@ matches on the naming convention rather than a specific unit.
 to the kiosk display (labwc + Chromium, 2026-08-15), and once paired,
 `pairing.py`/`sync.py`/the `/kiosk` slideshow renderer display that site's
 real synced slides (2026-08-16) — see `SLIDE_ANNOUNCER.md`'s "Kiosk
-display".
+display". Also confirmed (2026-08-16): the Settings UI's "Update Now"
+button works end-to-end for both update tiers — an OS hotfix and a
+local-app update each install and switch over cleanly from a single GUI
+click, no console needed. See `SLIDE_ANNOUNCER.md`'s Part 2 status note
+for the real bugs that surfaced getting there (stale heartbeat cache vs.
+a fresh check, a version-string comparison that could never match a real
+build, extracted-release permissions, and shared-lock/directory
+permissions across the two tiers' different users).
 
 **Not yet implemented** (Tier 2, per `SLIDE_ANNOUNCER.md`):
 - No automated tests exist in this submodule at all currently — the
@@ -201,11 +209,6 @@ display".
   only detects and records which mode applies; wiring the kiosk to actually
   launch into `/settings/network` on a fresh, unconfigured device is still
   open.
-- `updater/local_app_updater.py` — the actual OTA app-update client (polls
-  the heartbeat/version endpoint, downloads a release tarball, smoke-tests
-  it, swaps `current`). `local-app-seed.py` implements the same
-  extract-and-symlink-swap mechanism, but only ever triggered by an OS
-  image boot, not a live poll against the server.
 
 Runs as two separate systemd units today
 (`slide-announcer-backend`, `slide-announcer-kiosk`) — the design's

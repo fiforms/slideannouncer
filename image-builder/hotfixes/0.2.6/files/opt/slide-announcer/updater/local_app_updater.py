@@ -32,6 +32,7 @@ import argparse
 import fcntl
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -124,9 +125,26 @@ def acquire_lock():
     """Returns an open file handle holding an exclusive flock, or None if
     another update (either tier) already holds it — see PROGRESS_FILE's
     comment above. Caller must keep the handle alive for as long as the
-    lock should be held; closing it (or process exit) releases it."""
+    lock should be held; closing it (or process exit) releases it.
+
+    This lock file is shared with system/scripts/os-updater.py, which runs
+    as root (no User= — it needs `rauc install`), while this script runs
+    as the unprivileged `slideannouncer` user. Confirmed by testing:
+    whichever tier creates the file first stamps it with default
+    (umask-masked, typically 644) permissions, and the other tier's user
+    then can't open it for writing at all — PermissionError, not a lock
+    contention BlockingIOError, so it looks like a crash rather than "the
+    other tier has this right now." Force the mode to 0o666 explicitly
+    (bypassing umask) so whichever tier gets here first leaves it openable
+    by both.
+    """
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    handle = open(LOCK_FILE, "w")
+    old_umask = os.umask(0)
+    try:
+        fd = os.open(LOCK_FILE, os.O_CREAT | os.O_RDWR, 0o666)
+    finally:
+        os.umask(old_umask)
+    handle = os.fdopen(fd, "w")
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
@@ -231,7 +249,13 @@ def extract_and_smoke_check(archive: Path, expected_version: str) -> tuple[Path,
     """
     tmp_dir = RELEASES_DIR / f".{expected_version}.tmp"
     shutil.rmtree(tmp_dir, ignore_errors=True)
-    tmp_dir.mkdir(parents=True)
+    # exist_ok=True: apply_update() doesn't clean this dir up on its own
+    # failure path (only the downloaded archive), so a previous failed
+    # attempt at the same version can leave it behind — confirmed by
+    # testing. The rmtree above already tries to clear it; this is
+    # defensive insurance against that not fully succeeding (or racing)
+    # rather than crashing here with a plain FileExistsError.
+    tmp_dir.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive) as tar:
         tar.extractall(tmp_dir)
 
@@ -250,6 +274,17 @@ def extract_and_smoke_check(archive: Path, expected_version: str) -> tuple[Path,
     # a corrupt/truncated download or a bad build before it can take the
     # backend down, without needing to actually run the new code yet.
     subprocess.run([sys.executable, "-m", "py_compile", str(backend_main)], check=True)
+
+    # go+rX (not just leaving whatever the tarball happened to carry):
+    # local-app/package.sh stages this tree via a plain `rsync -a` off
+    # whatever's on the machine that ran `package.sh`, which preserves
+    # that machine's own file permissions verbatim into the tarball —
+    # confirmed by testing to ship a release extracting to mode 700
+    # (owner-only), which nginx (www-data — neither the owner nor in the
+    # slideannouncer group) can't even traverse to serve the frontend from
+    # at all. Same fix local-app-seed.py's own extract_release() already
+    # applies to the OS-image-embedded release, for the identical reason.
+    subprocess.run(["chmod", "-R", "u+rwX,go+rX", str(tmp_dir)], check=True)
 
     target_dir = RELEASES_DIR / actual_version
     shutil.rmtree(target_dir, ignore_errors=True)

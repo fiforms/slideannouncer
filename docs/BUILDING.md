@@ -223,9 +223,14 @@ Both are confirmed working on real hardware.
 
 ## Testing the RAUC OTA pipeline (manual, no server needed)
 
-There's no automatic update-check timer yet — `/usr/local/sbin/slide-announcer-update`
-(source: `system/scripts/rauc-update.py`) is a CLI for exercising the
-pieces that do exist, over SSH on a dev build (`SSH_DEV_BUILD=1`):
+The real path is the Settings UI's "Update Now" button — confirmed
+working end-to-end on real hardware for both an OS hotfix and a
+local-app update (2026-08-16, see the top-level `README.md`) via
+`system/scripts/os-updater.py`/`updater/local_app_updater.py`'s own timers
+and on-demand units. `/usr/local/sbin/slide-announcer-update`
+(source: `system/scripts/rauc-update.py`) is a lower-level CLI for
+exercising the same underlying RAUC pieces directly, without a server or
+the Settings UI, over SSH on a dev build (`SSH_DEV_BUILD=1`):
 
 ```bash
 scp image-builder/deploy/slideannouncer-*.raucb slideadmin@<device-ip>:/tmp/

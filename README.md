@@ -15,8 +15,7 @@ end-to-end on real hardware** — image build, first-boot provisioning,
 device identity, on-device WiFi/network settings, pairing, slide sync,
 and a first pass at RAUC OTA are all implemented; see each directory's
 README for what's still rough (no automated tests yet, setup-mode flows
-not auto-routed into Settings, the real OTA app-update client still to
-come). Of the RAUC OTA paths, both the hotfix
+not auto-routed into Settings). Of the RAUC OTA paths, both the hotfix
 mechanism (`image-builder/make-hotfix-bundle.sh`, 2026-08-10) and the
 full-image/tryboot A/B path (2026-08-11) are now confirmed working
 end-to-end on real hardware — install, tryboot reboot, and commit
@@ -44,6 +43,17 @@ paired, the device displays that site's real slides synced from the
 server on the kiosk display — not just a stub/placeholder screen. The
 Menu key (or Esc) toggles between the live slideshow and the on-device
 Settings screen.
+
+**Also confirmed 2026-08-16: the Settings UI's "Update Now" button works
+end-to-end for both update tiers.** An OS hotfix install and a local-app
+update each install and switch over cleanly from a single GUI click, no
+console access needed. Getting there surfaced (and this project fixed)
+several real bugs, none of them design changes — see `SLIDE_ANNOUNCER.md`'s
+Part 2 status note and `local-app/README.md` for specifics: a stale
+heartbeat cache vs. a fresh "Check for Update" result, a version-string
+comparison that could never match a real build, missing permissions on a
+freshly-extracted release, and a shared lock file/directory never
+reconciled for the two update tiers' different users.
 
 See [`SLIDE_ANNOUNCER.md`](https://github.com/fiforms/announcementslides/blob/master/SLIDE_ANNOUNCER.md)
 in the main repo for the full design: the three update tiers (OS image,
