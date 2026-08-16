@@ -144,7 +144,13 @@ identity — this is expected, not a bug (see
 
 ## What to expect on first boot
 
-1. `slide-announcer-data-resize.service` grows `/data` to fill the card.
+1. Before `/data` is ever mounted, `slide-announcer-factory-reset-check.service`
+   grows its partition to fill the card, then formats it — growing before
+   formatting (not after) means `mke2fs` sizes block size/journal/inode
+   density for the real final size directly, rather than for the tiny
+   build-time placeholder. `slide-announcer-data-resize.service` still
+   runs once `/data` is mounted as a safety net for the rare case the
+   early grow didn't happen — normally a no-op by this point.
 2. `slide-announcer-firstboot.service` regenerates SSH host keys/
    `machine-id` (once, ever), writes `/data/identity.key` and the
    `device_uuid`/`device_uuid_check` pair to the boot partition, and

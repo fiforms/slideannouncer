@@ -10,10 +10,13 @@ This repo is consumed as a git submodule at `slideannouncer/` in the main
 `announcementslides` repo, which pins an exact commit of this repo per
 server release.
 
-**Status: early implementation.** Image build, first-boot provisioning,
-device identity, on-device WiFi/network settings, and a first pass at RAUC
-OTA are implemented; pairing and slide sync are not yet — see each
-directory's README for specifics. Of the RAUC OTA paths, both the hotfix
+**Status: early implementation, but the core loop is now confirmed
+end-to-end on real hardware** — image build, first-boot provisioning,
+device identity, on-device WiFi/network settings, pairing, slide sync,
+and a first pass at RAUC OTA are all implemented; see each directory's
+README for what's still rough (no automated tests yet, setup-mode flows
+not auto-routed into Settings, the real OTA app-update client still to
+come). Of the RAUC OTA paths, both the hotfix
 mechanism (`image-builder/make-hotfix-bundle.sh`, 2026-08-10) and the
 full-image/tryboot A/B path (2026-08-11) are now confirmed working
 end-to-end on real hardware — install, tryboot reboot, and commit
@@ -22,6 +25,25 @@ a real field OTA on a paired device (0.1.10 → 0.2.1): slideshow resumed
 correctly post-update, and a subsequent power cycle stayed on 0.2.0,
 confirming the commit persists across a normal reboot, not just the
 tryboot boot itself.
+
+**Confirmed 2026-08-15: a freshly-imaged device now boots all the way to
+the kiosk display** (labwc + Chromium) on real hardware, not just an
+already-provisioned one. Getting there fixed several concrete first-boot
+bugs, none of them design changes — see `SLIDE_ANNOUNCER.md`'s "Kiosk
+display" for specifics: `/boot/firmware` mounted read-only by default
+(plus every writer that needed bracketing for it), `/data` formatted only
+after its partition is grown to full size
+rather than before (so `mke2fs` sizes block size/journal/inode density
+correctly the first time, instead of an unfixable-after-the-fact 128MiB
+placeholder), and two first-boot systemd ordering races (`growpart`'s own
+`/tmp` scratch dir vs. `tmp.mount`, and `rpi-resize-swap-file.service`'s
+fixed-size swapfile vs. `/data` actually being grown yet).
+
+**Confirmed 2026-08-16: the full loop works, not just the boot.** Once
+paired, the device displays that site's real slides synced from the
+server on the kiosk display — not just a stub/placeholder screen. The
+Menu key (or Esc) toggles between the live slideshow and the on-device
+Settings screen.
 
 See [`SLIDE_ANNOUNCER.md`](https://github.com/fiforms/announcementslides/blob/master/SLIDE_ANNOUNCER.md)
 in the main repo for the full design: the three update tiers (OS image,

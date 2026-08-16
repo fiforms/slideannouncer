@@ -186,11 +186,15 @@ work and records its result to a status file on `/data`, and it's already
 covered by the existing polkit rule — no new grant needed, since the rule
 matches on the naming convention rather than a specific unit.
 
+**Confirmed on real hardware:** a freshly-imaged device boots all the way
+to the kiosk display (labwc + Chromium, 2026-08-15), and once paired,
+`pairing.py`/`sync.py`/the `/kiosk` slideshow renderer display that site's
+real synced slides (2026-08-16) — see `SLIDE_ANNOUNCER.md`'s "Kiosk
+display".
+
 **Not yet implemented** (Tier 2, per `SLIDE_ANNOUNCER.md`):
-- Neither `pairing.py`, `sync.py`, nor the `/kiosk` slideshow renderer have
-  a real device smoke test yet (see "Still needs a hands-on smoke test on
-  the actual target Pi hardware" in `SLIDE_ANNOUNCER.md`'s "Kiosk display").
-  No automated tests exist in this submodule at all currently.
+- No automated tests exist in this submodule at all currently — the
+  confirmations above were manual, on-device smoke tests, not CI.
 - The setup-mode-driven first-boot flows (headless config /
   HID-attached setup / AP-mode fallback) don't yet route into the
   Settings/Network screens above automatically — `provisioning/firstboot.py`
