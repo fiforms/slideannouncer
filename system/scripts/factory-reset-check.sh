@@ -46,6 +46,20 @@ if [ -z "$DATA_DEV" ] || [ ! -b "$DATA_DEV" ]; then
 	exit 1
 fi
 
+# Grow the partition to its true final size BEFORE formatting, not after
+# (contrast slide-announcer-data-resize.service, which grows the already-
+# mkfs'd filesystem post-mount) — mke2fs sizes block size/journal/inode
+# density from whatever size it sees at creation time, and resize2fs can
+# never fix block size after the fact. mkfs.ext4 needs the partition
+# already grown, not just the disk it grows onto, so mke2fs picks
+# defaults for the real ~20GB+ size instead of the 128MiB placeholder.
+# growpart only ever touches the partition table, never a filesystem —
+# confirmed safe here since there isn't one yet. See data-resize.sh's own
+# --partition-only comment for why data-resize.service's own post-mount
+# run still happens harmlessly on top of this regardless.
+echo "slide-announcer-factory-reset: growing partition to its final size before formatting"
+slide-announcer-data-resize.sh --partition-only "$DATA_DEV"
+
 echo "slide-announcer-factory-reset: mkfs.ext4 -F ${DATA_DEV}"
 mkfs.ext4 -F -L data "$DATA_DEV"
 

@@ -10,6 +10,25 @@
 # stays a known, reproducible size for the future RAUC A/B slot pair — only
 # /data auto-expands. This replaces (not supplements) the stock
 # raspberrypi-sys-mods root-partition auto-resize, which this image masks.
+#
+# --partition-only DEVICE: grows the partition table entry only, skipping
+# the ext4 resize and marker file — called by factory-reset-check.sh
+# BEFORE its own mkfs.ext4, so mkfs sees the partition's true final size
+# up front and picks block size/journal/inode density for that size
+# directly, rather than mke2fs sizing everything for the tiny 128MiB
+# placeholder and resize2fs being unable to fix the block size
+# afterward (it can grow a filesystem, never change its block size).
+# growpart only ever touches the partition table, never the filesystem
+# inside it — confirmed safe to run here since there's no filesystem yet
+# for it to have an opinion about. DEVICE is passed in explicitly rather
+# than resolved from a live mount, since /data isn't mounted yet at this
+# point — factory-reset-check.sh already resolved it from fstab for its
+# own mkfs call, so this reuses that rather than re-deriving it.
+# slide-announcer-data-resize.service's own (post-mount, full) run still
+# happens afterward regardless: growpart finds nothing left to do
+# (NOCHANGE), resize2fs is a no-op against an already-correctly-sized
+# filesystem, and the marker gets written then, same as if this early
+# call had never run — this is a pure head start, not a replacement.
 set -euo pipefail
 
 # growpart defaults its own scratch dir to ${TMPDIR:-/tmp} — this unit has
@@ -21,10 +40,16 @@ set -euo pipefail
 # the race entirely rather than trying to out-order it.
 export TMPDIR=/run
 
-MARKER=/data/.data-resized
-[ -f "$MARKER" ] && exit 0
+PARTITION_ONLY=0
+if [ "${1:-}" = "--partition-only" ]; then
+	PARTITION_ONLY=1
+	DATA_SRC="${2:?--partition-only requires a device path}"
+else
+	MARKER=/data/.data-resized
+	[ -f "$MARKER" ] && exit 0
+	DATA_SRC="$(findmnt -no SOURCE /data)"
+fi
 
-DATA_SRC="$(findmnt -no SOURCE /data)"
 DISK="/dev/$(lsblk -no PKNAME "$DATA_SRC")"
 # lsblk's PARTN column isn't available on every util-linux version this
 # image might ship (confirmed missing on real hardware: "lsblk: unknown
@@ -50,6 +75,11 @@ GROWPART_OUT="$(growpart "$DISK" "$PART_NUM" 2>&1)" && echo "$GROWPART_OUT" || {
 	echo "$GROWPART_OUT"
 	echo "$GROWPART_OUT" | grep -q NOCHANGE || exit "$rc"
 }
+
+if [ "$PARTITION_ONLY" = 1 ]; then
+	echo "slide-announcer-data-resize: partition grown, skipping filesystem resize (--partition-only, no filesystem exists yet)"
+	exit 0
+fi
 
 echo "slide-announcer-data-resize: growing ext4 filesystem on ${DATA_SRC}"
 resize2fs "$DATA_SRC"
