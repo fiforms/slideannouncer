@@ -23,10 +23,15 @@
 // XKB mapping in use and haven't been confirmed on real hardware yet —
 // BACK_KEYS/MENU_KEYS below list every plausible candidate rather than
 // guessing one; if testing on the device turns up a different string
-// (check `event.key` via devtools), add it to the relevant list.
+// (check `event.key` via the Settings > Key Debug screen), add it to the
+// relevant list.
+//
+// The remote's Home button is confirmed on real hardware (via Key Debug)
+// to report event.key === 'BrowserHome' (keyCode 172).
 const DIRECTION_KEYS = { ArrowDown: 'down', ArrowUp: 'up', ArrowLeft: 'left', ArrowRight: 'right' }
 const BACK_KEYS = ['GoBack', 'BrowserBack', 'Back', 'Escape']
 const MENU_KEYS = ['ContextMenu', 'Menu', 'Compose', 'AppSwitch']
+const HOME_KEYS = ['BrowserHome']
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -110,6 +115,12 @@ export function installRemoteNav(router) {
         event.preventDefault()
         next.focus()
       }
+      return
+    }
+
+    if (HOME_KEYS.includes(event.key)) {
+      event.preventDefault()
+      router.push('/kiosk')
       return
     }
 

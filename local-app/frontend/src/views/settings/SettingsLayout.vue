@@ -8,6 +8,7 @@ const categories = [
   { path: '/settings/network', label: 'Network' },
   { path: '/settings/system', label: 'System' },
   { path: '/settings/about', label: 'About' },
+  { path: '/settings/keydebug', label: 'Key Debug' },
 ]
 </script>
 

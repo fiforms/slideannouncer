@@ -8,6 +8,7 @@ import WifiList from './views/settings/WifiList.vue'
 import WifiConnect from './views/settings/WifiConnect.vue'
 import System from './views/settings/System.vue'
 import About from './views/settings/About.vue'
+import KeyDebug from './views/settings/KeyDebug.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -25,6 +26,7 @@ export default createRouter({
         { path: 'network/wifi/:ssid', component: WifiConnect, props: true },
         { path: 'system', component: System },
         { path: 'about', component: About },
+        { path: 'keydebug', component: KeyDebug },
       ],
     },
   ],
