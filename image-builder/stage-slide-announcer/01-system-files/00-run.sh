@@ -477,3 +477,29 @@ EOF
 # read at kiosk-session start.
 install -m 644 files/system/labwc/rc.xml \
 	"${ROOTFS_DIR}/var/lib/slide-announcer/.config/labwc/rc.xml"
+
+# "slide-announcer-blank" cursor theme: blanks only the idle/resting arrow
+# (default, left_ptr, top_left_arrow — the synonyms toolkits use for the
+# plain unhovered pointer) to a fully transparent 1x1 image, so nothing is
+# drawn for the mouse pointer before a real mouse moves. Deliberately
+# doesn't define pointer/text/wait/resize/etc. at all: Chromium only
+# queries the system cursor theme for a name if it finds one there —
+# leaving the rest of them out of this theme entirely means Chromium falls
+# through to its own bundled visible bitmap cursors for hover/text/busy
+# states, so link/button hover and everything else on Settings/Pairing
+# still shows normal cursor feedback. kiosk-start.sh points XCURSOR_THEME
+# at this. Installed under /usr/share/icons so it resolves regardless of
+# $HOME (unlike ~/.icons, which only slideannouncer's own session would
+# search). Only one actual image is committed to the repo (cursors/default)
+# since every blanked name needs identical (fully transparent) pixel data —
+# the other two are symlinked to it here rather than storing byte-identical
+# binary files in git.
+install -d "${ROOTFS_DIR}/usr/share/icons/slide-announcer-blank/cursors"
+install -m 644 files/system/cursor-theme/slide-announcer-blank/index.theme \
+	"${ROOTFS_DIR}/usr/share/icons/slide-announcer-blank/index.theme"
+install -m 644 files/system/cursor-theme/slide-announcer-blank/cursors/default \
+	"${ROOTFS_DIR}/usr/share/icons/slide-announcer-blank/cursors/default"
+
+for name in left_ptr top_left_arrow; do
+	ln -sf default "${ROOTFS_DIR}/usr/share/icons/slide-announcer-blank/cursors/${name}"
+done
