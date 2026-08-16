@@ -26,6 +26,11 @@ body {
   font-family: system-ui, sans-serif;
   /* TV safe area — avoid content hugging the edges of the panel. */
   padding: 3vh 4vw;
+  /* Settings/Pairing/Home are all remote/mouse-driven, so the hand cursor
+     is the more useful default everywhere on these pages, not just over
+     links/buttons. Doesn't reach the kiosk slideshow — Slideshow.vue's
+     .kiosk div sets its own `cursor: none` at higher specificity. */
+  cursor: pointer;
 }
 
 button {
@@ -78,4 +83,5 @@ input[type="password"] {
   border-radius: 0.5rem;
   padding: 0.75rem 1rem;
   font-size: 1.1rem;
+  cursor: text;
 }
