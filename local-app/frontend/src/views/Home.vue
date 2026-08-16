@@ -24,6 +24,7 @@ onMounted(async () => {
     <dl v-if="status">
       <dt>Hostname</dt><dd>{{ status.hostname ?? '—' }}</dd>
       <dt>Image version</dt><dd>{{ status.image_version ?? '—' }}</dd>
+      <dt>App version</dt><dd>{{ status.app_version ?? '—' }}</dd>
       <dt>Device UUID</dt><dd>{{ status.device_uuid ?? '—' }}</dd>
       <dt>Setup mode detected</dt><dd>{{ status.setup_mode ?? '—' }}</dd>
       <dt>Paired</dt><dd>{{ status.paired ? 'Yes' : 'No' }}</dd>
@@ -37,6 +38,10 @@ onMounted(async () => {
       </router-link>
       <router-link to="/settings" class="tile settings-link">Settings</router-link>
     </div>
+
+    <router-link to="/kiosk" class="tile settings-link slideshow-link">
+      &#8617; Slideshow
+    </router-link>
   </div>
 </template>
 
@@ -69,5 +74,8 @@ dt { font-weight: 600; color: var(--text-dim); }
   font-size: 1.1rem;
   font-weight: 600;
   text-decoration: none;
+}
+.slideshow-link {
+  margin-top: 1rem;
 }
 </style>

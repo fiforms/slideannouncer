@@ -20,6 +20,7 @@ onMounted(async () => {
     <dl v-if="status">
       <dt>Hostname</dt><dd>{{ status.hostname ?? '—' }}</dd>
       <dt>Image version</dt><dd>{{ status.image_version ?? '—' }}</dd>
+      <dt>App version</dt><dd>{{ status.app_version ?? '—' }}</dd>
       <dt>Device UUID</dt><dd>{{ status.device_uuid ?? '—' }}</dd>
       <dt>Paired</dt><dd>{{ status.paired ? 'Yes' : 'No' }}</dd>
       <dt>Last heartbeat</dt>
