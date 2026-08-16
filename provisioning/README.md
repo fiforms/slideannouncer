@@ -1,9 +1,9 @@
 # provisioning/
 
 `firstboot.py` — run by `system/slide-announcer-firstboot.service` on every
-boot (not just the first — see below). Everything here is genuinely
-functional, self-contained filesystem/crypto work with no dependency on the
-not-yet-built pairing/sync API:
+boot (not just the first — see below). Self-contained filesystem/crypto/
+local-NetworkManager-query work; no calls to the AnnouncementSlides server
+itself:
 
 - **Once, ever** (guarded by `/data/.firstboot-complete`): regenerates SSH
   host keys and `machine-id`, so devices imaged from the same `.img` don't
@@ -18,15 +18,20 @@ not-yet-built pairing/sync API:
   hand-edited `device_uuid` without the matching secret — regenerates a
   fresh identity (`device_uuid` + `identity_key`) and clears any local
   pairing/slide state.
-- **Every boot — setup-mode detection** (senses, does not act — acting
-  requires the real Tier 2 backend, not yet built): checks for WiFi
-  credentials in the boot YAML, probes for a usable keyboard + pointer HID
-  device via `libinput list-devices`, and records which of the three setup
-  paths (headless-config / HID-present / AP-mode-fallback) would apply to
-  `/data/status/setup-mode.json` — which the stub local-app's
-  `GET /api/local/status` reads and the stub kiosk page displays.
+- **Every boot — setup-mode detection** (senses, does not act on the result
+  itself — that's the real local-app backend's job, see below): polls
+  NetworkManager for an already-active wifi/ethernet connection (i.e. WiFi
+  pre-provisioned via cloud-init's `network-config` on the boot partition
+  already connected — see `docs/BUILDING.md`'s "Pre-provisioning network +
+  identity"), probes for a usable keyboard + pointer HID device via
+  `libinput list-devices`, and records which of the three setup paths
+  (headless-config / HID-present / AP-mode-fallback) applies to
+  `/data/status/setup-mode.json` — which the local-app backend's
+  `GET /api/local/status` reads and the kiosk home page displays. WiFi
+  credentials themselves never live in `slideannouncer.yaml` — that file is
+  identity + initial-setup hints only; see `network-config` for network
+  settings.
 
-**Not yet implemented:** actually acting on the detected setup mode —
-joining WiFi via `nmcli`, launching the on-device setup UI, AP-mode
-hotspot, and the `POST /api/slide-announcers/pair` exchange. That's Tier 2
-(`local-app/`), described in `SLIDE_ANNOUNCER.md`.
+Pairing, slide sync, and the on-device Settings/Network UI (Tier 2,
+`local-app/`) are implemented and confirmed working on real hardware — see
+the top-level `README.md`'s status section and `SLIDE_ANNOUNCER.md`.

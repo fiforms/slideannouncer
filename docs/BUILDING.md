@@ -124,18 +124,27 @@ partitions — `boot`, `rootA`, `rootB` (unused placeholder, same size as
 `rootA`), and `data` (small placeholder, occupies the remaining space on
 the card at this point, before it grows).
 
-## Pre-provisioning WiFi + identity (optional, true headless)
+## Pre-provisioning network + identity (optional, true headless)
 
-Before first boot, you can drop a `slideannouncer.yaml` onto the boot
-partition (mount it on any Mac/PC/Linux box — it's plain FAT32):
+Before first boot, you can drop **two** files onto the boot partition
+(mount it on any Mac/PC/Linux box — it's plain FAT32): `network-config`
+for WiFi/network settings, and `slideannouncer.yaml` for identity and
+initial-setup hints. Keeping these separate rather than one combined file
+means WiFi config gets netplan's own well-documented format (static
+IP/gateway/DNS included) instead of a bespoke `wifi:` block — see
+`network-config`'s own comments on the boot partition for the WiFi
+examples (DHCP and static IP).
+
+`slideannouncer.yaml`:
 
 ```yaml
-wifi:
-  ssid: "Church WiFi"
-  password: "..."
+default_language: en
 ```
 
-Leave `device_uuid`/`device_uuid_check` out — `provisioning/firstboot.py`
+`default_language` ("en" or "es") is only a hint for the very first setup
+screen, not a permanent setting — it can be changed later from the
+device's own Settings menu with no effect on this file. Leave
+`device_uuid`/`device_uuid_check` out entirely — `provisioning/firstboot.py`
 generates a fresh, consistent pair on first boot. If you hand-edit
 `device_uuid` later without the matching secret (which never leaves
 `/data`), the next boot detects the mismatch and regenerates a fresh
@@ -154,9 +163,11 @@ identity — this is expected, not a bug (see
 2. `slide-announcer-firstboot.service` regenerates SSH host keys/
    `machine-id` (once, ever), writes `/data/identity.key` and the
    `device_uuid`/`device_uuid_check` pair to the boot partition, and
-   detects/records the setup mode (`headless-config` if you pre-provisioned
-   WiFi above, `hid-setup` if a keyboard+pointer is attached, otherwise
-   `ap-mode-fallback` — none of these are *acted on* yet, just detected).
+   detects/records the setup mode (`headless-config` if NetworkManager
+   already shows an active connection — e.g. cloud-init applied
+   `network-config` above — `hid-setup` if a keyboard+pointer is attached
+   instead, otherwise `ap-mode-fallback`; this is a status label the home
+   page displays, not something that changes what happens next).
 3. `slide-announcer-local-app-seed.service` extracts the local-app release
    tarball baked into this image onto `/data/local-app/releases/<version>/`
    and points `/data/local-app/current` at it (first boot only ever seeds;
@@ -165,8 +176,9 @@ identity — this is expected, not a bug (see
 4. The kiosk display comes up (`labwc` + Chromium) showing the home page:
    hostname, image version, device UUID, and the detected setup mode, plus
    a "Settings" link into the real Network settings menu (WiFi scan/
-   connect, connection status) — see `../local-app/README.md`. Pairing/
-   slide sync are still not implemented.
+   connect, connection status) — see `../local-app/README.md`. Once
+   paired, the device displays that site's real slides synced from the
+   server — confirmed on real hardware, see the top-level `README.md`.
 
 If Settings > Network's WiFi scan reports no networks found, there are two
 independent things to check — a device can fail either one separately:

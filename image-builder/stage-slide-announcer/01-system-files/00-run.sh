@@ -311,6 +311,30 @@ if [ -s files/BOOT_CONFIG_EXTRA ]; then
 	printf '\n' >> "${ROOTFS_DIR}/boot/firmware/config.txt"
 fi
 
+# Overwrites pi-gen's own stock cloud-init/04-cloud-init stage output
+# (files/network-config there, installed to this exact path) — pi-gen's
+# generic example doesn't mention this project's FACTORY_RESET flag or its
+# own slideannouncer.yaml headless-provisioning mechanism (see
+# docs/BUILDING.md, "Pre-provisioning WiFi + identity"), so ships our own
+# wording instead. Purely comments/an inert commented-out example either
+# way — cloud-init only acts on this file if its network: block is
+# actually uncommented, same as pi-gen's original.
+install -m 644 files/system/cloud-init/network-config \
+	"${ROOTFS_DIR}/boot/firmware/network-config"
+
+# Default slideannouncer.yaml (provisioning/firstboot.py's own
+# pre-provisioning file — see docs/BUILDING.md's "Pre-provisioning WiFi +
+# identity") so a fresh card is self-documenting rather than needing this
+# file created from scratch. device_uuid/device_uuid_check are
+# deliberately absent — see the file's own comment for why hand-editing
+# those without the matching /data-only secret is pointless. Comments in
+# this shipped file are read once, if at all: firstboot.py's identity
+# rewrite on the device's first boot round-trips this through a plain
+# YAML load/dump with no comment preservation, so anything explanatory
+# here only reaches whoever mounts the card BEFORE first power-on.
+install -m 644 files/provisioning/slideannouncer.yaml.example \
+	"${ROOTFS_DIR}/boot/firmware/slideannouncer.yaml"
+
 # Root password — debugging/development only (see .env.example and
 # build.sh, which only stages this file when ROOT_DEV_PASSWORD is set).
 # Exported (not just a shell variable) so it's visible inside on_chroot's

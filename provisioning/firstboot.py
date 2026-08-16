@@ -2,8 +2,9 @@
 """Slide Announcer first-boot / every-boot provisioning.
 
 Run by slide-announcer-firstboot.service, after slide-announcer-data-resize
-has grown /data. Everything here is self-contained filesystem/crypto work —
-no network calls, no dependency on the (not yet built) pairing/sync API.
+has grown /data. Everything here is self-contained filesystem/crypto/local
+NetworkManager-query work — no calls to the AnnouncementSlides server
+itself, no dependency on the pairing/sync API.
 
 See SLIDE_ANNOUNCER.md, "Device identity & anti-clone protection" and
 "First-boot / WiFi setup flow" for the full design this implements.
@@ -16,12 +17,14 @@ import os
 import re
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 
 import yaml
 
 BOOT_YAML = Path("/boot/firmware/slideannouncer.yaml")
+NETWORK_CONFIG = Path("/boot/firmware/network-config")
 DATA_DIR = Path("/data")
 IDENTITY_KEY_PATH = Path("/data/identity.key")
 FIRSTBOOT_MARKER = Path("/data/.firstboot-complete")
@@ -180,9 +183,68 @@ def ensure_identity() -> None:
     log(f"new identity written (device_uuid={new_uuid})")
 
 
-def has_wifi_credentials(config: dict) -> bool:
-    wifi = config.get("wifi") or {}
-    return bool(wifi.get("ssid")) and wifi.get("password") is not None
+def _network_connected_now() -> bool:
+    try:
+        out = subprocess.run(
+            ["nmcli", "-t", "-f", "TYPE,STATE", "device", "status"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+    for line in out.splitlines():
+        fields = line.split(":")
+        if len(fields) == 2 and fields[0] in ("wifi", "ethernet") and fields[1] == "connected":
+            return True
+    return False
+
+
+def _network_preconfigured() -> bool:
+    """True if network-config (cloud-init's NoCloud netplan file, also on
+    the boot partition) actually declares a network to apply — the shipped
+    default ships entirely commented out, so this is normally False.
+    """
+    if not NETWORK_CONFIG.exists():
+        return False
+    try:
+        data = yaml.safe_load(NETWORK_CONFIG.read_text())
+    except yaml.YAMLError:
+        return False
+    return bool((data or {}).get("network"))
+
+
+def has_network_connectivity(timeout: float = 15.0, poll_interval: float = 2.0) -> bool:
+    """True once NetworkManager reports an active wifi/ethernet connection —
+    e.g. pre-provisioned via cloud-init's network-config (see
+    docs/BUILDING.md, "Pre-provisioning network + identity"), applied
+    entirely outside this project's own code, so there's nothing to
+    inspect here except the result.
+
+    Only actually polls (up to `timeout`) if network-config declares
+    something to apply: this service only orders
+    After=network-pre.target, which runs BEFORE networking is configured,
+    not after it's up, so WiFi association + DHCP can easily take longer
+    than an instantaneous check to settle on a device that's about to
+    connect fine. But slide-announcer-kiosk.service Requires= this
+    service, so blindly waiting out that same timeout on a device with
+    nothing pre-provisioned at all (the common case — HID setup or
+    AP-mode fallback instead) would just be a pure delay before the kiosk
+    display can ever appear, for a connection that was never coming. An
+    already-plugged-in ethernet cable is covered by the immediate check
+    below regardless — wired connections don't have WiFi's
+    association/DHCP delay to race against.
+    """
+    if _network_connected_now():
+        return True
+    if not _network_preconfigured():
+        return False
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        time.sleep(poll_interval)
+        if _network_connected_now():
+            return True
+    return False
 
 
 def detect_hid_input() -> bool:
@@ -216,7 +278,7 @@ def detect_setup_mode() -> None:
     """
     config = load_boot_config()
 
-    if has_wifi_credentials(config):
+    if has_network_connectivity():
         mode = "headless-config"
     elif detect_hid_input():
         mode = "hid-setup"

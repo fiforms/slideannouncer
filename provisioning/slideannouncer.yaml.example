@@ -1,0 +1,29 @@
+# Slide Announcer pre-provisioning config — see docs/BUILDING.md's
+# "Pre-provisioning network + identity" for the full walkthrough.
+#
+# NOTE: comments in this file do NOT survive the device's first boot.
+# provisioning/firstboot.py parses this file with a plain YAML load/dump
+# round-trip (no comment-preserving parser) the first time it writes
+# device_uuid/device_uuid_check back here, which happens on every
+# device's very first boot (and again after any factory reset). Values
+# and keys you set below survive that rewrite; these comments won't —
+# edit this file before first power-on if you want the documentation to
+# be useful to whoever mounts the card next.
+#
+# WiFi/network settings do NOT go in this file — edit network-config
+# (also on this boot partition) instead. This file only ever covers
+# identity and initial-setup hints.
+
+# Default UI language hint for initial setup only — "en" or "es". Used
+# once, to pick a sensible starting language for the first setup screen
+# before anyone has configured the device. Not a permanent setting: it
+# can be changed at any time afterward from the device's own Settings
+# menu, and doing so has no effect on this file.
+default_language: en
+
+# device_uuid / device_uuid_check: leave these out. firstboot.py
+# generates a fresh, consistent pair on the device's first boot — see
+# provisioning/README.md and SLIDE_ANNOUNCER.md's "Device identity &
+# anti-clone protection". Hand-editing device_uuid without the matching
+# secret (which never leaves /data) just triggers a fresh identity
+# regeneration on the next boot rather than doing anything useful.

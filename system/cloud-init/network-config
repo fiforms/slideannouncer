@@ -1,0 +1,54 @@
+# This file contains a netplan-compatible configuration which cloud-init will
+# apply on first boot or when the FACTORY_RESET flag file is also present here.
+# (note: it will *not* update the config after the first boot). Please refer
+# to the cloud-init documentation and the netplan reference for full details:
+#
+# https://netplan.io/reference
+# https://cloudinit.readthedocs.io/en/latest/topics/network-config.html
+# https://cloudinit.readthedocs.io/en/latest/topics/network-config-format-v2.html
+#
+# Please note that the YAML format employed by this file is sensitive to
+# differences in whitespace; if you are editing this file in an editor (like
+# Notepad) which uses literal tabs, take care to only use spaces for
+# indentation. See the following link for more details:
+#
+# https://en.wikipedia.org/wiki/YAML
+#
+# This is the only place WiFi/network settings go for pre-provisioning a
+# device — slideannouncer.yaml (also on this boot partition) covers device
+# identity and initial-setup hints.
+
+
+# An example WiFi configuration (DHCP) is commented out below
+# Uncomment and change "Local_WiFi_SSID" and "secret_password_123"
+# to your actual values.
+
+# Please note that the WiFi regulatory domain is configured at image build time
+
+# network:
+#  version: 2
+#  wifis:
+#    wlan0:
+#      dhcp4: true
+#      optional: true
+#      access-points:
+#        Local_WiFi_SSID:
+#          password: "secret_password_123"
+
+# A second example below shows the next most common case: a static IP
+# instead of DHCP, with an explicit gateway and DNS servers.
+
+# network:
+#  version: 2
+#  wifis:
+#    wlan0:
+#      dhcp4: false
+#      optional: true
+#      access-points:
+#        Local_WiFi_SSID:
+#          password: "secret_password_123"
+#      addresses:
+#        - 192.168.1.50/24
+#      gateway4: 192.168.1.1
+#      nameservers:
+#        addresses: [192.168.1.1, 8.8.8.8]
