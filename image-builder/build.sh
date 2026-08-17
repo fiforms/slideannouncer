@@ -298,19 +298,22 @@ rsync -a "${REPO_ROOT}/provisioning/" "${FILES_DIR}/provisioning/"
 # see that function's own docstring for why this also makes key
 # rotation/revocation an edit-and-reboot instead of a rebuild-and-reflash.
 if [ "$SSH_ENABLED" = "1" ]; then
-	{
-		echo "ssh_enabled: true"
-		echo ""
-		echo "ssh_authorized_keys: |"
-		sed 's/^/  /' "$SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH"
-	} >> "${FILES_DIR}/provisioning/slideannouncer.yaml.example"
+	YAML_EXAMPLE="${FILES_DIR}/provisioning/slideannouncer.yaml.example"
+	sed -i 's/^# ssh_enabled: true$/ssh_enabled: true/' "$YAML_EXAMPLE"
+	KEY_BLOCK=$(sed 's/^/  /' "$SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH")
+	awk -v block="$KEY_BLOCK" '
+		/^# ssh_authorized_keys: \|$/ { print "ssh_authorized_keys: |"; print block; skip=1; next }
+		skip && /^#   / { next }
+		{ skip=0; print }
+	' "$YAML_EXAMPLE" > "${YAML_EXAMPLE}.tmp"
+	mv "${YAML_EXAMPLE}.tmp" "$YAML_EXAMPLE"
 fi
-# Same rationale as the ssh_authorized_keys append above: seeded into the
-# yaml (read at runtime, per SLIDE_ANNOUNCER.md) rather than a separate
+# Same rationale as the ssh_authorized_keys substitution above: seeded into
+# the yaml (read at runtime, per SLIDE_ANNOUNCER.md) rather than a separate
 # build-time file, so this is just a convenience default — not required,
 # and swappable per-device after the fact with no rebuild/reflash.
 if [ -n "$SLIDE_ANNOUNCER_SERVER_URL" ]; then
-	echo "server_url: ${SLIDE_ANNOUNCER_SERVER_URL}" >> "${FILES_DIR}/provisioning/slideannouncer.yaml.example"
+	sed -i "s|^# server_url: .*|server_url: ${SLIDE_ANNOUNCER_SERVER_URL}|" "${FILES_DIR}/provisioning/slideannouncer.yaml.example"
 fi
 # Fixed OS-image infra, like local-app-seed.py — deliberately NOT part of
 # the versioned local-app release tarball below, so a bad app update can
