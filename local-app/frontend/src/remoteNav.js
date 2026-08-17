@@ -104,11 +104,17 @@ export function installRemoteNav(router) {
   window.addEventListener('keydown', (event) => {
     const direction = DIRECTION_KEYS[event.key]
     if (direction) {
-      // Inside a text input (or a <select>), arrow keys should move the
+      // Inside a text input (or a <select>), Left/Right should move the
       // text cursor / change the selected value like on any normal
-      // keyboard — only hijack them when focus is on a button/link/item.
+      // keyboard. But every field here is single-line, so Up/Down has no
+      // native meaning to preserve — without a Tab key on this remote,
+      // leaving Up/Down captured by the input would trap focus there with
+      // no way out but Enter. So Up/Down always falls through to spatial
+      // navigation; only Left/Right defer to native text-cursor movement.
       const active = document.activeElement
-      if (isTypingTarget(active) || active?.tagName === 'SELECT') return
+      const blockedForTyping = (direction === 'left' || direction === 'right') &&
+        (isTypingTarget(active) || active?.tagName === 'SELECT')
+      if (blockedForTyping) return
 
       const next = findNext(active || document.body, direction)
       if (next) {
