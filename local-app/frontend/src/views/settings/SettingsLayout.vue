@@ -1,20 +1,25 @@
 <script setup>
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
 // Smart-TV style settings shell: a left-hand category rail plus a content
 // pane, per SLIDE_ANNOUNCER.md's "local settings menu" (Kiosk display).
 // The device's remote is a keyboard+pointer HID combo (see
 // provisioning/README.md), so plain focusable links/buttons with visible
 // focus rings are enough navigation — no custom spatial-nav system needed.
-const categories = [
-  { path: '/settings/system', label: 'System' },
-  { path: '/settings/network', label: 'Network' },
-  { path: '/settings/pairing', label: 'Pairing' },
-]
+const categories = computed(() => [
+  { path: '/settings/system', label: t('settingsLayout.system') },
+  { path: '/settings/network', label: t('settingsLayout.network') },
+  { path: '/settings/pairing', label: t('settingsLayout.pairing') },
+])
 </script>
 
 <template>
   <div class="settings">
     <aside class="rail">
-      <router-link to="/kiosk" class="back-link">&larr; Back to slideshow</router-link>
+      <router-link to="/kiosk" class="back-link">{{ t('settingsLayout.backToSlideshow') }}</router-link>
       <nav>
         <router-link
           v-for="cat in categories"

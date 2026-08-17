@@ -1,0 +1,152 @@
+{
+    "common": {
+        "cancel": "Cancelar",
+        "yes": "Sí",
+        "no": "No",
+        "never": "Nunca"
+    },
+    "pinGate": {
+        "prompt": "Ingrese el PIN de configuración",
+        "countdown": "Volviendo a la presentación en {seconds}s…"
+    },
+    "slideshow": {
+        "notPaired": "Aún no emparejado. Use el botón Menú para abrir Configuración.",
+        "waiting": "Esperando diapositivas…",
+        "needsAttention": "Requiere atención — revise Configuración"
+    },
+    "settingsLayout": {
+        "backToSlideshow": "← Volver a la presentación",
+        "system": "Sistema",
+        "network": "Red",
+        "pairing": "Emparejamiento"
+    },
+    "settings": {
+        "system": {
+            "title": "Sistema",
+            "deviceInfo": "Información del dispositivo",
+            "deviceLabel": "Etiqueta del dispositivo",
+            "notPairedYet": "Aún no emparejado",
+            "pairedEntity": "Entidad emparejada",
+            "deviceUuid": "UUID del dispositivo",
+            "currentOsVersion": "Versión actual del sistema operativo",
+            "currentAppVersion": "Versión actual de la app",
+            "language": "Idioma",
+            "languageSourceServer": "definido por el administrador de la entidad",
+            "languageSourceBootYaml": "predeterminado del dispositivo",
+            "paired": "Emparejado",
+            "notPairedHint": "Aún no emparejado — vea \"Emparejamiento\" en el panel izquierdo.",
+            "softwareUpdate": "Actualización de software",
+            "osUpdateLabel": "Actualización del SO {type}",
+            "appUpdateLabel": "Actualización de la app local",
+            "inProgress": "{label} en curso",
+            "version": "v{version}",
+            "working": "Trabajando…",
+            "noUsableResult": "La verificación de actualización no devolvió un resultado utilizable.",
+            "upToDate": "Actualizado — no hay actualizaciones disponibles.",
+            "updateAvailable": "Actualización disponible",
+            "osUpdateTag": "SO {type}",
+            "appUpdateTag": "App local",
+            "fullOsRebootHint": "Esta es una actualización completa de la imagen del sistema operativo — el dispositivo se reiniciará por su cuenta a mitad del proceso.",
+            "checkForUpdate": "Buscar actualización",
+            "checking": "Buscando…",
+            "updateNow": "Actualizar ahora",
+            "updateInstalled": "Actualización instalada.",
+            "updateStaged": "Actualización preparada — reiniciando para aplicarla.",
+            "updateResult": "Resultado de la actualización: {result}",
+            "deviceToolsLink": "Reiniciar, restablecer y depurar el dispositivo"
+        },
+        "pairing": {
+            "title": "Emparejamiento",
+            "status": "Estado",
+            "paired": "Emparejado",
+            "name": "Nombre",
+            "entity": "Entidad",
+            "pairedSince": "Emparejado",
+            "lastHeartbeat": "Última señal",
+            "lastHeartbeatError": "Error de la última señal",
+            "goToSlideshow": "Ir a la presentación",
+            "unpairTitle": "Desemparejar dispositivo",
+            "unpairHint": "Desconectarse del servidor y borrar las diapositivas sin restablecer la configuración de red.",
+            "unpairing": "Desemparejando…",
+            "unpairButton": "Desemparejar dispositivo",
+            "unpairConfirm": "Sí, desemparejar ahora",
+            "generateHint": "Genere un código de emparejamiento desde la página de dispositivos Slide Announcer de su iglesia en el sitio web de AnnouncementSlides, luego ingréselo a continuación.",
+            "deviceNameLabel": "Nombre o ubicación del dispositivo",
+            "optional": "(opcional)",
+            "pairingCodeLabel": "Código de emparejamiento",
+            "pairButton": "Emparejar",
+            "pairing": "Emparejando…",
+            "justNow": "justo ahora",
+            "minutesAgo": "hace {n} minutos",
+            "hourAgo": "hace 1 hora",
+            "hoursAgo": "hace {n} horas",
+            "dayAgo": "hace 1 día",
+            "daysAgo": "hace {n} días"
+        },
+        "network": {
+            "title": "Red",
+            "connection": "Conexión",
+            "disconnected": "Desconectado",
+            "networkName": "Nombre de la red",
+            "signal": "Señal",
+            "ipAddress": "Dirección IP",
+            "subnetMask": "Máscara de subred",
+            "defaultGateway": "Puerta de enlace predeterminada",
+            "dnsServer": "Servidor DNS | Servidores DNS",
+            "internet": "Internet",
+            "loading": "Cargando estado de la red…",
+            "setupWifi": "Configurar Wi-Fi",
+            "forgetNetwork": "Olvidar esta red",
+            "forgetting": "Olvidando…",
+            "connectivity": {
+                "full": "En línea",
+                "limited": "Limitado (sin internet)",
+                "portal": "Requiere inicio de sesión",
+                "none": "Sin internet",
+                "unknown": "Desconocido"
+            }
+        },
+        "wifiList": {
+            "title": "Configurar Wi-Fi",
+            "rescan": "Volver a buscar",
+            "scanning": "Buscando…",
+            "scanningForNetworks": "Buscando redes…",
+            "noNetworksFound": "No se encontraron redes cercanas.",
+            "connected": "Conectado"
+        },
+        "wifiConnect": {
+            "password": "Contraseña",
+            "openNetworkHint": "Esta red es abierta — no se necesita contraseña.",
+            "show": "Mostrar",
+            "hide": "Ocultar",
+            "connect": "Conectar",
+            "connecting": "Conectando a {ssid}…",
+            "connected": "Conectado",
+            "connectivityCheck": "Verificación de conectividad: {connectivity}",
+            "done": "Listo"
+        },
+        "deviceTools": {
+            "title": "Reiniciar, restablecer y depurar el dispositivo",
+            "restartTitle": "Reiniciar dispositivo",
+            "restartHint": "Reinicia el dispositivo de inmediato — la pantalla se apagará brevemente.",
+            "rebooting": "Reiniciando…",
+            "restartButton": "Reiniciar dispositivo",
+            "restartConfirm": "Sí, reiniciar ahora",
+            "factoryResetTitle": "Restablecimiento de fábrica",
+            "factoryResetHint": "Borra las credenciales de WiFi, el emparejamiento, las diapositivas guardadas y la identidad del dispositivo, y luego reinicia — el dispositivo vuelve exactamente como en una tarjeta SD nueva. Esto no se puede deshacer. Para desemparejar sin borrar las credenciales de WiFi ni la identidad del dispositivo, use la pestaña Emparejamiento.",
+            "resetting": "Restableciendo…",
+            "factoryResetButton": "Restablecimiento de fábrica",
+            "typeToConfirm": "Escriba {word} para confirmar",
+            "eraseButton": "Borrar todo y restablecer",
+            "keyDebugTitle": "Depuración de teclas",
+            "keyDebugHint": "Muestra en pantalla las pulsaciones de teclas del control remoto, para diagnosticar la asignación de botones.",
+            "openKeyDebug": "Abrir depuración de teclas"
+        },
+        "keyDebug": {
+            "title": "Depuración de teclas",
+            "hint": "Presione un botón en el control remoto. Cada fila es un evento {code} sin procesar que recibió la página, el más antiguo abajo. Si un botón no genera ninguna fila, la pulsación no está llegando a Chromium — revise labwc/evdev en su lugar.",
+            "time": "Hora",
+            "waitingForKeypress": "Esperando una pulsación de tecla…"
+        }
+    }
+}

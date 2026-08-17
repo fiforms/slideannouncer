@@ -1,11 +1,13 @@
 <script setup>
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
 
 const props = defineProps({ ssid: { type: String, required: true } })
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 
 const secured = route.query.secured !== '0'
 const password = ref('')
@@ -40,7 +42,7 @@ function done() {
 
     <form v-if="state === 'idle' || state === 'error'" class="form" @submit.prevent="connect">
       <label v-if="secured" class="field">
-        <span>Password</span>
+        <span>{{ t('settings.wifiConnect.password') }}</span>
         <div class="password-row">
           <input
             :type="showPassword ? 'text' : 'password'"
@@ -49,27 +51,27 @@ function done() {
             autocomplete="off"
           >
           <button type="button" class="tile toggle" @click="showPassword = !showPassword">
-            {{ showPassword ? 'Hide' : 'Show' }}
+            {{ showPassword ? t('settings.wifiConnect.hide') : t('settings.wifiConnect.show') }}
           </button>
         </div>
       </label>
-      <p v-else class="hint">This network is open — no password needed.</p>
+      <p v-else class="hint">{{ t('settings.wifiConnect.openNetworkHint') }}</p>
 
       <p v-if="state === 'error'" class="pill warn">{{ errorMessage }}</p>
 
       <button type="submit" class="tile action" :disabled="secured && !password">
-        Connect
+        {{ t('settings.wifiConnect.connect') }}
       </button>
     </form>
 
     <div v-else-if="state === 'connecting'" class="status-block">
-      <p>Connecting to {{ ssid }}…</p>
+      <p>{{ t('settings.wifiConnect.connecting', { ssid }) }}</p>
     </div>
 
     <div v-else-if="state === 'success'" class="status-block">
-      <p class="pill ok">Connected</p>
-      <p class="hint">Connectivity check: {{ connectivity }}</p>
-      <button class="tile action" @click="done">Done</button>
+      <p class="pill ok">{{ t('settings.wifiConnect.connected') }}</p>
+      <p class="hint">{{ t('settings.wifiConnect.connectivityCheck', { connectivity }) }}</p>
+      <button class="tile action" @click="done">{{ t('settings.wifiConnect.done') }}</button>
     </div>
   </div>
 </template>

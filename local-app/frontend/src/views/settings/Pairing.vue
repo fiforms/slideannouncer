@@ -1,9 +1,11 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
 
 const router = useRouter()
+const { t } = useI18n()
 
 // Optional field — a church buying several of these has no reason to name
 // each one before pairing it, and window.location.hostname (the old
@@ -61,11 +63,11 @@ function pairedSince(isoString) {
   if (!isoString) return null
   const ms = Date.now() - new Date(isoString).getTime()
   const minutes = Math.round(ms / 60000)
-  if (minutes < 60) return minutes <= 1 ? 'just now' : `${minutes} minutes ago`
+  if (minutes < 60) return minutes <= 1 ? t('settings.pairing.justNow') : t('settings.pairing.minutesAgo', { n: minutes })
   const hours = Math.round(minutes / 60)
-  if (hours < 24) return hours === 1 ? '1 hour ago' : `${hours} hours ago`
+  if (hours < 24) return hours === 1 ? t('settings.pairing.hourAgo') : t('settings.pairing.hoursAgo', { n: hours })
   const days = Math.round(hours / 24)
-  return days === 1 ? '1 day ago' : `${days} days ago`
+  return days === 1 ? t('settings.pairing.dayAgo') : t('settings.pairing.daysAgo', { n: days })
 }
 
 const confirmingUnpair = ref(false)
@@ -96,51 +98,51 @@ function goToSlideshow() {
 
 <template>
   <div>
-    <h1>Pairing</h1>
+    <h1>{{ t('settings.pairing.title') }}</h1>
 
     <template v-if="status?.paired">
       <section class="block">
         <div class="result tile">
           <div class="row">
-            <span class="label">Status</span>
-            <span class="pill ok">Paired</span>
+            <span class="label">{{ t('settings.pairing.status') }}</span>
+            <span class="pill ok">{{ t('settings.pairing.paired') }}</span>
           </div>
           <div v-if="status.device_name" class="row">
-            <span class="label">Name</span>
+            <span class="label">{{ t('settings.pairing.name') }}</span>
             <span>{{ status.device_name }}</span>
           </div>
           <div v-if="status.entity_name" class="row">
-            <span class="label">Entity</span>
+            <span class="label">{{ t('settings.pairing.entity') }}</span>
             <span>{{ status.entity_name }}</span>
           </div>         <div v-if="status.paired_at" class="row">
-            <span class="label">Paired</span>
+            <span class="label">{{ t('settings.pairing.pairedSince') }}</span>
             <span>{{ pairedSince(status.paired_at) }}</span>
           </div>
           <div v-if="status.paired_at" class="row">
-              <span class="label">Last heartbeat</span>
-              <span>{{ formatTimestamp(status.heartbeat?.last_success_at) ?? 'Never' }}</span>
-              <span v-if="status.heartbeat?.last_error">Last heartbeat error</span>
+              <span class="label">{{ t('settings.pairing.lastHeartbeat') }}</span>
+              <span>{{ formatTimestamp(status.heartbeat?.last_success_at) ?? t('common.never') }}</span>
+              <span v-if="status.heartbeat?.last_error">{{ t('settings.pairing.lastHeartbeatError') }}</span>
               <span v-if="status.heartbeat?.last_error">{{ status.heartbeat.last_error }}</span>
           </div>
         </div>
-        <button class="tile action" @click="goToSlideshow">Go to Slideshow</button>
+        <button class="tile action" @click="goToSlideshow">{{ t('settings.pairing.goToSlideshow') }}</button>
       </section>
 
       <section class="block">
-        <h2>Unpair Device</h2>
+        <h2>{{ t('settings.pairing.unpairTitle') }}</h2>
         <p class="hint">
-          Disconnect from the server and wipe slides without resetting network settings.
+          {{ t('settings.pairing.unpairHint') }}
         </p>
 
         <div v-if="unpairing" class="status-block">
-          <p class="pill warn">Unpairing…</p>
+          <p class="pill warn">{{ t('settings.pairing.unpairing') }}</p>
         </div>
         <div v-else-if="!confirmingUnpair" class="actions">
-          <button class="tile action danger" @click="confirmingUnpair = true">Unpair Device</button>
+          <button class="tile action danger" @click="confirmingUnpair = true">{{ t('settings.pairing.unpairButton') }}</button>
         </div>
         <div v-else class="actions">
-          <button class="tile action danger" @click="unpair">Yes, unpair now</button>
-          <button class="tile action" @click="confirmingUnpair = false">Cancel</button>
+          <button class="tile action danger" @click="unpair">{{ t('settings.pairing.unpairConfirm') }}</button>
+          <button class="tile action" @click="confirmingUnpair = false">{{ t('common.cancel') }}</button>
         </div>
         <p v-if="unpairError" class="pill warn">{{ unpairError }}</p>
       </section>
@@ -148,12 +150,11 @@ function goToSlideshow() {
 
     <form v-else class="form" @submit.prevent="pair">
       <p class="hint">
-        Generate a pairing code from your church's Slide Announcer devices
-        page on the AnnouncementSlides website, then enter it below.
+        {{ t('settings.pairing.generateHint') }}
       </p>
 
       <label class="field">
-        <span>Device Name or Location <span class="optional">(optional)</span></span>
+        <span>{{ t('settings.pairing.deviceNameLabel') }} <span class="optional">{{ t('settings.pairing.optional') }}</span></span>
         <input
           type="text"
           v-model="deviceName"
@@ -164,7 +165,7 @@ function goToSlideshow() {
       </label>
 
       <label class="field">
-        <span>Pairing code</span>
+        <span>{{ t('settings.pairing.pairingCodeLabel') }}</span>
         <input
           type="text"
           v-model="code"
@@ -181,7 +182,7 @@ function goToSlideshow() {
       <p v-if="state === 'error'" class="pill warn">{{ errorMessage }}</p>
 
       <button type="submit" class="tile action" :disabled="code.length !== 6 || state === 'pairing'">
-        {{ state === 'pairing' ? 'Pairing…' : 'Pair' }}
+        {{ state === 'pairing' ? t('settings.pairing.pairing') : t('settings.pairing.pairButton') }}
       </button>
     </form>
   </div>

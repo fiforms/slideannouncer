@@ -1,8 +1,11 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { api } from '../api.js'
 import { unlock } from '../pinLock.js'
+
+const { t } = useI18n()
 
 // Full-screen PIN gate in front of Settings — a low-effort deterrent
 // against someone grabbing the remote/keyboard and messing with settings,
@@ -97,17 +100,17 @@ onUnmounted(() => {
 
 <template>
   <div v-if="pin" class="gate">
-    <p class="prompt">Enter Settings PIN</p>
+    <p class="prompt">{{ t('pinGate.prompt') }}</p>
 
     <div class="dots" :class="{ 'dots--error': wrongPulse }">
       <span v-for="i in dotCount" :key="i" class="dot" :class="{ 'dot--filled': i <= entered.length }" />
     </div>
 
-    <p class="countdown">Returning to slideshow in {{ secondsLeft }}s&hellip;</p>
+    <p class="countdown">{{ t('pinGate.countdown', { seconds: secondsLeft }) }}</p>
 
     <div class="keypad">
       <button v-for="n in 9" :key="n" class="tile key" @click="pressDigit(String(n))">{{ n }}</button>
-      <button class="tile key key--muted" @click="revertToKiosk">Cancel</button>
+      <button class="tile key key--muted" @click="revertToKiosk">{{ t('common.cancel') }}</button>
       <button class="tile key" @click="pressDigit('0')">0</button>
       <button class="tile key key--muted" @click="pressBackspace">&#9003;</button>
     </div>

@@ -1,0 +1,152 @@
+{
+    "common": {
+        "cancel": "Cancel",
+        "yes": "Yes",
+        "no": "No",
+        "never": "Never"
+    },
+    "pinGate": {
+        "prompt": "Enter Settings PIN",
+        "countdown": "Returning to slideshow in {seconds}s…"
+    },
+    "slideshow": {
+        "notPaired": "Not yet paired. Use the Menu button to open Settings.",
+        "waiting": "Waiting for slides…",
+        "needsAttention": "Needs attention — check Settings"
+    },
+    "settingsLayout": {
+        "backToSlideshow": "← Back to slideshow",
+        "system": "System",
+        "network": "Network",
+        "pairing": "Pairing"
+    },
+    "settings": {
+        "system": {
+            "title": "System",
+            "deviceInfo": "Device Info",
+            "deviceLabel": "Device Label",
+            "notPairedYet": "Not paired yet",
+            "pairedEntity": "Paired Entity",
+            "deviceUuid": "Device UUID",
+            "currentOsVersion": "Current OS version",
+            "currentAppVersion": "Current app version",
+            "language": "Language",
+            "languageSourceServer": "set by entity admin",
+            "languageSourceBootYaml": "device default",
+            "paired": "Paired",
+            "notPairedHint": "Not paired yet — see \"Pairing\" in the left panel.",
+            "softwareUpdate": "Software Update",
+            "osUpdateLabel": "OS {type} update",
+            "appUpdateLabel": "Local app update",
+            "inProgress": "{label} in progress",
+            "version": "v{version}",
+            "working": "Working…",
+            "noUsableResult": "Update check did not return a usable result.",
+            "upToDate": "Up to date — no update available.",
+            "updateAvailable": "Update available",
+            "osUpdateTag": "OS {type}",
+            "appUpdateTag": "Local app",
+            "fullOsRebootHint": "This is a full OS image update — the device will reboot on its own partway through.",
+            "checkForUpdate": "Check for Update",
+            "checking": "Checking…",
+            "updateNow": "Update Now",
+            "updateInstalled": "Update installed.",
+            "updateStaged": "Update staged — rebooting to apply it.",
+            "updateResult": "Update result: {result}",
+            "deviceToolsLink": "Device Restart, Reset & Debugging"
+        },
+        "pairing": {
+            "title": "Pairing",
+            "status": "Status",
+            "paired": "Paired",
+            "name": "Name",
+            "entity": "Entity",
+            "pairedSince": "Paired",
+            "lastHeartbeat": "Last heartbeat",
+            "lastHeartbeatError": "Last heartbeat error",
+            "goToSlideshow": "Go to Slideshow",
+            "unpairTitle": "Unpair Device",
+            "unpairHint": "Disconnect from the server and wipe slides without resetting network settings.",
+            "unpairing": "Unpairing…",
+            "unpairButton": "Unpair Device",
+            "unpairConfirm": "Yes, unpair now",
+            "generateHint": "Generate a pairing code from your church's Slide Announcer devices page on the AnnouncementSlides website, then enter it below.",
+            "deviceNameLabel": "Device Name or Location",
+            "optional": "(optional)",
+            "pairingCodeLabel": "Pairing code",
+            "pairButton": "Pair",
+            "pairing": "Pairing…",
+            "justNow": "just now",
+            "minutesAgo": "{n} minutes ago",
+            "hourAgo": "1 hour ago",
+            "hoursAgo": "{n} hours ago",
+            "dayAgo": "1 day ago",
+            "daysAgo": "{n} days ago"
+        },
+        "network": {
+            "title": "Network",
+            "connection": "Connection",
+            "disconnected": "Disconnected",
+            "networkName": "Network name",
+            "signal": "Signal",
+            "ipAddress": "IP address",
+            "subnetMask": "Subnet mask",
+            "defaultGateway": "Default gateway",
+            "dnsServer": "DNS server | DNS servers",
+            "internet": "Internet",
+            "loading": "Loading network status…",
+            "setupWifi": "Set Up Wi-Fi",
+            "forgetNetwork": "Forget This Network",
+            "forgetting": "Forgetting…",
+            "connectivity": {
+                "full": "Online",
+                "limited": "Limited (no internet)",
+                "portal": "Sign-in required",
+                "none": "No internet",
+                "unknown": "Unknown"
+            }
+        },
+        "wifiList": {
+            "title": "Set Up Wi-Fi",
+            "rescan": "Rescan",
+            "scanning": "Scanning…",
+            "scanningForNetworks": "Scanning for networks…",
+            "noNetworksFound": "No networks found nearby.",
+            "connected": "Connected"
+        },
+        "wifiConnect": {
+            "password": "Password",
+            "openNetworkHint": "This network is open — no password needed.",
+            "show": "Show",
+            "hide": "Hide",
+            "connect": "Connect",
+            "connecting": "Connecting to {ssid}…",
+            "connected": "Connected",
+            "connectivityCheck": "Connectivity check: {connectivity}",
+            "done": "Done"
+        },
+        "deviceTools": {
+            "title": "Device Restart, Reset & Debugging",
+            "restartTitle": "Restart Device",
+            "restartHint": "Reboots the device immediately — the kiosk display will go dark for a bit.",
+            "rebooting": "Rebooting…",
+            "restartButton": "Restart Device",
+            "restartConfirm": "Yes, restart now",
+            "factoryResetTitle": "Factory Reset",
+            "factoryResetHint": "Wipes WiFi credentials, pairing, cached slides, and device identity, then reboots — the device comes back up exactly as it would on a brand-new SD card. This cannot be undone. To unpair without wiping WiFi credentials and device identity, use the Pairing tab instead.",
+            "resetting": "Resetting…",
+            "factoryResetButton": "Factory Reset",
+            "typeToConfirm": "Type {word} to confirm",
+            "eraseButton": "Erase Everything and Reset",
+            "keyDebugTitle": "Key Debugging",
+            "keyDebugHint": "Shows raw remote-control keypresses on screen, for diagnosing button mappings.",
+            "openKeyDebug": "Open Key Debug"
+        },
+        "keyDebug": {
+            "title": "Key Debug",
+            "hint": "Press a button on the remote. Each row is a raw {code} the page received, oldest at the bottom. If a button produces no row at all, the keypress isn't reaching Chromium — check labwc/evdev instead.",
+            "time": "Time",
+            "waitingForKeypress": "Waiting for a keypress…"
+        }
+    }
+}

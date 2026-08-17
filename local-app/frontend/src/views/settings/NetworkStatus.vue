@@ -1,9 +1,11 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
 
 const router = useRouter()
+const { t } = useI18n()
 const status = ref(null)
 const error = ref(null)
 const forgetting = ref(false)
@@ -41,75 +43,70 @@ async function forgetNetwork() {
 // NetworkManager's own connectivity states (see backend network.py
 // check_connectivity) — "portal" means a captive portal is intercepting
 // traffic (e.g. a hotel/guest WiFi login page), not that we're offline.
-const CONNECTIVITY_LABELS = {
-  full: 'Online',
-  limited: 'Limited (no internet)',
-  portal: 'Sign-in required',
-  none: 'No internet',
-  unknown: 'Unknown',
-}
+const CONNECTIVITY_KEYS = ['full', 'limited', 'portal', 'none', 'unknown']
 
 function connectivityLabel(connectivity) {
-  return CONNECTIVITY_LABELS[connectivity] ?? 'Unknown'
+  const key = CONNECTIVITY_KEYS.includes(connectivity) ? connectivity : 'unknown'
+  return t(`settings.network.connectivity.${key}`)
 }
 </script>
 
 <template>
   <div>
-    <h1>Network</h1>
+    <h1>{{ t('settings.network.title') }}</h1>
 
     <p v-if="error" class="pill warn">{{ error }}</p>
 
     <div v-else-if="status" class="status-card tile">
       <div class="row">
-        <span class="label">Connection</span>
+        <span class="label">{{ t('settings.network.connection') }}</span>
         <span class="pill" :class="status.connected ? 'ok' : 'warn'">
-          {{ status.connected ? status.connection_type : 'Disconnected' }}
+          {{ status.connected ? status.connection_type : t('settings.network.disconnected') }}
         </span>
       </div>
       <div v-if="status.ssid" class="row">
-        <span class="label">Network name</span>
+        <span class="label">{{ t('settings.network.networkName') }}</span>
         <span>{{ status.ssid }}</span>
       </div>
       <div v-if="status.signal !== null && status.signal !== undefined" class="row">
-        <span class="label">Signal</span>
+        <span class="label">{{ t('settings.network.signal') }}</span>
         <span>{{ status.signal }}%</span>
       </div>
       <div class="row">
-        <span class="label">IP address</span>
+        <span class="label">{{ t('settings.network.ipAddress') }}</span>
         <span>{{ status.ip_addresses?.length ? status.ip_addresses.join(', ') : '—' }}</span>
       </div>
       <div v-if="status.subnet_mask" class="row">
-        <span class="label">Subnet mask</span>
+        <span class="label">{{ t('settings.network.subnetMask') }}</span>
         <span>{{ status.subnet_mask }}</span>
       </div>
       <div v-if="status.gateway" class="row">
-        <span class="label">Default gateway</span>
+        <span class="label">{{ t('settings.network.defaultGateway') }}</span>
         <span>{{ status.gateway }}</span>
       </div>
       <div v-if="status.dns_servers?.length" class="row">
-        <span class="label">DNS server{{ status.dns_servers.length > 1 ? 's' : '' }}</span>
+        <span class="label">{{ t('settings.network.dnsServer', status.dns_servers.length) }}</span>
         <span>{{ status.dns_servers.join(', ') }}</span>
       </div>
       <div v-if="status.connected" class="row">
-        <span class="label">Internet</span>
+        <span class="label">{{ t('settings.network.internet') }}</span>
         <span class="pill" :class="status.connectivity === 'full' ? 'ok' : 'warn'">
           {{ connectivityLabel(status.connectivity) }}
         </span>
       </div>
     </div>
 
-    <p v-else>Loading network status…</p>
+    <p v-else>{{ t('settings.network.loading') }}</p>
 
     <div class="actions">
-      <button class="tile action" @click="goToWifiSetup">Set Up Wi-Fi</button>
+      <button class="tile action" @click="goToWifiSetup">{{ t('settings.network.setupWifi') }}</button>
       <button
         v-if="status?.connection_type === 'wifi' && status?.connected"
         class="tile action"
         :disabled="forgetting"
         @click="forgetNetwork"
       >
-        {{ forgetting ? 'Forgetting…' : 'Forget This Network' }}
+        {{ forgetting ? t('settings.network.forgetting') : t('settings.network.forgetNetwork') }}
       </button>
     </div>
     <p v-if="forgetError" class="pill warn">{{ forgetError }}</p>

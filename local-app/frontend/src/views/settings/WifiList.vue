@@ -1,9 +1,11 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
 
 const router = useRouter()
+const { t } = useI18n()
 const accessPoints = ref([])
 const loading = ref(true)
 const error = ref(null)
@@ -33,17 +35,17 @@ function select(ap) {
 
 <template>
   <div>
-    <h1>Set Up Wi-Fi</h1>
+    <h1>{{ t('settings.wifiList.title') }}</h1>
 
     <div class="toolbar">
       <button class="tile" @click="scan" :disabled="loading">
-        {{ loading ? 'Scanning…' : 'Rescan' }}
+        {{ loading ? t('settings.wifiList.scanning') : t('settings.wifiList.rescan') }}
       </button>
     </div>
 
     <p v-if="error" class="pill warn">{{ error }}</p>
-    <p v-else-if="loading && !accessPoints.length">Scanning for networks…</p>
-    <p v-else-if="!accessPoints.length">No networks found nearby.</p>
+    <p v-else-if="loading && !accessPoints.length">{{ t('settings.wifiList.scanningForNetworks') }}</p>
+    <p v-else-if="!accessPoints.length">{{ t('settings.wifiList.noNetworksFound') }}</p>
 
     <ul v-else class="ap-list">
       <li
@@ -56,7 +58,7 @@ function select(ap) {
       >
         <span class="ssid">{{ ap.ssid }}</span>
         <span class="meta">
-          <span v-if="ap.in_use" class="pill ok">Connected</span>
+          <span v-if="ap.in_use" class="pill ok">{{ t('settings.wifiList.connected') }}</span>
           <span v-if="ap.security">🔒</span>
           {{ ap.signal }}%
         </span>

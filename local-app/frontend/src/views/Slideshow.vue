@@ -1,6 +1,10 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '../api.js'
+import { setLocale } from '../i18n.js'
+
+const { t } = useI18n()
 
 // Unattended kiosk display — mirrors the web slideshow's crossfade/timing
 // (resources/js/Components/SlideshowModal.vue: 10s default interval, 1s
@@ -61,6 +65,9 @@ async function refreshPlaylist() {
 async function refreshStatus() {
   try {
     status.value = await api.localStatus()
+    // Keeps the on-screen language current with whatever the server (or,
+    // pre-pairing, the boot-yaml hint) reports — see i18n.js's setLocale().
+    setLocale(status.value.language)
   } catch {
     // Attention indicator just won't update this cycle.
   }
@@ -90,12 +97,12 @@ onUnmounted(() => {
         class="slide-image"
       >
       <div v-else class="empty-state" key="empty">
-        <p v-if="status && !status.paired">Not yet paired. Use the Menu button to open Settings.</p>
-        <p v-else>Waiting for slides&hellip;</p>
+        <p v-if="status && !status.paired">{{ t('slideshow.notPaired') }}</p>
+        <p v-else>{{ t('slideshow.waiting') }}</p>
       </div>
     </transition>
 
-    <div v-if="needsAttention" class="attention-dot" title="Needs attention — check Settings" />
+    <div v-if="needsAttention" class="attention-dot" :title="t('slideshow.needsAttention')" />
   </div>
 </template>
 

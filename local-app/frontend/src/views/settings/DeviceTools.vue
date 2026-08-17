@@ -1,6 +1,14 @@
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
+
+const { t } = useI18n()
+
+// Safety word for the factory-reset confirmation input — deliberately not
+// translated (an arbitrary token to type, not a sentence), same idea as
+// leaving raw version numbers/IPs untranslated elsewhere in this app.
+const RESET_CONFIRM_WORD = 'RESET'
 
 const confirmingReboot = ref(false)
 const rebooting = ref(false)
@@ -56,63 +64,60 @@ async function factoryReset() {
 
 <template>
   <div>
-    <h1>Device Restart, Reset &amp; Debugging</h1>
+    <h1>{{ t('settings.deviceTools.title') }}</h1>
 
     <section class="block">
-      <h2>Restart Device</h2>
-      <p class="hint">Reboots the device immediately — the kiosk display will go dark for a bit.</p>
+      <h2>{{ t('settings.deviceTools.restartTitle') }}</h2>
+      <p class="hint">{{ t('settings.deviceTools.restartHint') }}</p>
 
       <div v-if="rebooting" class="status-block">
-        <p class="pill warn">Rebooting…</p>
+        <p class="pill warn">{{ t('settings.deviceTools.rebooting') }}</p>
       </div>
       <div v-else-if="!confirmingReboot" class="actions">
-        <button class="tile action" @click="confirmingReboot = true">Restart Device</button>
+        <button class="tile action" @click="confirmingReboot = true">{{ t('settings.deviceTools.restartButton') }}</button>
       </div>
       <div v-else class="actions">
-        <button class="tile action danger" @click="reboot">Yes, restart now</button>
-        <button class="tile action" @click="confirmingReboot = false">Cancel</button>
+        <button class="tile action danger" @click="reboot">{{ t('settings.deviceTools.restartConfirm') }}</button>
+        <button class="tile action" @click="confirmingReboot = false">{{ t('common.cancel') }}</button>
       </div>
       <p v-if="rebootError" class="pill warn">{{ rebootError }}</p>
     </section>
 
     <section class="block">
-      <h2>Factory Reset</h2>
+      <h2>{{ t('settings.deviceTools.factoryResetTitle') }}</h2>
       <p class="hint">
-        Wipes WiFi credentials, pairing, cached slides, and device identity,
-        then reboots — the device comes back up exactly as it would on a
-        brand-new SD card. This cannot be undone. To unpair without wiping
-        WiFi credentials and device identity, use the Pairing tab instead.
+        {{ t('settings.deviceTools.factoryResetHint') }}
       </p>
 
       <div v-if="resetting" class="status-block">
-        <p class="pill warn">Resetting…</p>
+        <p class="pill warn">{{ t('settings.deviceTools.resetting') }}</p>
       </div>
       <div v-else-if="!confirmingReset" class="actions">
-        <button class="tile action danger" @click="confirmingReset = true">Factory Reset</button>
+        <button class="tile action danger" @click="confirmingReset = true">{{ t('settings.deviceTools.factoryResetButton') }}</button>
       </div>
       <div v-else class="confirm-form">
         <label class="field">
-          <span>Type RESET to confirm</span>
+          <span>{{ t('settings.deviceTools.typeToConfirm', { word: RESET_CONFIRM_WORD }) }}</span>
           <input type="text" v-model="resetConfirmText" autofocus autocomplete="off">
         </label>
         <div class="actions">
           <button
             class="tile action danger"
-            :disabled="resetConfirmText !== 'RESET'"
+            :disabled="resetConfirmText !== RESET_CONFIRM_WORD"
             @click="factoryReset"
           >
-            Erase Everything and Reset
+            {{ t('settings.deviceTools.eraseButton') }}
           </button>
-          <button class="tile action" @click="confirmingReset = false; resetConfirmText = ''">Cancel</button>
+          <button class="tile action" @click="confirmingReset = false; resetConfirmText = ''">{{ t('common.cancel') }}</button>
         </div>
       </div>
       <p v-if="resetError" class="pill warn">{{ resetError }}</p>
     </section>
 
     <section class="block">
-      <h2>Key Debugging</h2>
-      <p class="hint">Shows raw remote-control keypresses on screen, for diagnosing button mappings.</p>
-      <router-link to="/settings/keydebug" class="tile action key-debug-link">Open Key Debug</router-link>
+      <h2>{{ t('settings.deviceTools.keyDebugTitle') }}</h2>
+      <p class="hint">{{ t('settings.deviceTools.keyDebugHint') }}</p>
+      <router-link to="/settings/keydebug" class="tile action key-debug-link">{{ t('settings.deviceTools.openKeyDebug') }}</router-link>
     </section>
   </div>
 </template>

@@ -1,5 +1,8 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 // Capture phase + no preventDefault/stopPropagation: this must see every
 // key exactly as it arrives at the page, before remoteNav.js's own
@@ -27,16 +30,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown, { capture: tr
 
 <template>
   <div>
-    <h1>Key Debug</h1>
-    <p class="hint">
-      Press a button on the remote. Each row is a raw <code>keydown</code> the
-      page received, oldest at the bottom. If a button produces no row at
-      all, the keypress isn't reaching Chromium — check labwc/evdev instead.
-    </p>
+    <h1>{{ t('settings.keyDebug.title') }}</h1>
+    <i18n-t keypath="settings.keyDebug.hint" tag="p" class="hint">
+      <template #code><code>keydown</code></template>
+    </i18n-t>
     <table v-if="events.length">
       <thead>
         <tr>
-          <th>Time</th>
+          <th>{{ t('settings.keyDebug.time') }}</th>
           <th>key</th>
           <th>code</th>
           <th>keyCode</th>
@@ -51,11 +52,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown, { capture: tr
           <td>{{ e.code }}</td>
           <td>{{ e.keyCode }}</td>
           <td>{{ e.which }}</td>
-          <td>{{ e.repeat ? 'yes' : '' }}</td>
+          <td>{{ e.repeat ? t('common.yes') : '' }}</td>
         </tr>
       </tbody>
     </table>
-    <p v-else class="hint">Waiting for a keypress&hellip;</p>
+    <p v-else class="hint">{{ t('settings.keyDebug.waitingForKeypress') }}</p>
   </div>
 </template>
 

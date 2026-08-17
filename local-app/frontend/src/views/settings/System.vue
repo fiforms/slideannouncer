@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
+
+const { t } = useI18n()
 
 const checking = ref(false)
 const checkError = ref(null)
@@ -38,6 +41,20 @@ const nextUpdate = computed(() => {
   if (osUpdate.value) return { kind: 'os', ...osUpdate.value }
   if (appUpdate.value) return { kind: 'app', ...appUpdate.value }
   return null
+})
+
+const progressLabel = computed(() => {
+  if (progress.value?.kind === 'os') {
+    return t('settings.system.osUpdateLabel', { type: progress.value.release_type || '' }).trim()
+  }
+  return t('settings.system.appUpdateLabel')
+})
+
+const nextUpdateTag = computed(() => {
+  if (!nextUpdate.value) return ''
+  return nextUpdate.value.kind === 'os'
+    ? t('settings.system.osUpdateTag', { type: nextUpdate.value.releaseType })
+    : t('settings.system.appUpdateTag')
 })
 
 async function loadVersions() {
@@ -136,28 +153,35 @@ async function updateNow() {
 
 <template>
   <div>
-    <h1>System</h1>
+    <h1>{{ t('settings.system.title') }}</h1>
 
     <section class="block">
-      <h2>Device Info</h2>
+      <h2>{{ t('settings.system.deviceInfo') }}</h2>
       <dl v-if="deviceStatus" class="info-grid">
-        <dt>Device Label</dt>
+        <dt>{{ t('settings.system.deviceLabel') }}</dt>
         <dd v-if="deviceStatus.paired">{{ deviceStatus.device_name ?? '—' }}</dd>
-        <dd v-else class="hint">Not paired yet</dd>
-        <dt>Paired Entity</dt><dd>{{ deviceStatus.entity_name ?? '—' }}</dd>
-        <dt>Device UUID</dt><dd>{{ deviceStatus.device_uuid ?? '—' }}</dd>
-        <dt>Current OS version</dt><dd>{{ versions.image_version || '—' }}</dd>
-        <dt>Current app version</dt><dd>{{ versions.app_version || '—' }}</dd>
-        <dt>Paired</dt><dd>{{ deviceStatus.paired ? 'Yes' : 'No' }}</dd>
+        <dd v-else class="hint">{{ t('settings.system.notPairedYet') }}</dd>
+        <dt>{{ t('settings.system.pairedEntity') }}</dt><dd>{{ deviceStatus.entity_name ?? '—' }}</dd>
+        <dt>{{ t('settings.system.deviceUuid') }}</dt><dd>{{ deviceStatus.device_uuid ?? '—' }}</dd>
+        <dt>{{ t('settings.system.currentOsVersion') }}</dt><dd>{{ versions.image_version || '—' }}</dd>
+        <dt>{{ t('settings.system.currentAppVersion') }}</dt><dd>{{ versions.app_version || '—' }}</dd>
+        <dt>{{ t('settings.system.language') }}</dt>
+        <dd>
+          {{ deviceStatus.language || '—' }}
+          <span v-if="deviceStatus.language_source" class="hint">
+            ({{ deviceStatus.language_source === 'server' ? t('settings.system.languageSourceServer') : t('settings.system.languageSourceBootYaml') }})
+          </span>
+        </dd>
+        <dt>{{ t('settings.system.paired') }}</dt><dd>{{ deviceStatus.paired ? t('common.yes') : t('common.no') }}</dd>
       </dl>
       <p v-if="deviceStatus && !deviceStatus.paired" class="hint">
-        Not paired yet — see "Pairing" in the left panel.
+        {{ t('settings.system.notPairedHint') }}
       </p>
     </section>
 
     <section class="block">
       <div class="tile result">
-        <h2>Software Update</h2>
+        <h2>{{ t('settings.system.softwareUpdate') }}</h2>
 
         <!-- An update is running (this tab's click, another tab's click, or the
              nightly timer) — the progress block replaces the check result
@@ -165,13 +189,10 @@ async function updateNow() {
              done. -->
         <div v-if="updateRunning">
           <div class="row">
-            <span class="label">
-              {{ progress?.kind === 'os' ? `OS ${progress.release_type || ''} update`.trim() : 'Local app update' }}
-              in progress
-            </span>
-            <span v-if="progress?.version">v{{ progress.version }}</span>
+            <span class="label">{{ t('settings.system.inProgress', { label: progressLabel }) }}</span>
+            <span v-if="progress?.version">{{ t('settings.system.version', { version: progress.version }) }}</span>
           </div>
-          <p class="hint" style="margin: 0 0 0.6rem;">{{ progress?.phase || 'Working…' }}</p>
+          <p class="hint" style="margin: 0 0 0.6rem;">{{ progress?.phase || t('settings.system.working') }}</p>
           <div class="progress-track">
             <div
               class="progress-fill"
@@ -185,30 +206,30 @@ async function updateNow() {
         </div>
 
         <p v-else-if="checkResult && !updateInfo" class="pill warn">
-          {{ checkResult.output || 'Update check did not return a usable result.' }}
+          {{ checkResult.output || t('settings.system.noUsableResult') }}
         </p>
 
         <div v-else-if="updateInfo">
           <div v-if="nextUpdate" class="row">
-            <span class="label">Update available</span>
+            <span class="label">{{ t('settings.system.updateAvailable') }}</span>
             <span class="pill warn">
-              {{ nextUpdate.kind === 'os' ? `OS ${nextUpdate.releaseType}` : 'Local app' }}
-              v{{ nextUpdate.version }}
+              {{ nextUpdateTag }}
+              {{ t('settings.system.version', { version: nextUpdate.version }) }}
             </span>
           </div>
-          <p v-else class="pill ok">Up to date — no update available.</p>
+          <p v-else class="pill ok">{{ t('settings.system.upToDate') }}</p>
 
           <p v-if="nextUpdate?.kind === 'os' && nextUpdate.releaseType === 'full'" class="hint">
-            This is a full OS image update — the device will reboot on its own partway through.
+            {{ t('settings.system.fullOsRebootHint') }}
           </p>
         </div>
 
         <div class="actions">
           <button class="tile action" :disabled="checking || updateRunning" @click="checkForUpdate">
-            {{ checking ? 'Checking…' : 'Check for Update' }}
+            {{ checking ? t('settings.system.checking') : t('settings.system.checkForUpdate') }}
           </button>
           <button class="tile action" :disabled="!nextUpdate || updateRunning" @click="updateNow">
-            Update Now
+            {{ t('settings.system.updateNow') }}
           </button>
         </div>
 
@@ -216,17 +237,17 @@ async function updateNow() {
         <p v-if="applyError" class="pill warn">{{ applyError }}</p>
         <p v-if="!updateRunning && progress?.done" class="pill ok">
           {{ progress.result === 'installed' || progress.result === 'success'
-            ? 'Update installed.'
+            ? t('settings.system.updateInstalled')
             : progress.result === 'tryboot_triggered'
-              ? 'Update staged — rebooting to apply it.'
-              : `Update result: ${progress.result || 'unknown'}` }}
+              ? t('settings.system.updateStaged')
+              : t('settings.system.updateResult', { result: progress.result || 'unknown' }) }}
         </p>
       </div>
     </section>
 
     <section class="block">
       <router-link to="/settings/device-tools" class="tile action device-tools-link">
-        Device Restart, Reset &amp; Debugging
+        {{ t('settings.system.deviceToolsLink') }}
       </router-link>
     </section>
   </div>

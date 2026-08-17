@@ -60,6 +60,7 @@ def local_status():
         "device_name": pairing.read_device_name(),
         "entity_name": pairing.read_entity_name(),
         "language": pairing.read_effective_language(),
+        "language_source": "server" if pairing.read_language() else ("boot_yaml" if pairing.read_language_boot_hint() else None),
         "heartbeat": heartbeat.read_status(),
         "sync": sync.read_status(),
     }
