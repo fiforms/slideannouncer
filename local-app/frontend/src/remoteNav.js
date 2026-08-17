@@ -127,7 +127,7 @@ export function installRemoteNav(router) {
     if (BACK_KEYS.includes(event.key)) {
       event.preventDefault()
       if (window.history.state?.back) router.back()
-      else router.push('/')
+      else router.push('/kiosk')
       return
     }
 

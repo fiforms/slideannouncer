@@ -15,6 +15,7 @@ readable rather than owner-only so the interactive `slideadmin` account
 CLI's own docstring.
 """
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -23,6 +24,13 @@ import identity
 
 SERVER_URL_FILE = Path("/etc/slide-announcer/server-url")
 DEVICE_TOKEN_FILE = Path("/data/device-token")
+# The server is authoritative for this device's display name once paired
+# (an entity admin can rename it from the fleet UI) — this file is just a
+# local cache so the Pairing screen has something to show immediately after
+# pairing and between heartbeats, written first by pair() with whatever the
+# user typed, then kept in sync by heartbeat.py from each heartbeat
+# response's device_name field.
+DEVICE_NAME_FILE = Path("/data/status/device-name")
 
 # Wiped together, always — see this module's docstring for the three
 # triggers that share this list (explicit unpair, 401 revocation, and
@@ -31,6 +39,7 @@ DEVICE_TOKEN_FILE = Path("/data/device-token")
 # before this backend exists).
 WIPE_PATHS = [
     DEVICE_TOKEN_FILE,
+    DEVICE_NAME_FILE,
     Path("/data/slides"),
     Path("/data/local-app/settings.json"),
 ]
@@ -57,6 +66,30 @@ def read_device_token() -> str | None:
     if not DEVICE_TOKEN_FILE.exists():
         return None
     return DEVICE_TOKEN_FILE.read_text().strip()
+
+
+def read_device_name() -> str | None:
+    if not DEVICE_NAME_FILE.exists():
+        return None
+    return DEVICE_NAME_FILE.read_text().strip() or None
+
+
+def write_device_name(name: str) -> None:
+    DEVICE_NAME_FILE.parent.mkdir(parents=True, exist_ok=True)
+    DEVICE_NAME_FILE.write_text(name)
+    DEVICE_NAME_FILE.chmod(0o644)
+
+
+def read_paired_at() -> str | None:
+    """ISO8601 timestamp of when this device paired, for the Settings >
+    Pairing screen's "paired since" display. The token file is only ever
+    (re)written by pair() below, so its mtime is exactly that moment —
+    no separate paired-at record needed.
+    """
+    if not DEVICE_TOKEN_FILE.exists():
+        return None
+    mtime = DEVICE_TOKEN_FILE.stat().st_mtime
+    return datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
 
 
 async def pair(code: str, device_name: str) -> dict:
@@ -89,6 +122,7 @@ async def pair(code: str, device_name: str) -> dict:
     DEVICE_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     DEVICE_TOKEN_FILE.write_text(data["token"])
     DEVICE_TOKEN_FILE.chmod(0o640)
+    write_device_name(device_name)
     return data
 
 

@@ -56,6 +56,8 @@ def local_status():
         "setup_mode": setup_info.get("setup_mode"),
         "device_uuid": setup_info.get("device_uuid"),
         "paired": paired,
+        "paired_at": pairing.read_paired_at(),
+        "device_name": pairing.read_device_name(),
         "heartbeat": heartbeat.read_status(),
         "sync": sync.read_status(),
     }

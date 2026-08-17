@@ -126,11 +126,22 @@ async def send_once() -> None:
         _write_status({"last_attempt_at": _now_iso(), "last_error": f"HTTP {resp.status_code}"})
         return
 
+    response = resp.json()
+
+    # The server is authoritative for this device's name once paired (an
+    # entity admin can rename it from the fleet UI) — every successful
+    # heartbeat folds whatever it reports back into the local cache
+    # pairing.py's pair() first seeded, so a rename shows up here within
+    # one heartbeat interval without the device needing a rename API of
+    # its own.
+    if response.get("device_name"):
+        pairing.write_device_name(response["device_name"])
+
     _write_status({
         "last_attempt_at": _now_iso(),
         "last_success_at": _now_iso(),
         "last_error": None,
-        "response": resp.json(),
+        "response": response,
     })
 
 

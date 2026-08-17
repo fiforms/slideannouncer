@@ -1,31 +1,39 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Home from './views/Home.vue'
-import Pairing from './views/Pairing.vue'
 import Slideshow from './views/Slideshow.vue'
 import SettingsLayout from './views/settings/SettingsLayout.vue'
 import NetworkStatus from './views/settings/NetworkStatus.vue'
 import WifiList from './views/settings/WifiList.vue'
 import WifiConnect from './views/settings/WifiConnect.vue'
 import System from './views/settings/System.vue'
-import About from './views/settings/About.vue'
+import Pairing from './views/settings/Pairing.vue'
+import DeviceTools from './views/settings/DeviceTools.vue'
 import KeyDebug from './views/settings/KeyDebug.vue'
 
 export default createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', component: Home },
-    { path: '/pairing', component: Pairing },
+    // Home.vue (device status + links to Pairing/Settings) was redundant
+    // with Settings > System, which already surfaces the same status;
+    // '/' now just lands on the slideshow directly.
+    { path: '/', redirect: '/kiosk' },
     { path: '/kiosk', component: Slideshow },
     {
       path: '/settings',
       component: SettingsLayout,
       children: [
-        { path: '', redirect: '/settings/network' },
+        { path: '', redirect: '/settings/system' },
+        { path: 'system', component: System },
         { path: 'network', component: NetworkStatus },
         { path: 'network/wifi', component: WifiList },
         { path: 'network/wifi/:ssid', component: WifiConnect, props: true },
-        { path: 'system', component: System },
-        { path: 'about', component: About },
+        // Pairing lives here (not a standalone top-level route) so an
+        // unpaired device's pairing form gets the same rail chrome as
+        // every other settings screen.
+        { path: 'pairing', component: Pairing },
+        // Neither of these is in the rail (SettingsLayout's `categories`) —
+        // reached via the "Device Restart, Reset & Debugging" button on the
+        // System page, and Key Debugging's own button on that page in turn.
+        { path: 'device-tools', component: DeviceTools },
         { path: 'keydebug', component: KeyDebug },
       ],
     },

@@ -5,17 +5,16 @@
 // provisioning/README.md), so plain focusable links/buttons with visible
 // focus rings are enough navigation — no custom spatial-nav system needed.
 const categories = [
-  { path: '/settings/network', label: 'Network' },
   { path: '/settings/system', label: 'System' },
-  { path: '/settings/about', label: 'About' },
-  { path: '/settings/keydebug', label: 'Key Debug' },
+  { path: '/settings/network', label: 'Network' },
+  { path: '/settings/pairing', label: 'Pairing' },
 ]
 </script>
 
 <template>
   <div class="settings">
     <aside class="rail">
-      <router-link to="/" class="back-link">&larr; Back to home</router-link>
+      <router-link to="/kiosk" class="back-link">&larr; Back to slideshow</router-link>
       <nav>
         <router-link
           v-for="cat in categories"
