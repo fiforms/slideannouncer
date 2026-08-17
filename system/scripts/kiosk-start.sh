@@ -34,6 +34,12 @@ CHROMIUM_CMD=(
 	--disable-infobars
 	--disable-session-crashed-bubble
 	--check-for-update-interval=31536000
+	# No one is ever present to click on this kiosk display, so Chromium's
+	# normal "needs a user gesture (or high site media-engagement) before
+	# allowing unmuted autoplay" policy would otherwise force every video
+	# slide to play silently forever. This is the only reliable way to get
+	# sound out of video slides here.
+	--autoplay-policy=no-user-gesture-required
 	# Chromium's first compositor frame is white by default, painted before
 	# the page (whose own CSS is already all-dark) has loaded far enough to
 	# override it — a brief flash that's jarring on a large TV. This switch

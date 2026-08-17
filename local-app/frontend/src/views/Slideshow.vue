@@ -79,6 +79,22 @@ function onVideoEnded() {
   // its last frame until the interval-based advance (if any) fires.
 }
 
+// Plays with sound — kiosk-start.sh launches Chromium with
+// --autoplay-policy=no-user-gesture-required specifically so this succeeds
+// with no prior interaction (there's never anyone at the TV to click
+// anything). The muted retry is just a safety net in case that flag is
+// ever missing or this is run in a non-Chromium browser for testing.
+async function playWithSound(event) {
+  const el = event.target
+  el.muted = false
+  try {
+    await el.play()
+  } catch {
+    el.muted = true
+    try { await el.play() } catch { /* give up silently */ }
+  }
+}
+
 async function refreshPlaylist() {
   try {
     const data = await api.slideshow()
@@ -151,11 +167,10 @@ onUnmounted(() => {
         :key="currentSlide.id"
         :src="currentSlide.media_url"
         :loop="currentSlide.video_playback_mode === 'loop'"
-        autoplay
-        muted
         playsinline
         class="slide-image"
         @ended="onVideoEnded"
+        @loadedmetadata="playWithSound"
       />
       <img
         v-else-if="currentSlide"
