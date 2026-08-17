@@ -12,7 +12,8 @@
     "slideshow": {
         "notPaired": "Not yet paired. Use the Menu button to open Settings.",
         "waiting": "Waiting for slides…",
-        "needsAttention": "Needs attention — check Settings"
+        "needsAttention": "Needs attention — check Settings",
+        "paused": "Paused"
     },
     "settingsLayout": {
         "backToSlideshow": "← Back to slideshow",

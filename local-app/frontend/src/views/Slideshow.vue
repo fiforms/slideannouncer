@@ -17,10 +17,24 @@ const REFRESH_INTERVAL_MS = 60000 // matches sync.py's own poll cadence — no p
 const STATUS_INTERVAL_MS = 15000
 const DEFAULT_INTERVAL_SECONDS = 10
 
+// Manual slide navigation. Right/Down and MediaFastForward advance one
+// slide, Left/Up and MediaRewind go back one slide. MediaTrackNext/
+// MediaTrackPrevious ("skip") jump straight to the last/first slide.
+// Confirmed via Settings > Key Debug on real hardware — the remote has 4
+// distinct media buttons, not aliases of one another. Space and P are a
+// plain-keyboard equivalent to the remote's MediaPlayPause button, for
+// anyone testing/operating this without the physical remote.
+const NEXT_KEYS = ['ArrowRight', 'ArrowDown', 'MediaFastForward']
+const PREV_KEYS = ['ArrowLeft', 'ArrowUp', 'MediaRewind']
+const LAST_KEYS = ['MediaTrackNext']
+const FIRST_KEYS = ['MediaTrackPrevious']
+const PLAY_PAUSE_KEYS = ['MediaPlayPause', ' ', 'p', 'P']
+
 const playlist = ref([])
 const settings = ref({})
 const status = ref(null)
 const currentIndex = ref(0)
+const paused = ref(false)
 
 let advanceTimer = null
 let refreshTimer = null
@@ -42,7 +56,7 @@ function slideIntervalMs() {
 function restartAdvanceTimer() {
   if (advanceTimer) clearInterval(advanceTimer)
   advanceTimer = null
-  if (playlist.value.length <= 1) return
+  if (paused.value || playlist.value.length <= 1) return
   advanceTimer = setInterval(() => {
     currentIndex.value = (currentIndex.value + 1) % playlist.value.length
   }, slideIntervalMs())
@@ -62,6 +76,29 @@ async function refreshPlaylist() {
   }
 }
 
+// Jumping resets the advance timer so the interval waits a full
+// slideIntervalMs() from the manual change, rather than possibly
+// auto-advancing again a moment later.
+function goToIndex(index) {
+  const len = playlist.value.length
+  if (len === 0) return
+  currentIndex.value = ((index % len) + len) % len
+  restartAdvanceTimer()
+}
+
+function togglePause() {
+  paused.value = !paused.value
+  restartAdvanceTimer()
+}
+
+function onKeydown(event) {
+  if (NEXT_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(currentIndex.value + 1) }
+  else if (PREV_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(currentIndex.value - 1) }
+  else if (LAST_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(playlist.value.length - 1) }
+  else if (FIRST_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(0) }
+  else if (PLAY_PAUSE_KEYS.includes(event.key)) { event.preventDefault(); togglePause() }
+}
+
 async function refreshStatus() {
   try {
     status.value = await api.localStatus()
@@ -78,12 +115,14 @@ onMounted(async () => {
   await refreshStatus()
   refreshTimer = setInterval(refreshPlaylist, REFRESH_INTERVAL_MS)
   statusTimer = setInterval(refreshStatus, STATUS_INTERVAL_MS)
+  window.addEventListener('keydown', onKeydown)
 })
 
 onUnmounted(() => {
   if (advanceTimer) clearInterval(advanceTimer)
   if (refreshTimer) clearInterval(refreshTimer)
   if (statusTimer) clearInterval(statusTimer)
+  window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
@@ -103,6 +142,11 @@ onUnmounted(() => {
     </transition>
 
     <div v-if="needsAttention" class="attention-dot" :title="t('slideshow.needsAttention')" />
+
+    <div v-if="paused" class="pause-indicator" :title="t('slideshow.paused')">
+      <span class="pause-icon" />
+      {{ t('slideshow.paused') }}
+    </div>
   </div>
 </template>
 
@@ -145,5 +189,27 @@ onUnmounted(() => {
   border-radius: 50%;
   background: var(--danger);
   box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.25);
+}
+.pause-indicator {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+}
+.pause-icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  background:
+    linear-gradient(#fff, #fff) 0 0 / 35% 100% no-repeat,
+    linear-gradient(#fff, #fff) 100% 0 / 35% 100% no-repeat;
 }
 </style>
