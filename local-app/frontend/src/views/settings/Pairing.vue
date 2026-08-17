@@ -49,6 +49,14 @@ async function pair() {
   }
 }
 
+function formatTimestamp(isoString) {
+  if (!isoString) return null
+  const date = new Date(isoString)
+  const datePart = date.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })
+  const timePart = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(' ', '').toLowerCase()
+  return `${datePart}, ${timePart}`
+}
+
 function pairedSince(isoString) {
   if (!isoString) return null
   const ms = Date.now() - new Date(isoString).getTime()
@@ -101,26 +109,27 @@ function goToSlideshow() {
             <span class="label">Name</span>
             <span>{{ status.device_name }}</span>
           </div>
-          <div v-if="status.paired_at" class="row">
+          <div v-if="status.entity_name" class="row">
+            <span class="label">Entity</span>
+            <span>{{ status.entity_name }}</span>
+          </div>         <div v-if="status.paired_at" class="row">
             <span class="label">Paired</span>
             <span>{{ pairedSince(status.paired_at) }}</span>
           </div>
+          <div v-if="status.paired_at" class="row">
+              <span class="label">Last heartbeat</span>
+              <span>{{ formatTimestamp(status.heartbeat?.last_success_at) ?? 'Never' }}</span>
+              <span v-if="status.heartbeat?.last_error">Last heartbeat error</span>
+              <span v-if="status.heartbeat?.last_error">{{ status.heartbeat.last_error }}</span>
+          </div>
         </div>
-        <p class="hint">
-          Rename this device from its entry in the AnnouncementSlides
-          website's devices page — the new name reaches this screen on the
-          next heartbeat (every 5 minutes).
-        </p>
         <button class="tile action" @click="goToSlideshow">Go to Slideshow</button>
       </section>
 
       <section class="block">
         <h2>Unpair Device</h2>
         <p class="hint">
-          Disconnects this device from its site and reboots to this pairing
-          screen. Re-pairing (to this site or a different one) needs a fresh
-          code from the website. Lighter than Factory Reset (System) — this
-          leaves WiFi credentials and device identity alone.
+          Disconnect from the server and wipe slides without resetting network settings.
         </p>
 
         <div v-if="unpairing" class="status-block">

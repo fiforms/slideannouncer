@@ -125,16 +125,11 @@ async def network_connect(body: ConnectRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
-        connectivity = await network.check_connectivity()
-    except network.NetworkCommandError:
-        connectivity = "unknown"
-
-    try:
         status = await network.get_status()
     except network.NetworkCommandError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    return {"connectivity": connectivity, "status": status}
+    return {"connectivity": status.connectivity, "status": status}
 
 
 class ForgetRequest(BaseModel):

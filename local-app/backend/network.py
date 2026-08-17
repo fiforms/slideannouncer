@@ -49,6 +49,15 @@ class NetworkStatus:
     signal: int | None = None
     ip_addresses: list[str] = field(default_factory=list)
     device: str | None = None
+    subnet_mask: str | None = None
+    gateway: str | None = None
+    dns_servers: list[str] = field(default_factory=list)
+    connectivity: str | None = None  # "full" | "limited" | "portal" | "none" | "unknown"
+
+
+def _prefix_to_subnet_mask(prefix: int) -> str:
+    mask = (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
+    return ".".join(str((mask >> shift) & 0xFF) for shift in (24, 16, 8, 0))
 
 
 @dataclass
@@ -71,15 +80,33 @@ async def get_status() -> NetworkStatus:
             break
 
     if active is None:
-        return NetworkStatus(connection_type="disconnected", connected=False)
+        return NetworkStatus(connection_type="disconnected", connected=False, connectivity="none")
 
     device, dev_type, connection = active
-    ip_out = await _run("-t", "-f", "IP4.ADDRESS", "device", "show", device)
-    ip_addresses = [
-        _split_terse(line)[1].split("/")[0]
-        for line in ip_out.splitlines()
-        if line.startswith("IP4.ADDRESS")
-    ]
+    ip_out = await _run(
+        "-t", "-f", "IP4.ADDRESS,IP4.GATEWAY,IP4.DNS", "device", "show", device
+    )
+    ip_addresses = []
+    subnet_mask = None
+    gateway = None
+    dns_servers = []
+    for line in ip_out.splitlines():
+        if line.startswith("IP4.ADDRESS"):
+            addr, _, prefix = _split_terse(line)[1].partition("/")
+            ip_addresses.append(addr)
+            if subnet_mask is None and prefix.isdigit():
+                subnet_mask = _prefix_to_subnet_mask(int(prefix))
+        elif line.startswith("IP4.GATEWAY"):
+            gateway = _split_terse(line)[1] or None
+        elif line.startswith("IP4.DNS"):
+            dns = _split_terse(line)[1]
+            if dns:
+                dns_servers.append(dns)
+
+    try:
+        connectivity = await check_connectivity()
+    except NetworkCommandError:
+        connectivity = "unknown"
 
     ssid = None
     signal = None
@@ -101,6 +128,10 @@ async def get_status() -> NetworkStatus:
         signal=signal,
         ip_addresses=ip_addresses,
         device=device,
+        subnet_mask=subnet_mask,
+        gateway=gateway,
+        dns_servers=dns_servers,
+        connectivity=connectivity,
     )
 
 

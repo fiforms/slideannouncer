@@ -37,6 +37,21 @@ async function forgetNetwork() {
     forgetting.value = false
   }
 }
+
+// NetworkManager's own connectivity states (see backend network.py
+// check_connectivity) — "portal" means a captive portal is intercepting
+// traffic (e.g. a hotel/guest WiFi login page), not that we're offline.
+const CONNECTIVITY_LABELS = {
+  full: 'Online',
+  limited: 'Limited (no internet)',
+  portal: 'Sign-in required',
+  none: 'No internet',
+  unknown: 'Unknown',
+}
+
+function connectivityLabel(connectivity) {
+  return CONNECTIVITY_LABELS[connectivity] ?? 'Unknown'
+}
 </script>
 
 <template>
@@ -63,6 +78,24 @@ async function forgetNetwork() {
       <div class="row">
         <span class="label">IP address</span>
         <span>{{ status.ip_addresses?.length ? status.ip_addresses.join(', ') : '—' }}</span>
+      </div>
+      <div v-if="status.subnet_mask" class="row">
+        <span class="label">Subnet mask</span>
+        <span>{{ status.subnet_mask }}</span>
+      </div>
+      <div v-if="status.gateway" class="row">
+        <span class="label">Default gateway</span>
+        <span>{{ status.gateway }}</span>
+      </div>
+      <div v-if="status.dns_servers?.length" class="row">
+        <span class="label">DNS server{{ status.dns_servers.length > 1 ? 's' : '' }}</span>
+        <span>{{ status.dns_servers.join(', ') }}</span>
+      </div>
+      <div v-if="status.connected" class="row">
+        <span class="label">Internet</span>
+        <span class="pill" :class="status.connectivity === 'full' ? 'ok' : 'warn'">
+          {{ connectivityLabel(status.connectivity) }}
+        </span>
       </div>
     </div>
 
