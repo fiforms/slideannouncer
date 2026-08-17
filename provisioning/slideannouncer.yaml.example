@@ -30,6 +30,28 @@ default_language: en
 # Edit it on the boot partition and reboot (or power-cycle) to change it.
 # vt_lockswitch: locked
 
+# Set to "true" to let sshd actually start on this device (checked fresh
+# on every start attempt by system/scripts/ssh-gate.py — see
+# system/ssh/ssh-gate.conf). sshd is `systemctl enable`d in every image
+# regardless of build flags now, so THIS is the real on/off switch, not a
+# build-time flag: unset (or anything other than exactly "true") keeps it
+# refusing to start. Edit it and reboot (or `systemctl restart ssh`) to
+# flip it on an already-deployed device — no rebuild/reflash needed.
+# ssh_enabled: true
+
+# SSH public key(s) authorized to log in as 'slideadmin' — a literal
+# authorized_keys file's contents (one key per line), written to
+# /home/slideadmin/.ssh/authorized_keys on every boot. This IS read every
+# boot, not just the first: edit it and reboot (or power-cycle) to add,
+# rotate, or revoke a key. Removing this key entirely deletes the
+# authorized_keys file outright, revoking SSH access. Has no effect
+# without ssh_enabled: true above — sshd never starts to use it otherwise.
+# Password authentication over SSH is disabled globally, unconditionally,
+# in every image — there is no fallback login here; a device with SSH
+# turned on but no key set here simply has no way in over SSH at all.
+# ssh_authorized_keys: |
+#   ssh-ed25519 AAAA...
+
 # device_uuid / device_uuid_check: leave these out. firstboot.py
 # generates a fresh, consistent pair on the device's first boot — see
 # provisioning/README.md and SLIDE_ANNOUNCER.md's "Device identity &

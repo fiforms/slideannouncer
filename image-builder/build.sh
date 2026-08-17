@@ -3,13 +3,13 @@
 #
 #   ./build.sh                 normal build (no SSH; a random per-build
 #                               console-login password is still printed —
-#                               see image-builder/README.md)
-#   SSH_DEV_BUILD=1 ./build.sh same, plus SSH enabled with that same password
-#                               (a dev convenience — password auth stays on;
-#                               for a real fleet image, use
-#                               SLIDE_ANNOUNCER_ENABLE_SSH/
-#                               SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH in .env
-#                               instead, see .env.example)
+#                               see image-builder/README.md). SSH access
+#                               (see SLIDE_ANNOUNCER_ENABLE_SSH/
+#                               SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH in
+#                               .env.example) is always key-based only —
+#                               there is no password-over-SSH option, dev
+#                               or otherwise; password auth is disabled
+#                               globally in every image, unconditionally.
 #   RESUME_WORK=<dir> ./build.sh
 #                               skip the pi-gen/Docker build and reuse an
 #                               already-decompressed raw.img from a previous
@@ -139,13 +139,19 @@ if [ -n "$SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA" ]; then
 	echo "==> Extra config.txt lines: ${SLIDE_ANNOUNCER_BOOT_CONFIG_EXTRA}"
 fi
 
-# SSH is off by default (see ENABLE_SSH=0 in ./config). It only turns on
-# when BOTH of these are set — a bare "enable SSH" flag with no key would
-# mean password auth over the network with no way to lock that down, and a
-# bare key with no flag would be silently inert, so neither alone does
-# anything. Once both are set, password authentication over SSH is
-# disabled globally (PUBKEY_ONLY_SSH below) — key-based login is the only
-# way in, on top of the normal slideadmin console password.
+# This is what a freshly built image ships with by default — sshd itself
+# is `systemctl enable`d unconditionally now (see ENABLE_SSH=1 in
+# ./config), password authentication over SSH is disabled globally and
+# unconditionally in every image regardless of these vars (see
+# system/ssh/pubkey-only.conf, always installed — there is no build mode
+# that ever ships password-over-SSH), and actually starting sshd at all is
+# a runtime, boot-yaml decision (see system/ssh/ssh-gate.conf), not a
+# build-time one. Both of SLIDE_ANNOUNCER_ENABLE_SSH/
+# SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH must still be set together for the
+# shipped default to be "on" with this key, though — a bare "enable SSH"
+# flag with no key would leave sshd allowed to start with no key anyone
+# could actually authenticate with, and a bare key with no flag would be
+# silently inert, so neither alone does anything.
 SLIDE_ANNOUNCER_ENABLE_SSH="${SLIDE_ANNOUNCER_ENABLE_SSH:-0}"
 SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH="${SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH:-}"
 SSH_ENABLED=0
@@ -254,6 +260,43 @@ rm -rf "$FILES_DIR"
 mkdir -p "$FILES_DIR"
 rsync -a --exclude 'backend/venv' "${REPO_ROOT}/system/" "${FILES_DIR}/system/"
 rsync -a "${REPO_ROOT}/provisioning/" "${FILES_DIR}/provisioning/"
+# SSH is now always `systemctl enable`d at the image level
+# (image-builder/config's ENABLE_SSH=1) and password authentication is
+# always disabled globally (system/ssh/pubkey-only.conf, unconditionally
+# installed below by 00-run.sh — there is no build mode that ever ships
+# password-over-SSH). Whether sshd actually starts at all is gated at
+# runtime by system/ssh/ssh-gate.conf's ExecStartPre checking
+# slideannouncer.yaml's `ssh_enabled: true` (see system/scripts/ssh-gate.py).
+# Seed both that field and the key itself into the staged yaml.example
+# when SLIDE_ANNOUNCER_ENABLE_SSH/SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH are
+# set (both validated above), so a device built with a key configured
+# doesn't need a boot-yaml edit just to make SSH match what was asked for
+# at build time. Leaving both unset (the plain `./build.sh` case) means
+# SSH stays unreachable until someone deliberately opts in later by
+# editing the yaml (adding both ssh_enabled: true and a key of their own)
+# and rebooting — the same fail-closed default the old build-time
+# ENABLE_SSH=0 gave.
+#
+# Appended into the staged slideannouncer.yaml.example's
+# ssh_authorized_keys field rather than baked straight into
+# /home/slideadmin/.ssh/authorized_keys at image-build time: that path is
+# now bind-mounted onto /data (see system/slide-announcer-home-dirs.service
+# + 00-run.sh's fstab entry) — anything written to it at build time would
+# just be invisible the moment that bind mount takes effect on first boot,
+# then permanently unreachable since /data survives every future OTA and
+# this image doesn't. Going through the yaml instead means
+# provisioning/firstboot.py's sync_ssh_authorized_keys() writes the real
+# file at runtime, every boot, with the same content persisted on /data —
+# see that function's own docstring for why this also makes key
+# rotation/revocation an edit-and-reboot instead of a rebuild-and-reflash.
+if [ "$SSH_ENABLED" = "1" ]; then
+	{
+		echo "ssh_enabled: true"
+		echo ""
+		echo "ssh_authorized_keys: |"
+		sed 's/^/  /' "$SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH"
+	} >> "${FILES_DIR}/provisioning/slideannouncer.yaml.example"
+fi
 # Fixed OS-image infra, like local-app-seed.py — deliberately NOT part of
 # the versioned local-app release tarball below, so a bad app update can
 # never take the update mechanism itself down with it.
@@ -348,25 +391,24 @@ cat "${HERE}/config" > "$CONFIG_FILE"
 } >> "$CONFIG_FILE"
 echo "==> Local account 'slideadmin' password (console/keyboard login only): ${USER_PASS}"
 
-if [ "${SSH_DEV_BUILD:-0}" = "1" ]; then
-	echo "ENABLE_SSH=1" >> "$CONFIG_FILE"
-	echo "==> SSH_DEV_BUILD=1: SSH enabled too — same password as above"
-fi
-
-# Key-based SSH from .env (see the SLIDE_ANNOUNCER_ENABLE_SSH/
-# SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH validation above). PUBKEY_ONLY_SSH is
-# pi-gen's own knob for this — it rewrites /etc/ssh/sshd_config to disable
-# PasswordAuthentication and enable PubkeyAuthentication, globally, so this
-# takes precedence over SSH_DEV_BUILD's password-based access above (both
-# can be set at once — password login just stops working either way).
-# printf %q rather than a plain assignment: PUBKEY_SSH_FIRST_USER's value
-# has spaces (`ssh-ed25519 AAAA... comment`), and this file gets sourced as
-# a shell script by pi-gen's build.sh, so it needs to come out quoted.
-if [ "$SSH_ENABLED" = "1" ]; then
-	echo "ENABLE_SSH=1" >> "$CONFIG_FILE"
-	echo "PUBKEY_ONLY_SSH=1" >> "$CONFIG_FILE"
-	printf 'PUBKEY_SSH_FIRST_USER=%q\n' "$SSH_PUBLIC_KEY_CONTENT" >> "$CONFIG_FILE"
-fi
+# ENABLE_SSH itself is no longer conditional here — image-builder/config
+# sets it to 1 unconditionally now, and system/ssh/ssh-gate.conf's
+# ExecStartPre gates actual sshd startup on slideannouncer.yaml's
+# `ssh_enabled: true` at runtime instead (see that file and
+# system/scripts/ssh-gate.py). Deliberately NOT pi-gen's own
+# PUBKEY_ONLY_SSH/PUBKEY_SSH_FIRST_USER knobs for the key-based path
+# either: those write the key straight into
+# /home/slideadmin/.ssh/authorized_keys at build time, which is now bind-
+# mounted onto /data on first boot (see
+# system/slide-announcer-home-dirs.service) — anything baked there would
+# just be shadowed and unreachable from the moment that mount takes
+# effect, and pi-gen's own build.sh hard-requires PUBKEY_SSH_FIRST_USER to
+# be set whenever PUBKEY_ONLY_SSH=1, so there'd be no way to opt into
+# pubkey-only mode there without also feeding it a key it can never
+# actually use. system/ssh/pubkey-only.conf (unconditionally installed by
+# 00-run.sh, in every image) covers the "disable password auth" half
+# instead. (The "SSH enabled for slideadmin" log line for this path is
+# already printed above, at validation time.)
 
 if ! command -v qemu-aarch64-static >/dev/null 2>&1; then
 	# Newer Debian/Ubuntu ship the (still statically linked) interpreter as

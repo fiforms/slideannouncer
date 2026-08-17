@@ -14,6 +14,7 @@ import hashlib
 import hmac
 import json
 import os
+import pwd
 import re
 import subprocess
 import sys
@@ -32,6 +33,8 @@ STATUS_DIR = Path("/data/status")
 SETUP_MODE_STATUS = STATUS_DIR / "setup-mode.json"
 LANGUAGE_BOOT_HINT_STATUS = STATUS_DIR / "language-boot-hint.json"
 BACKEND_GROUP = "slideannouncer"
+SSH_ADMIN_USER = "slideadmin"
+SSH_AUTHORIZED_KEYS_PATH = Path("/home/slideadmin/.ssh/authorized_keys")
 
 # Paths a real wipe-and-repair (per Heartbeat/Kiosk-display design) would
 # clear. None of these exist yet in the stub app, but clearing them here too
@@ -316,11 +319,52 @@ def write_language_boot_hint() -> None:
     LANGUAGE_BOOT_HINT_STATUS.chmod(0o644)
 
 
+def sync_ssh_authorized_keys() -> None:
+    """(Re)writes slideadmin's authorized_keys from the boot-yaml
+    `ssh_authorized_keys` key, every boot — the yaml file is the sole
+    source of truth for this account's SSH access, not a one-time seed
+    baked into the image at build time (see image-builder/build.sh's
+    SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH handling, which now writes the key
+    in here instead of into the image directly). This only works at all
+    because /home/slideadmin is bind-mounted onto /data (see
+    system/slide-announcer-home-dirs.service + 00-run.sh's fstab entry) —
+    unlike the rest of rootfs, that path survives an OTA, so a key set here
+    keeps working across OS updates without needing to be re-baked.
+
+    Overwrites unconditionally when the key is set (covers rotation: edit
+    slideannouncer.yaml, reboot). Removes the file entirely when the key is
+    unset, so revoking access is also just an edit-and-reboot away, with no
+    stale key left over from a previous config.
+    """
+    config = load_boot_config()
+    keys = config.get("ssh_authorized_keys")
+
+    if not keys:
+        SSH_AUTHORIZED_KEYS_PATH.unlink(missing_ok=True)
+        return
+
+    uid = pwd.getpwnam(SSH_ADMIN_USER).pw_uid
+    gid = pwd.getpwnam(SSH_ADMIN_USER).pw_gid
+
+    ssh_dir = SSH_AUTHORIZED_KEYS_PATH.parent
+    ssh_dir.mkdir(mode=0o700, exist_ok=True)
+    os.chown(ssh_dir, uid, gid)
+    ssh_dir.chmod(0o700)
+
+    SSH_AUTHORIZED_KEYS_PATH.write_text(
+        keys if keys.endswith("\n") else keys + "\n"
+    )
+    os.chown(SSH_AUTHORIZED_KEYS_PATH, uid, gid)
+    SSH_AUTHORIZED_KEYS_PATH.chmod(0o600)
+    log("synced ssh_authorized_keys to slideadmin's authorized_keys")
+
+
 def main() -> int:
     run_once_setup()
     ensure_identity()
     detect_setup_mode()
     write_language_boot_hint()
+    sync_ssh_authorized_keys()
     return 0
 
 

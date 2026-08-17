@@ -1,0 +1,21 @@
+[Unit]
+Description=Recreate /data/home/slideadmin before the slideadmin home bind mount
+# image-builder/repartition.sh does not pre-create this dir (contrast
+# /data/overlay/etc/{upper,work}, which must exist before the very first
+# boot's overlay mount) — the bind mount below only needs it to exist
+# before *this* boot's mount attempt, and factory-reset-check.service's
+# runtime reformat is the only other thing that can make it disappear.
+# Runs unconditionally every boot instead of only after a reset (cheap,
+# idempotent — same reasoning as slide-announcer-data-dirs.service).
+DefaultDependencies=no
+After=data.mount
+Before=home-slideadmin.mount
+Requires=data.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/slide-announcer-home-dirs
+
+[Install]
+WantedBy=local-fs-pre.target

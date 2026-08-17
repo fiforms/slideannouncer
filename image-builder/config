@@ -23,12 +23,15 @@ KEYBOARD_KEYMAP=us
 KEYBOARD_LAYOUT="English (US)"
 TIMEZONE_DEFAULT=America/New_York
 
-# Off by default for production builds — the 02-clean-before-compress step
-# strips host keys regardless, but disabling the service entirely means a
-# stray build never accidentally ships an image with a known
-# FIRST_USER_PASS reachable over SSH. Set ENABLE_SSH=1 / FIRST_USER_PASS via
-# `SSH_DEV_BUILD=1 ./build.sh` for a debug build (see build.sh).
-ENABLE_SSH=0
+# Always on now, at the systemd level — sshd.service is enabled in every
+# image regardless of build flags. Whether it actually STARTS is gated at
+# runtime instead, by system/ssh/ssh-gate.conf's ExecStartPre (checks
+# slideannouncer.yaml's `ssh_enabled: true` on every start attempt, see
+# system/scripts/ssh-gate.py) — a stray build with no key/password
+# configured still can't be reached over SSH, since the boot-yaml default
+# is unset (fails closed), but flipping SSH on for an already-deployed
+# device is then just an edit-and-reboot away, no rebuild/reflash needed.
+ENABLE_SSH=1
 
 DEPLOY_COMPRESSION=xz
 COMPRESSION_LEVEL=6

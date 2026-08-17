@@ -21,6 +21,13 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   upper/work dirs before `/etc`'s overlay mount, every boot (cheap,
   idempotent) — needed because a factory reset wipes them at runtime,
   unlike `image-builder/repartition.sh`'s one-time build-time seed.
+- `slide-announcer-home-dirs.service` + `scripts/home-dirs.sh` — creates
+  and seeds (from `/etc/skel`, once) `/data/home/slideadmin` before
+  `/home/slideadmin` bind-mounts onto it (`00-run.sh`'s fstab entry) —
+  same reasoning as `slide-announcer-data-dirs.service` above, just for the
+  `slideadmin` console/SSH account's home instead of `/etc`'s overlay:
+  plain root is otherwise `ro`, so without this, bash history and anything
+  else written under that home dir would reset on every reboot/OTA.
 - `slide-announcer-factory-reset-trigger.service` — on-demand (never
   enabled at boot) unit the backend starts via the polkit rule below: sets
   `/boot/firmware/FACTORY_RESET` and reboots.
@@ -32,8 +39,11 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   before everything else; masks the stock Raspberry Pi OS root-resize unit,
   since `rootA` is a fixed size by design (the future RAUC A/B slot pair).
 - `slide-announcer-firstboot.service` — runs
-  `provisioning/firstboot.py` (SSH/machine-id regen, device identity check,
-  setup-mode detection).
+  `provisioning/firstboot.py` (SSH host key/machine-id regen, device
+  identity check, setup-mode detection, and — every boot, not just the
+  first — syncing `slideannouncer.yaml`'s `ssh_authorized_keys` field to
+  `slideadmin`'s `~/.ssh/authorized_keys`, which only persists at all
+  because of the home bind mount above).
 - `slide-announcer-local-app-seed.service` + `scripts/local-app-seed.py` —
   runs every boot, before the backend/kiosk services: extracts the
   local-app release tarball baked into this image at
@@ -116,6 +126,22 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   manual ordering against `data.mount` needed — `rpi-swap-generator`
   derives each unit's `RequiresMountsFor=` from this file's `Path=` fresh
   on every boot/`daemon-reload`.
+- `ssh/ssh-gate.conf` + `scripts/ssh-gate.py` — `ssh.service.d` drop-in
+  (`ExecStartPre=`) that refuses to let sshd start at all unless
+  `slideannouncer.yaml` says `ssh_enabled: true`, checked fresh on every
+  start attempt. `ssh.service` is `systemctl enable`d in every image now
+  regardless of build flags (`image-builder/config`'s `ENABLE_SSH=1`) —
+  this is what makes "is SSH actually reachable" a runtime, per-device,
+  yaml-driven decision instead (edit the boot yaml + reboot/`systemctl
+  restart ssh` to flip it, no rebuild/reflash), the same way
+  `ssh_authorized_keys` already is.
+- `ssh/pubkey-only.conf` — `sshd_config.d` drop-in disabling password
+  authentication globally, installed unconditionally in every image —
+  there is no build mode (dev or otherwise) that ever ships a device
+  capable of password-over-SSH. Key-based login for `slideadmin` is
+  entirely driven by `slideannouncer.yaml`'s `ssh_authorized_keys` (see
+  `slide-announcer-firstboot.service`, above) — a device with SSH turned on
+  (`ssh_enabled: true`) but no key configured simply has no way in at all.
 - `read-only-root/cloud-init-etc-overlay.conf` — `cloud-init-local.service`
   drop-in (`After=`/`Requires=etc.mount`). Stock `cloud-init-local.service`
   has `DefaultDependencies=no` and no ordering against `/etc`'s overlay

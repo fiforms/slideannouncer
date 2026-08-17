@@ -46,6 +46,21 @@ install -m 755 files/system/scripts/os-updater.py "${ROOTFS_DIR}/usr/local/sbin/
 install -m 755 files/system/scripts/factory-reset-check.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-factory-reset-check"
 install -m 755 files/system/scripts/bootfw-remount.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-bootfw-remount"
 install -m 755 files/system/scripts/vtlock-apply.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-vtlock-apply"
+install -m 755 files/system/scripts/home-dirs.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-home-dirs"
+install -m 755 files/system/scripts/ssh-gate.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-ssh-gate"
+
+install -d "${ROOTFS_DIR}/etc/systemd/system/ssh.service.d"
+install -m 644 files/system/ssh/ssh-gate.conf \
+	"${ROOTFS_DIR}/etc/systemd/system/ssh.service.d/slide-announcer-gate.conf"
+
+# Password authentication over SSH is disabled globally, unconditionally,
+# in every image — there is no build mode that ever ships password-over-
+# SSH (see system/ssh/pubkey-only.conf's own comment). Key-based login via
+# slideannouncer.yaml's ssh_authorized_keys (provisioning/firstboot.py) is
+# the only way in, whenever ssh-gate.conf above lets sshd start at all.
+install -d "${ROOTFS_DIR}/etc/ssh/sshd_config.d"
+install -m 644 files/system/ssh/pubkey-only.conf \
+	"${ROOTFS_DIR}/etc/ssh/sshd_config.d/slide-announcer-pubkey-only.conf"
 
 install -d "${ROOTFS_DIR}/etc/nginx/sites-available"
 install -m 644 files/system/nginx-slide-announcer.conf "${ROOTFS_DIR}/etc/nginx/sites-available/slide-announcer.conf"
@@ -211,6 +226,23 @@ tmpfs   /var/tmp    tmpfs    nosuid,nodev,mode=1777                             
 tmpfs   /mnt/rauc   tmpfs    nosuid,nodev,mode=0700                                                                      0  0
 overlay /etc        overlay  lowerdir=/etc,upperdir=/data/overlay/etc/upper,workdir=/data/overlay/etc/work,x-systemd.requires-mounts-for=/data,nofail    0  0
 overlay /var        overlay  lowerdir=/var,upperdir=/run/overlay-var/upper,workdir=/run/overlay-var/work,x-systemd.requires-mounts-for=/run/overlay-var,x-systemd.after=slide-announcer-overlay-var-dirs.service    0  0
+EOF
+
+# slideadmin's home, bind-mounted onto /data so console/SSH state (bash
+# history, etc.) survives a reboot the same way /etc's overlay does for
+# system state — plain root is otherwise ro (see above), so without this
+# /home/slideadmin is just whatever pi-gen baked in at build time, reset on
+# every OTA. A bind mount rather than another overlay: nothing here needs
+# to fall back to reading the original rootfs skeleton once /data is
+# populated, and a bind mount is the simpler primitive when that's true.
+# slide-announcer-home-dirs.service creates/seeds the /data-side directory
+# before this mount runs, the same way slide-announcer-data-dirs.service
+# does for the /etc overlay's upper/work dirs. `nofail`: if /data somehow
+# fails to mount, the device still boots with rootfs's own original
+# (empty-history, but real) /home/slideadmin rather than dropping to an
+# emergency shell.
+cat >> "${ROOTFS_DIR}/etc/fstab" <<'EOF'
+/data/home/slideadmin  /home/slideadmin  none  bind,nofail,x-systemd.requires-mounts-for=/data,x-systemd.after=slide-announcer-home-dirs.service  0  0
 EOF
 # ROOTDEV is still the literal placeholder text at this point in the build
 # — pi-gen's own export-image/04-set-partuuid step substitutes the real
@@ -458,6 +490,7 @@ systemctl mask e2scrub_all.timer e2scrub_all.service e2scrub_reap.service
 systemctl enable slide-announcer-overlay-var-dirs.service
 systemctl enable slide-announcer-factory-reset-check.service
 systemctl enable slide-announcer-data-dirs.service
+systemctl enable slide-announcer-home-dirs.service
 systemctl enable slide-announcer-rauc-dirs.service
 systemctl enable slide-announcer-data-resize.service
 systemctl enable slide-announcer-firstboot.service
