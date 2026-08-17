@@ -31,6 +31,12 @@ DEVICE_TOKEN_FILE = Path("/data/device-token")
 # user typed, then kept in sync by heartbeat.py from each heartbeat
 # response's device_name field.
 DEVICE_NAME_FILE = Path("/data/status/device-name")
+# Same local-cache rationale as DEVICE_NAME_FILE, for the entity (church/
+# school) this device is currently paired to — set from the pairing
+# response's entity_name, then kept in sync by heartbeat.py, since a
+# re-pair can move a device to a different entity without device_name
+# changing at all.
+ENTITY_NAME_FILE = Path("/data/status/entity-name")
 
 # Wiped together, always — see this module's docstring for the three
 # triggers that share this list (explicit unpair, 401 revocation, and
@@ -40,6 +46,7 @@ DEVICE_NAME_FILE = Path("/data/status/device-name")
 WIPE_PATHS = [
     DEVICE_TOKEN_FILE,
     DEVICE_NAME_FILE,
+    ENTITY_NAME_FILE,
     Path("/data/slides"),
     Path("/data/local-app/settings.json"),
 ]
@@ -78,6 +85,18 @@ def write_device_name(name: str) -> None:
     DEVICE_NAME_FILE.parent.mkdir(parents=True, exist_ok=True)
     DEVICE_NAME_FILE.write_text(name)
     DEVICE_NAME_FILE.chmod(0o644)
+
+
+def read_entity_name() -> str | None:
+    if not ENTITY_NAME_FILE.exists():
+        return None
+    return ENTITY_NAME_FILE.read_text().strip() or None
+
+
+def write_entity_name(name: str) -> None:
+    ENTITY_NAME_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ENTITY_NAME_FILE.write_text(name)
+    ENTITY_NAME_FILE.chmod(0o644)
 
 
 def read_paired_at() -> str | None:
@@ -123,6 +142,8 @@ async def pair(code: str, device_name: str) -> dict:
     DEVICE_TOKEN_FILE.write_text(data["token"])
     DEVICE_TOKEN_FILE.chmod(0o640)
     write_device_name(device_name)
+    if data.get("entity_name"):
+        write_entity_name(data["entity_name"])
     return data
 
 

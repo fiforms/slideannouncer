@@ -136,6 +136,11 @@ async def send_once() -> None:
     # its own.
     if response.get("device_name"):
         pairing.write_device_name(response["device_name"])
+    # Same sync, for the entity (church/school) this device is paired to —
+    # also covers a re-pair moving it to a different entity, which changes
+    # this without touching device_name at all.
+    if response.get("entity_name"):
+        pairing.write_entity_name(response["entity_name"])
 
     _write_status({
         "last_attempt_at": _now_iso(),

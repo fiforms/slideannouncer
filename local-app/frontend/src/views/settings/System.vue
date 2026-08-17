@@ -141,7 +141,8 @@ async function updateNow() {
     <section class="block">
       <h2>Device Info</h2>
       <dl v-if="deviceStatus" class="info-grid">
-        <dt>Hostname</dt><dd>{{ deviceStatus.hostname ?? '—' }}</dd>
+        <dt>Device Label</dt><dd>{{ deviceStatus.device_name ?? '—' }}</dd>
+        <dt>Paired Entity</dt><dd>{{ deviceStatus.entity_name ?? '—' }}</dd>
         <dt>Device UUID</dt><dd>{{ deviceStatus.device_uuid ?? '—' }}</dd>
         <dt>Current OS version</dt><dd>{{ versions.image_version || '—' }}</dd>
         <dt>Current app version</dt><dd>{{ versions.app_version || '—' }}</dd>
