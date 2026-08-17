@@ -42,6 +42,10 @@ let statusTimer = null
 
 const currentSlide = computed(() => playlist.value[currentIndex.value] ?? null)
 
+function isVideoSlide(slide) {
+  return !!slide?.mime_type?.startsWith('video/')
+}
+
 const needsAttention = computed(() => {
   if (!status.value) return false
   if (!status.value.paired) return true
@@ -57,9 +61,22 @@ function restartAdvanceTimer() {
   if (advanceTimer) clearInterval(advanceTimer)
   advanceTimer = null
   if (paused.value || playlist.value.length <= 1) return
+  // A 'play_through' video advances from its 'ended' event (onVideoEnded)
+  // instead of a fixed delay — skip the interval entirely for it.
+  const slide = currentSlide.value
+  if (isVideoSlide(slide) && slide.video_playback_mode === 'play_through') return
   advanceTimer = setInterval(() => {
     currentIndex.value = (currentIndex.value + 1) % playlist.value.length
   }, slideIntervalMs())
+}
+
+function onVideoEnded() {
+  const slide = currentSlide.value
+  if (isVideoSlide(slide) && slide.video_playback_mode === 'play_through') {
+    goToIndex(currentIndex.value + 1)
+  }
+  // hold_last_frame: no-op — the <video> (not looping) naturally freezes on
+  // its last frame until the interval-based advance (if any) fires.
 }
 
 async function refreshPlaylist() {
@@ -129,8 +146,19 @@ onUnmounted(() => {
 <template>
   <div class="kiosk">
     <transition name="crossfade" mode="out-in">
+      <video
+        v-if="currentSlide && isVideoSlide(currentSlide)"
+        :key="currentSlide.id"
+        :src="currentSlide.media_url"
+        :loop="currentSlide.video_playback_mode === 'loop'"
+        autoplay
+        muted
+        playsinline
+        class="slide-image"
+        @ended="onVideoEnded"
+      />
       <img
-        v-if="currentSlide"
+        v-else-if="currentSlide"
         :key="currentSlide.id"
         :src="currentSlide.media_url"
         class="slide-image"

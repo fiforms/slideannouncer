@@ -10,11 +10,18 @@ same reasons heartbeat.py gives.
 
 The v1 sync endpoint (SlideAnnouncerSyncController::index()) returns no
 `updated_at`/version field per slide — only `id, file_url, thumbnail_url,
-mime_type, sort_order, expires_at`. "New/changed" is therefore detected by
-comparing `file_url` against the manifest's last-known `file_url` for that
-id: the app never mutates a slide's stored file in place without changing
-its storage path (a re-upload is a new path), so a URL change is a
+mime_type, video_playback_mode, overlay_url, overlay_mime_type, sort_order,
+expires_at`. "New/changed" is therefore detected by comparing `file_url`
+(and, separately, `overlay_url`) against the manifest's last-known values
+for that id: the app never mutates a slide's stored file in place without
+changing its storage path (a re-upload is a new path), so a URL change is a
 reliable proxy for "content changed" without a real version field.
+
+`overlay_url` is a slide's optional 'slide-overlay' media (uploaded from the
+admin/contributor Edit pages' Media Manager) — a future feature will
+composite it on top of the base slide on-screen. This daemon only fetches
+and caches it (as `<id>-overlay.<ext>`) so that feature has a file to work
+with; the kiosk frontend does not render it yet.
 
 Failure handling mirrors heartbeat.py: a network/timeout error leaves the
 last-synced manifest, media, and settings on disk untouched (the kiosk
@@ -101,13 +108,15 @@ def read_settings() -> dict:
     return _read_json(SETTINGS_FILE, {})
 
 
-def _local_filename(slide: dict) -> str:
-    """<id>.<ext> — id-keyed so a changed file_url for the same slide id
-    overwrites the same on-disk file instead of accumulating orphans."""
-    ext = Path(urlparse(slide["file_url"]).path).suffix
+def _local_filename(slide: dict, suffix: str = "", url_key: str = "file_url", mime_key: str = "mime_type") -> str:
+    """<id><suffix>.<ext> — id-keyed so a changed URL for the same slide id
+    overwrites the same on-disk file instead of accumulating orphans.
+    `suffix` distinguishes a slide's base file (e.g. "3.jpg") from its
+    optional overlay (e.g. "3-overlay.png")."""
+    ext = Path(urlparse(slide[url_key]).path).suffix
     if not ext:
-        ext = mimetypes.guess_extension(slide.get("mime_type") or "") or ""
-    return f"{slide['id']}{ext}"
+        ext = mimetypes.guess_extension(slide.get(mime_key) or "") or ""
+    return f"{slide['id']}{suffix}{ext}"
 
 
 def _is_expired(entry: dict, now: datetime) -> bool:
@@ -135,6 +144,8 @@ def _build_active_playlist(manifest: dict) -> list:
             "id": entry["id"],
             "media_url": f"/media/{entry['local_filename']}",
             "mime_type": entry.get("mime_type"),
+            "video_playback_mode": entry.get("video_playback_mode"),
+            "overlay_media_url": f"/media/{entry['overlay_local_filename']}" if entry.get("overlay_local_filename") else None,
             "sort_order": entry.get("sort_order", 0),
         }
         for entry in manifest.values()
@@ -204,13 +215,40 @@ async def sync_once() -> None:
                         new_manifest[slide_id] = previous
                     continue
 
-            new_manifest[slide_id] = {**slide, "id": slide_id, "local_filename": local_filename}
+            entry = {**slide, "id": slide_id, "local_filename": local_filename}
+
+            # Optional 'slide-overlay' media — cached alongside the base
+            # file so a future feature can composite it; not consumed by
+            # the kiosk frontend yet.
+            overlay_url = slide.get("overlay_url")
+            if overlay_url:
+                overlay_filename = _local_filename(slide, suffix="-overlay", url_key="overlay_url", mime_key="overlay_mime_type")
+                overlay_changed = previous is None or previous.get("overlay_url") != overlay_url
+                if overlay_changed:
+                    try:
+                        await _download(client, overlay_url, MEDIA_DIR / overlay_filename)
+                        entry["overlay_local_filename"] = overlay_filename
+                    except httpx.HTTPError:
+                        # Same "keep the cached one, retry next cycle" rule
+                        # as the base file above.
+                        if previous and previous.get("overlay_local_filename"):
+                            entry["overlay_local_filename"] = previous["overlay_local_filename"]
+                else:
+                    entry["overlay_local_filename"] = previous.get("overlay_local_filename")
+            elif previous and previous.get("overlay_local_filename"):
+                # Overlay was removed from this slide server-side — drop the
+                # now-orphaned cached file.
+                (MEDIA_DIR / previous["overlay_local_filename"]).unlink(missing_ok=True)
+
+            new_manifest[slide_id] = entry
 
     # Slides that disappeared from the server response (deleted, expired,
     # or reassigned away from this entity) lose their cached media too.
     for slide_id, entry in manifest.items():
         if slide_id not in seen_ids:
             (MEDIA_DIR / entry["local_filename"]).unlink(missing_ok=True)
+            if entry.get("overlay_local_filename"):
+                (MEDIA_DIR / entry["overlay_local_filename"]).unlink(missing_ok=True)
 
     _write_json(MANIFEST_FILE, new_manifest)
     _write_json(SETTINGS_FILE, settings)
