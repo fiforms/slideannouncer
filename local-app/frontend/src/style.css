@@ -22,7 +22,7 @@ html {
      lands near the old fixed 16px base at 1080p (16.2px) and doubles
      proportionally at 4K (32.4px); clamp keeps it sane at extreme
      viewport heights (e.g. a narrow debug window). */
-  font-size: clamp(14px, 1.5vh, 34px);
+  font-size: clamp(14px, 2.5vh, 90px);
 }
 
 html, body, #app {

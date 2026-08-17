@@ -141,16 +141,14 @@ async function updateNow() {
     <section class="block">
       <h2>Device Info</h2>
       <dl v-if="deviceStatus" class="info-grid">
-        <dt>Device Label</dt><dd>{{ deviceStatus.device_name ?? '—' }}</dd>
+        <dt>Device Label</dt>
+        <dd v-if="deviceStatus.paired">{{ deviceStatus.device_name ?? '—' }}</dd>
+        <dd v-else class="hint">Not paired yet</dd>
         <dt>Paired Entity</dt><dd>{{ deviceStatus.entity_name ?? '—' }}</dd>
         <dt>Device UUID</dt><dd>{{ deviceStatus.device_uuid ?? '—' }}</dd>
         <dt>Current OS version</dt><dd>{{ versions.image_version || '—' }}</dd>
         <dt>Current app version</dt><dd>{{ versions.app_version || '—' }}</dd>
         <dt>Paired</dt><dd>{{ deviceStatus.paired ? 'Yes' : 'No' }}</dd>
-        <dt>Last heartbeat</dt>
-        <dd>{{ deviceStatus.heartbeat?.last_success_at ?? 'Never' }}</dd>
-        <dt v-if="deviceStatus.heartbeat?.last_error">Last heartbeat error</dt>
-        <dd v-if="deviceStatus.heartbeat?.last_error">{{ deviceStatus.heartbeat.last_error }}</dd>
       </dl>
       <p v-if="deviceStatus && !deviceStatus.paired" class="hint">
         Not paired yet — see "Pairing" in the left panel.
@@ -160,10 +158,6 @@ async function updateNow() {
     <section class="block">
       <div class="tile result">
         <h2>Software Update</h2>
-        <p class="hint">
-          Checks the AnnouncementSlides server for a newer OS image or local
-          app release. Reports "not paired" until this device has been paired.
-        </p>
 
         <!-- An update is running (this tab's click, another tab's click, or the
              nightly timer) — the progress block replaces the check result
