@@ -14,6 +14,7 @@ readable rather than owner-only so the interactive `slideadmin` account
 `slide-announcer-update check`/`install` over SSH without sudo; see that
 CLI's own docstring.
 """
+import json
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +25,12 @@ import identity
 
 SERVER_URL_FILE = Path("/etc/slide-announcer/server-url")
 DEVICE_TOKEN_FILE = Path("/data/device-token")
+# Written by provisioning/firstboot.py on every boot from the boot
+# partition's slideannouncer.yaml `language` key — see that script's
+# write_language_boot_hint(). Purely a pre-pairing default; never touched
+# by this module, only read as a fallback by read_effective_language()
+# below.
+LANGUAGE_BOOT_HINT_FILE = Path("/data/status/language-boot-hint.json")
 # The server is authoritative for this device's display name once paired
 # (an entity admin can rename it from the fleet UI) — this file is just a
 # local cache so the Pairing screen has something to show immediately after
@@ -37,6 +44,11 @@ DEVICE_NAME_FILE = Path("/data/status/device-name")
 # re-pair can move a device to a different entity without device_name
 # changing at all.
 ENTITY_NAME_FILE = Path("/data/status/entity-name")
+# Server-assigned language, once paired — kept in sync by heartbeat.py from
+# each heartbeat response's `language` field, same pattern as
+# DEVICE_NAME_FILE/ENTITY_NAME_FILE. Always wins over LANGUAGE_BOOT_HINT_FILE
+# once it exists; see read_effective_language().
+LANGUAGE_FILE = Path("/data/status/language")
 
 # Wiped together, always — see this module's docstring for the three
 # triggers that share this list (explicit unpair, 401 revocation, and
@@ -47,6 +59,7 @@ WIPE_PATHS = [
     DEVICE_TOKEN_FILE,
     DEVICE_NAME_FILE,
     ENTITY_NAME_FILE,
+    LANGUAGE_FILE,
     Path("/data/slides"),
     Path("/data/local-app/settings.json"),
 ]
@@ -97,6 +110,42 @@ def write_entity_name(name: str) -> None:
     ENTITY_NAME_FILE.parent.mkdir(parents=True, exist_ok=True)
     ENTITY_NAME_FILE.write_text(name)
     ENTITY_NAME_FILE.chmod(0o644)
+
+
+def read_language() -> str | None:
+    """Server-assigned language code, if this device has paired and the
+    server has one on file. None if unpaired, or paired but not yet
+    assigned one — see read_effective_language() for the boot-yaml
+    fallback that applies in both of those cases."""
+    if not LANGUAGE_FILE.exists():
+        return None
+    return LANGUAGE_FILE.read_text().strip() or None
+
+
+def write_language(code: str) -> None:
+    LANGUAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    LANGUAGE_FILE.write_text(code)
+    LANGUAGE_FILE.chmod(0o644)
+
+
+def read_language_boot_hint() -> str | None:
+    if not LANGUAGE_BOOT_HINT_FILE.exists():
+        return None
+    try:
+        data = json.loads(LANGUAGE_BOOT_HINT_FILE.read_text())
+    except json.JSONDecodeError:
+        return None
+    return data.get("code")
+
+
+def read_effective_language() -> str | None:
+    """The language the device should actually use right now: the
+    server-assigned value once paired (authoritative and never reverts to
+    the boot-yaml hint while paired — see LOCALIZATION_TODO.md), falling
+    back to provisioning/firstboot.py's boot-yaml hint before pairing or if
+    the server hasn't assigned one yet.
+    """
+    return read_language() or read_language_boot_hint()
 
 
 def read_paired_at() -> str | None:

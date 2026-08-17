@@ -30,6 +30,7 @@ IDENTITY_KEY_PATH = Path("/data/identity.key")
 FIRSTBOOT_MARKER = Path("/data/.firstboot-complete")
 STATUS_DIR = Path("/data/status")
 SETUP_MODE_STATUS = STATUS_DIR / "setup-mode.json"
+LANGUAGE_BOOT_HINT_STATUS = STATUS_DIR / "language-boot-hint.json"
 BACKEND_GROUP = "slideannouncer"
 
 # Paths a real wipe-and-repair (per Heartbeat/Kiosk-display design) would
@@ -297,10 +298,29 @@ def detect_setup_mode() -> None:
     SETUP_MODE_STATUS.chmod(0o644)
 
 
+def write_language_boot_hint() -> None:
+    """Writes the boot-yaml `language` key (e.g. "es") to a status file the
+    backend reads as a pre-pairing default — see pairing.py's
+    `read_effective_language()`. This is only ever a *hint*: once the
+    device pairs, the server-assigned language is authoritative and this
+    file is never consulted again while paired (same precedence as
+    device_name/entity_name). Runs every boot, not just first boot, so
+    editing the boot partition's language key and rebooting an unpaired
+    device picks up the change.
+    """
+    config = load_boot_config()
+    ensure_status_dir()
+    LANGUAGE_BOOT_HINT_STATUS.write_text(json.dumps({"code": config.get("language")}))
+    # Same rationale as SETUP_MODE_STATUS.chmod() below — this script runs
+    # as root, the backend that reads it back does not.
+    LANGUAGE_BOOT_HINT_STATUS.chmod(0o644)
+
+
 def main() -> int:
     run_once_setup()
     ensure_identity()
     detect_setup_mode()
+    write_language_boot_hint()
     return 0
 
 

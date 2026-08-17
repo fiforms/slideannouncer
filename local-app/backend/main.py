@@ -59,6 +59,7 @@ def local_status():
         "paired_at": pairing.read_paired_at(),
         "device_name": pairing.read_device_name(),
         "entity_name": pairing.read_entity_name(),
+        "language": pairing.read_effective_language(),
         "heartbeat": heartbeat.read_status(),
         "sync": sync.read_status(),
     }

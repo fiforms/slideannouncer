@@ -141,6 +141,13 @@ async def send_once() -> None:
     # this without touching device_name at all.
     if response.get("entity_name"):
         pairing.write_entity_name(response["entity_name"])
+    # Server is authoritative for language once paired too — same
+    # rationale as device_name/entity_name above. Unlike those two fields,
+    # `language` can legitimately be absent (no language assigned to this
+    # device yet), in which case the boot-yaml hint from provisioning/
+    # firstboot.py keeps applying — see pairing.read_effective_language().
+    if response.get("language"):
+        pairing.write_language(response["language"])
 
     _write_status({
         "last_attempt_at": _now_iso(),
