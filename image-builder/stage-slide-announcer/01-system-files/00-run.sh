@@ -377,37 +377,22 @@ install -m 644 files/provisioning/slideannouncer.yaml.example \
 if [ -f files/ROOT_DEV_PASSWORD ]; then
 	export ROOT_DEV_PASSWORD="$(cat files/ROOT_DEV_PASSWORD)"
 fi
-export WIFI_COUNTRY="$(cat files/WIFI_COUNTRY)"
 
 on_chroot << 'EOF'
 if [ -n "${ROOT_DEV_PASSWORD:-}" ]; then
 	echo "root:${ROOT_DEV_PASSWORD}" | chpasswd
 fi
 
-# The WiFi radio ships soft rfkill-blocked until a regulatory domain is
-# set — a kernel/cfg80211 requirement, not something NetworkManager/nmcli
-# can work around from the device side (see SLIDE_ANNOUNCER_WIFI_COUNTRY in
-# image-builder/.env.example). raspi-config's own do_wifi_country is used
-# rather than hand-writing config files, since it's the one mechanism the
-# Raspberry Pi Foundation keeps correct across OS releases regardless of
-# which network stack is active. `|| true`: this chroot has no real WiFi
-# radio (qemu-user, build host's kernel underneath), so the live
-# rfkill-unblock/`iw reg set` side effects raspi-config also attempts can
-# harmlessly fail here — what actually matters is the persisted config it
-# writes, applied for real on the device's first real boot.
-# Confirmed on real hardware — `rfkill list` shows wifi unblocked on first
-# boot without a manual raspi-config run.
-raspi-config nonint do_wifi_country "${WIFI_COUNTRY}" || true
-
-# Belt-and-suspenders alongside build.sh setting WPA_COUNTRY for pi-gen's
-# own stage2/02-net-tweaks/01-run.sh (which otherwise bakes
-# WirelessEnabled=false here when WPA_COUNTRY is unset — a NetworkManager-
-# level radio-off flag, separate from the kernel rfkill block above):
-# force it back to true unconditionally, regardless of what that earlier
-# stage decided. /var is a tmpfs overlay reset every boot (see
-# read-only-root, above), so whatever's baked into this real file is what
-# every single boot actually gets — a live `nmcli radio wifi on` on a
-# running device never survives a reboot without this being right here.
+# pi-gen's own stage2/02-net-tweaks/01-run.sh bakes WirelessEnabled=false
+# into NetworkManager.state whenever WPA_COUNTRY is unset (a
+# NetworkManager-level radio-off flag; build.sh deliberately leaves
+# WPA_COUNTRY unset now that the WiFi regulatory domain is set via
+# network-config's regulatory-domain instead — see that file's own
+# comment). Force it back to true unconditionally here regardless. /var is
+# a tmpfs overlay reset every boot (see read-only-root, above), so
+# whatever's baked into this real file is what every single boot actually
+# gets — a live `nmcli radio wifi on` on a running device never survives a
+# reboot without this being right here.
 mkdir -p /var/lib/NetworkManager
 cat > /var/lib/NetworkManager/NetworkManager.state << 'NMEOF'
 [main]

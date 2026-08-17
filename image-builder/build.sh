@@ -113,9 +113,11 @@ esac
 # requirement, not something nmcli/NetworkManager can work around from the
 # device side), so without this every device would need someone at the
 # console running raspi-config by hand before Settings > Network's WiFi
-# scan could ever see anything. Optional, defaults to US — this fleet's
-# deployment target — since getting a device on WiFi at all matters more
-# here than failing the build over a missing regulatory code.
+# scan could ever see anything. Seeded into the staged network-config's
+# regulatory-domain below (applied by cloud-init/netplan at first boot), not
+# baked in via raspi-config at build time. Optional, defaults to US — this
+# fleet's deployment target — since getting a device on WiFi at all matters
+# more here than failing the build over a missing regulatory code.
 SLIDE_ANNOUNCER_WIFI_COUNTRY="${SLIDE_ANNOUNCER_WIFI_COUNTRY:-US}"
 if ! [[ "$SLIDE_ANNOUNCER_WIFI_COUNTRY" =~ ^[A-Z]{2}$ ]]; then
 	echo "build.sh: SLIDE_ANNOUNCER_WIFI_COUNTRY must be a 2-letter ISO 3166-1 code (e.g. US), got: ${SLIDE_ANNOUNCER_WIFI_COUNTRY}" >&2
@@ -260,6 +262,19 @@ rm -rf "$FILES_DIR"
 mkdir -p "$FILES_DIR"
 rsync -a --exclude 'backend/venv' "${REPO_ROOT}/system/" "${FILES_DIR}/system/"
 rsync -a "${REPO_ROOT}/provisioning/" "${FILES_DIR}/provisioning/"
+# Seed the staged network-config's WiFi regulatory-domain from
+# SLIDE_ANNOUNCER_WIFI_COUNTRY (validated above) — see that file's own
+# comment for why this block is live rather than commented out. Netplan
+# applies "regulatory-domain" itself (an "iw reg set" at cloud-init's first
+# boot), independent of NetworkManager handling the actual WiFi connection,
+# so this doesn't conflict with the rest of that file's NetworkManager-era
+# examples.
+{
+	echo ""
+	echo "network:"
+	echo "  version: 2"
+	echo "  regulatory-domain: ${SLIDE_ANNOUNCER_WIFI_COUNTRY}"
+} >> "${FILES_DIR}/system/cloud-init/network-config"
 # SSH is now always `systemctl enable`d at the image level
 # (image-builder/config's ENABLE_SSH=1) and password authentication is
 # always disabled globally (system/ssh/pubkey-only.conf, unconditionally
@@ -329,7 +344,6 @@ echo "==> Building slideannouncer ${OS_VERSION} (provenance: date=${BUILD_DATE} 
 cp "$RAUC_KEYRING_CERT_PATH" "${FILES_DIR}/rauc-keyring.pem"
 
 echo "$SLIDE_ANNOUNCER_SERVER_URL" > "${FILES_DIR}/SERVER_URL"
-echo "$SLIDE_ANNOUNCER_WIFI_COUNTRY" > "${FILES_DIR}/WIFI_COUNTRY"
 # Written even when empty (as a genuinely empty file, not just a blank
 # line) — 00-run.sh checks `[ -s ... ]` (non-empty) so an absent/blank
 # setting is just a no-op, no branching needed here.
@@ -378,16 +392,16 @@ cat "${HERE}/config" > "$CONFIG_FILE"
 {
 	echo "DISABLE_FIRST_BOOT_USER_RENAME=1"
 	echo "FIRST_USER_PASS=${USER_PASS}"
-	# pi-gen's own stage2/02-net-tweaks/01-run.sh checks this var: set, it
-	# calls raspi-config itself (redundant with, but harmless alongside,
-	# our own call in stage-slide-announcer/01-system-files/00-run.sh);
-	# UNSET, it instead bakes WirelessEnabled=false into
-	# /var/lib/NetworkManager/NetworkManager.state — a *separate* NM-level
-	# radio-off flag from the kernel rfkill block, and one that would
-	# otherwise re-assert on every boot (that file lives on /var, which is
-	# a tmpfs overlay reset every boot per the read-only-rootfs design, so
-	# a live `nmcli radio wifi on` never survives a reboot without this).
-	echo "WPA_COUNTRY=${SLIDE_ANNOUNCER_WIFI_COUNTRY}"
+	# WPA_COUNTRY deliberately left unset: the WiFi regulatory domain is now
+	# set via network-config's regulatory-domain (seeded above from
+	# SLIDE_ANNOUNCER_WIFI_COUNTRY), not pi-gen's own stage2/02-net-tweaks/
+	# 01-run.sh. With WPA_COUNTRY unset, that stock stage instead bakes
+	# WirelessEnabled=false into /var/lib/NetworkManager/NetworkManager.state
+	# — a NetworkManager-level radio-off flag, separate from the kernel
+	# rfkill block — which stage-slide-announcer/01-system-files/00-run.sh
+	# unconditionally overrides back to true afterward (see that script's
+	# own comment; /var is a tmpfs overlay reset every boot, so whatever's
+	# baked into that real file is what every boot actually gets).
 } >> "$CONFIG_FILE"
 echo "==> Local account 'slideadmin' password (console/keyboard login only): ${USER_PASS}"
 
