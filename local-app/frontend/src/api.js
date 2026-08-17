@@ -42,5 +42,6 @@ export const api = {
   triggerUpdateApply: () => request('/api/local/system/update-apply', { method: 'POST' }),
   updateProgress: () => request('/api/local/system/update-progress'),
   reboot: () => request('/api/local/system/reboot', { method: 'POST' }),
+  sleepDisplay: () => request('/api/local/system/sleep', { method: 'POST' }),
   factoryReset: () => request('/api/local/system/factory-reset', { method: 'POST' }),
 }

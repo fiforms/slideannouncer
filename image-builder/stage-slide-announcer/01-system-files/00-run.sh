@@ -48,6 +48,18 @@ install -m 755 files/system/scripts/bootfw-remount.sh "${ROOTFS_DIR}/usr/local/s
 install -m 755 files/system/scripts/vtlock-apply.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-vtlock-apply"
 install -m 755 files/system/scripts/home-dirs.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-home-dirs"
 install -m 755 files/system/scripts/ssh-gate.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-ssh-gate"
+install -m 755 files/system/scripts/power-button-monitor.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-power-button-monitor"
+install -m 755 files/system/scripts/display-power.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-display-power"
+
+# HandlePowerKey=ignore: without it, systemd-logind's own default power-key
+# handling (suspend) races slide-announcer-power-button.service for the
+# remote's KEY_POWER press — and always wins, since it's logind's own
+# built-in behavior rather than a plain evdev listener. The Pi can't
+# reliably resume from that suspend (see the drop-in's own comment), so
+# this hands the key over to our monitor entirely.
+install -d "${ROOTFS_DIR}/etc/systemd/logind.conf.d"
+install -m 644 files/system/logind/slide-announcer-power-button.conf \
+	"${ROOTFS_DIR}/etc/systemd/logind.conf.d/"
 
 install -d "${ROOTFS_DIR}/etc/systemd/system/ssh.service.d"
 install -m 644 files/system/ssh/ssh-gate.conf \
@@ -475,6 +487,8 @@ systemctl enable slide-announcer-local-app-seed.service
 systemctl enable slide-announcer-backend.service
 systemctl enable slide-announcer-vtlock.service
 systemctl enable slide-announcer-kiosk.service
+systemctl enable slide-announcer-power-button-dirs.service
+systemctl enable slide-announcer-power-button.service
 systemctl enable slide-announcer-tryboot-check.service
 systemctl enable slide-announcer-local-app-updater.timer
 systemctl enable slide-announcer-os-updater.timer

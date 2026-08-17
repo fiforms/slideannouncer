@@ -1,0 +1,21 @@
+[Unit]
+Description=Slide Announcer power-button remote: toggle kiosk sleep/wake
+After=slide-announcer-power-button-dirs.service
+Requires=slide-announcer-power-button-dirs.service
+
+[Service]
+Type=simple
+# Unprivileged, same as slide-announcer-backend.service — reading
+# /dev/input/event* only needs the `input` group, and everything
+# slide-announcer-display-power itself does (systemctl stop/start the
+# kiosk unit, vcgencmd display_power) is already permitted for this
+# account without sudo (see display-power.py's own docstring). No reason
+# for this daemon to run as root.
+User=slideannouncer
+Group=slideannouncer
+ExecStart=/usr/local/sbin/slide-announcer-power-button-monitor
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

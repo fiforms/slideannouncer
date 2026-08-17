@@ -90,6 +90,43 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   above). Deliberately omits `<default/>`, so no other labwc keybindings
   (Alt-Tab, etc.) get loaded either — this kiosk has one fullscreen
   surface and nothing to switch between.
+- `scripts/display-power.py` (installed as
+  `/usr/local/sbin/slide-announcer-display-power`) — the actual sleep/wake
+  mechanism: `sleep` stops `slide-announcer-kiosk.service` then
+  `vcgencmd display_power 0`; `wake` is the reverse; `toggle`/`status`
+  read/flip a marker file at `/run/slide-announcer/kiosk-sleeping` (tmpfs —
+  always starts awake on boot). Deliberately a standalone CLI, not logic
+  embedded in whatever happens to trigger it, so every trigger (today, the
+  remote's power key; later, a schedule or a web UI menu button) shares
+  one mechanism instead of each re-implementing it. Callable directly,
+  without sudo, as root, `slideannouncer`, or `slideadmin` — the
+  `systemctl`/`vcgencmd` calls it makes are already permitted for all
+  three (see the script's own docstring for exactly why: the existing
+  `slide-announcer-*.service` polkit grant, and both accounts' persistent
+  `video` group membership).
+- `slide-announcer-power-button-dirs.service` — creates
+  `/run/slide-announcer` (root:`slideannouncer` group, mode 0775) before
+  anything needs to write the marker file above — group, not owner, is
+  what lets `slideannouncer`/`slideadmin` create/remove it themselves.
+- `slide-announcer-power-button.service` + `scripts/power-button-monitor.py`
+  — runs as the unprivileged `slideannouncer` user (reading
+  `/dev/input/event*` only needs the `input` group, which that account
+  already has), independent of `slide-announcer-kiosk.service` (it has to
+  keep running while the kiosk is stopped). Scans `/dev/input/event*` for
+  any device supporting `KEY_POWER` (the remote's power button —
+  capability-based, not pinned to a vendor/product ID, since this device
+  only ever has the one remote) and calls
+  `slide-announcer-display-power toggle` on each press. Added because
+  logind's default power-key handling (suspend) is what the remote used to
+  trigger, and the Pi can't reliably resume from that suspend — see
+  `logind/`, below, which is what actually stops logind from racing this
+  daemon for the same keypress.
+- `logind/slide-announcer-power-button.conf` — installed to
+  `/etc/systemd/logind.conf.d/`: `HandlePowerKey=ignore` +
+  `HandlePowerKeyLongPress=ignore`, so logind's own suspend-on-power-key
+  behavior gets out of the way of `slide-announcer-power-button.service`
+  above entirely. Only takes effect once `systemd-logind`
+  restarts/reboots.
 - `nginx-slide-announcer.conf` — serves `/data/local-app/current/frontend`
   (the Vue SPA, following the `current` symlink at request time — see
   `../local-app/README.md`) and reverse-proxies `/api/*` to the backend on

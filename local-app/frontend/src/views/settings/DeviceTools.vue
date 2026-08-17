@@ -14,6 +14,27 @@ const confirmingReboot = ref(false)
 const rebooting = ref(false)
 const rebootError = ref(null)
 
+const sleeping = ref(false)
+const sleepError = ref(null)
+
+async function sleepDisplay() {
+  sleeping.value = true
+  sleepError.value = null
+  try {
+    await api.sleepDisplay()
+  } catch (err) {
+    // Same reasoning as reboot()'s catch below: a TypeError here means
+    // the kiosk — the very browser rendering this page — already went
+    // down as intended (systemctl stop slide-announcer-kiosk.service),
+    // not a real failure. Nothing un-sets `sleeping` on that path since
+    // there's no page left to update; it only matters on a genuine error.
+    if (!(err instanceof TypeError)) {
+      sleepError.value = err.message
+      sleeping.value = false
+    }
+  }
+}
+
 async function reboot() {
   rebooting.value = true
   rebootError.value = null
@@ -75,12 +96,17 @@ async function factoryReset() {
       </div>
       <div v-else-if="!confirmingReboot" class="actions">
         <button class="tile action" @click="confirmingReboot = true">{{ t('settings.deviceTools.restartButton') }}</button>
+        <button class="tile action" :disabled="sleeping" @click="sleepDisplay">
+          {{ sleeping ? t('settings.deviceTools.sleeping') : t('settings.deviceTools.sleepButton') }}
+        </button>
       </div>
       <div v-else class="actions">
         <button class="tile action danger" @click="reboot">{{ t('settings.deviceTools.restartConfirm') }}</button>
         <button class="tile action" @click="confirmingReboot = false">{{ t('common.cancel') }}</button>
       </div>
       <p v-if="rebootError" class="pill warn">{{ rebootError }}</p>
+      <p v-if="sleepError" class="pill warn">{{ sleepError }}</p>
+      <p class="hint">{{ t('settings.deviceTools.sleepHint') }}</p>
     </section>
 
     <section class="block">

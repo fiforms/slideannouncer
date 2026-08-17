@@ -1,0 +1,16 @@
+[Unit]
+Description=Create /run/slide-announcer for the display-power sleep-state marker
+Before=slide-announcer-power-button.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/mkdir -p -m 0775 /run/slide-announcer
+# Group (not owner) is what lets slideannouncer/slideadmin — both members
+# of this group, see 00-run.sh — write the sleep-state marker file
+# themselves when calling slide-announcer-display-power directly, not just
+# root.
+ExecStart=/bin/chgrp slideannouncer /run/slide-announcer
+
+[Install]
+WantedBy=multi-user.target

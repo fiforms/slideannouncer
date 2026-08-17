@@ -13,6 +13,8 @@ import asyncio
 import json
 from pathlib import Path
 
+DISPLAY_POWER_CLI = "/usr/local/sbin/slide-announcer-display-power"
+
 UPDATE_CHECK_STATUS_FILE = Path("/data/status/update-check.json")
 # Written by whichever of os-updater.py / local_app_updater.py is currently
 # running (see either script's PROGRESS_FILE comment) — one shared file so
@@ -50,6 +52,28 @@ async def reboot() -> None:
         raise SystemCommandError(
             "systemctl reboot failed — check system/polkit/50-slide-announcer-system.rules is installed"
         )
+
+
+async def sleep_display() -> None:
+    """Stops slide-announcer-kiosk.service and blanks the HDMI output —
+    see system/scripts/display-power.py. No polkit rule needed for this
+    one: unlike reboot() above, `slide-announcer-display-power` itself is
+    already callable by this process's own unprivileged `slideannouncer`
+    user (systemctl on our own unit is polkit-granted; vcgencmd only needs
+    the `video` group, which this account already has) — this just shells
+    out to it directly.
+
+    There's no matching wake_display() here on purpose: once the kiosk is
+    stopped the browser rendering this very Settings page is gone, so a
+    "Wake" button in this UI could never actually be reached. Waking back
+    up is the remote's power button, or `slide-announcer-display-power
+    wake` run directly (SSH as slideadmin, or once a schedule/timer exists
+    for it).
+    """
+    proc = await asyncio.create_subprocess_exec(DISPLAY_POWER_CLI, "sleep")
+    await proc.wait()
+    if proc.returncode != 0:
+        raise SystemCommandError(f"{DISPLAY_POWER_CLI} sleep failed (exit {proc.returncode})")
 
 
 async def trigger_update_check() -> dict | None:

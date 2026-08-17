@@ -189,6 +189,15 @@ async def system_reboot():
     return {"ok": True}
 
 
+@app.post("/api/local/system/sleep")
+async def system_sleep():
+    try:
+        await system_control.sleep_display()
+    except system_control.SystemCommandError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"ok": True}
+
+
 @app.post("/api/local/system/factory-reset")
 async def system_factory_reset():
     try:
