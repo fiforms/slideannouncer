@@ -15,6 +15,16 @@
   box-sizing: border-box;
 }
 
+html {
+  /* Every size in this app is already expressed in rem, so scaling the
+     root font-size against viewport height scales the whole UI with the
+     display instead of it reading tiny on a 4K TV vs. a 1080p one. 1.5vh
+     lands near the old fixed 16px base at 1080p (16.2px) and doubles
+     proportionally at 4K (32.4px); clamp keeps it sane at extreme
+     viewport heights (e.g. a narrow debug window). */
+  font-size: clamp(14px, 1.5vh, 34px);
+}
+
 html, body, #app {
   height: 100%;
   margin: 0;
