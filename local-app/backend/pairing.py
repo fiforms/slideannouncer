@@ -20,10 +20,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
+import yaml
 
 import identity
 
-SERVER_URL_FILE = Path("/etc/slide-announcer/server-url")
+BOOT_YAML = Path("/boot/firmware/slideannouncer.yaml")
 DEVICE_TOKEN_FILE = Path("/data/device-token")
 # Written by provisioning/firstboot.py on every boot from the boot
 # partition's slideannouncer.yaml `language` key — see that script's
@@ -70,12 +71,19 @@ class PairingError(RuntimeError):
 
 
 def read_server_url() -> str:
-    if not SERVER_URL_FILE.exists():
-        raise PairingError(
-            f"{SERVER_URL_FILE} missing — this image was built without "
-            "SLIDE_ANNOUNCER_SERVER_URL set."
-        )
-    return SERVER_URL_FILE.read_text().strip()
+    """The AnnouncementSlides server this device talks to — a `server_url`
+    scalar in /boot/firmware/slideannouncer.yaml (see that file's own
+    comment), not a build-time constant, so the same image can serve
+    multiple independent servers just by swapping this file. Fails closed
+    (same spirit as ssh-gate.py) rather than silently doing nothing.
+    """
+    if not BOOT_YAML.exists():
+        raise PairingError(f"{BOOT_YAML} is missing — this device has no boot config at all.")
+    data = yaml.safe_load(BOOT_YAML.read_text()) or {}
+    server_url = data.get("server_url")
+    if not server_url:
+        raise PairingError(f"server_url is not set in {BOOT_YAML}.")
+    return server_url.rstrip("/")
 
 
 def is_paired() -> bool:

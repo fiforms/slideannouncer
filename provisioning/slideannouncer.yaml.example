@@ -13,7 +13,22 @@
 default_language: en
 
 
-# Set to "locked" to disable Ctrl+Alt+F# virtual-console switching on this 
+# The AnnouncementSlides server this device talks to (pairing/sync/
+# heartbeat, and OS OTA update checks) — e.g. https://your-server.example.org,
+# no trailing slash. Read fresh by the local-app backend and
+# slide-announcer-update alike on every request, so changing it (and
+# rebooting, or restarting slide-announcer-backend) is all that's needed
+# to move a device to a different server — no rebuild/reflash required.
+# This is what lets one image serve multiple independent servers: build it
+# once, then set this per-device (or pre-provision it onto the boot
+# partition before first boot, same as network-config below).
+# Missing/blank here is a hard failure — pairing, sync, heartbeat, and OTA
+# checks all refuse to run rather than silently doing nothing.
+
+# server_url: https://your-server.example.org
+
+
+# Set to "locked" to disable Ctrl+Alt+F# virtual-console switching on this
 # device (system/scripts/vtlock-apply.py, run once per boot before the
 # kiosk starts). Comment this line to enable VT switching, use 
 # Ctrl+Alt+F3 (VT3) for debugging info.

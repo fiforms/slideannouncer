@@ -129,11 +129,15 @@ commit branch — no real failure has ever been forced through it. See
   throwaway single self-signed pair) or `production` (an offline CA plus
   a rotatable signing cert issued by it — see its own header comment and
   the `MANIFEST.txt` it writes for what to back up and how).
-- `.env.example` — copy to `.env` (gitignored) and set `SLIDE_ANNOUNCER_SERVER_URL`
-  (the fleet's AnnouncementSlides server, baked into every image at
-  `/etc/slide-announcer/server-url`) plus `RAUC_CERT_PATH`/`RAUC_KEY_PATH`
-  (and `RAUC_KEYRING_CERT_PATH` for a production PKI) — `build.sh` refuses
-  to build without all of these set. `SLIDE_ANNOUNCER_WIFI_COUNTRY` is
+- `.env.example` — copy to `.env` (gitignored) and set `RAUC_CERT_PATH`/
+  `RAUC_KEY_PATH` (and `RAUC_KEYRING_CERT_PATH` for a production PKI) —
+  `build.sh` refuses to build without these set. `SLIDE_ANNOUNCER_SERVER_URL`
+  is optional: the server a device pairs/syncs/checks OTA updates against
+  now lives in `slideannouncer.yaml` on the boot partition, not baked into
+  the image, so one image can serve multiple fleets/servers just by
+  swapping that file per device — setting this var only seeds a default
+  into it, so a freshly flashed device still works without a post-flash
+  edit. `SLIDE_ANNOUNCER_WIFI_COUNTRY` is
   optional (defaults to `US`) — the WiFi radio ships soft rfkill-blocked
   by the kernel until a regulatory domain is set, regardless of
   NetworkManager config, so this needs to be right for wherever devices
@@ -160,7 +164,8 @@ First, `.env` (skip if you already have one set up):
 ```bash
 cd image-builder
 cp .env.example .env
-# edit .env: SLIDE_ANNOUNCER_SERVER_URL=https://your-server.example.org
+# optionally edit .env: SLIDE_ANNOUNCER_SERVER_URL=https://your-server.example.org
+# (seeds a default; can also be set later per-device via slideannouncer.yaml)
 
 ./generate-rauc-cert.sh dev     # dev/test only — prints paths to use below
 # ... or for a real fleet:

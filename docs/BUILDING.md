@@ -15,20 +15,24 @@ stubbed.
   (device itself never runs Node; only the built `dist/` goes on the image)
 - ~10GB free disk space
 
-## One-time setup: server URL + RAUC signing cert/key
+## One-time setup: RAUC signing cert/key
 
 `build.sh` checks all of this up front and exits cleanly with instructions
 if anything's missing, before running the long pi-gen build.
 
-**Server URL** — every device built from the image needs to know which
-AnnouncementSlides server to pair/sync/check-updates against. One
-self-hosted server per fleet, so this is a single build-time value, not a
-per-device setting:
+**Server URL** — which AnnouncementSlides server a device pairs/syncs/
+checks-updates against lives in `slideannouncer.yaml` on the boot
+partition (`server_url`, see `provisioning/slideannouncer.yaml.example`),
+not a build-time value — one image can serve multiple independent
+fleets/servers, since the yaml is just swapped per device (or edited
+post-flash, no rebuild/reflash needed). Setting `SLIDE_ANNOUNCER_SERVER_URL`
+in `.env` is optional; if set, it only seeds a default into the yaml so a
+freshly flashed device still works without a post-flash edit:
 
 ```bash
 cd slideannouncer/image-builder
 cp .env.example .env
-# edit .env: SLIDE_ANNOUNCER_SERVER_URL=https://your-server.example.org
+# optionally edit .env: SLIDE_ANNOUNCER_SERVER_URL=https://your-server.example.org
 ```
 
 **WiFi regulatory domain** — optional, defaults to `US`. The Pi's WiFi

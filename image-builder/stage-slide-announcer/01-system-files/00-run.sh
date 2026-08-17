@@ -141,14 +141,6 @@ ExecStart=/usr/bin/rauc service
 WantedBy=multi-user.target
 EOF
 
-# The AnnouncementSlides server this fleet talks to (build.sh validates
-# SLIDE_ANNOUNCER_SERVER_URL is set before staging this) — one server per
-# fleet, baked in at build time. Read by the local-app backend (pairing/
-# sync/heartbeat) and the future RAUC update-check unit alike, so there's
-# exactly one place this ever needs to be set.
-install -d "${ROOTFS_DIR}/etc/slide-announcer"
-install -m 644 files/SERVER_URL "${ROOTFS_DIR}/etc/slide-announcer/server-url"
-
 # Placeholder fstab entry — image-builder/repartition.sh rewrites DATADEV to
 # the real PARTUUID of partition 4 once the final partition table exists
 # (pi-gen itself only ever produces boot+root, see repartition.sh). The

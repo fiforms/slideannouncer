@@ -77,36 +77,29 @@ if ! command -v npm >/dev/null 2>&1; then
 	exit 1
 fi
 
-# The AnnouncementSlides server this fleet talks to (pairing, sync,
-# heartbeat, and — relevant here — where the future OTA-check unit polls
-# for release info). One self-hosted server per fleet, so this is a
-# build-time constant baked into every image rather than a per-device
-# setting like device_uuid. Validated up front for the same reason as the
-# RAUC cert/key above: fail before the expensive pi-gen build, not after.
+# The AnnouncementSlides server this device talks to (pairing, sync,
+# heartbeat, OTA update checks) now lives in slideannouncer.yaml on the
+# boot partition (see that file's own comment), not baked into the image
+# at build time — one image can serve multiple independent fleets/servers
+# just by swapping that file per device. Setting this here is optional:
+# if set, it's only used to seed a default `server_url` into
+# slideannouncer.yaml.example (same as SSH_ENABLED below), so a build
+# still produces a device that works out of the box without a post-flash
+# edit. Leave it unset to ship a fully generic image with no default.
 SLIDE_ANNOUNCER_SERVER_URL="${SLIDE_ANNOUNCER_SERVER_URL:-}"
-if [ -z "$SLIDE_ANNOUNCER_SERVER_URL" ]; then
-	cat >&2 <<EOF
-build.sh: SLIDE_ANNOUNCER_SERVER_URL is not set.
-
-Every device built from this image needs to know which AnnouncementSlides
-server to talk to (pairing/sync/heartbeat, and OTA update checks).
-
-Copy .env.example to .env (if you haven't already) and set:
-    SLIDE_ANNOUNCER_SERVER_URL=https://your-server.example.org
-EOF
-	exit 1
+if [ -n "$SLIDE_ANNOUNCER_SERVER_URL" ]; then
+	case "$SLIDE_ANNOUNCER_SERVER_URL" in
+		https://*/|http://*/)
+			echo "build.sh: SLIDE_ANNOUNCER_SERVER_URL should not have a trailing slash: ${SLIDE_ANNOUNCER_SERVER_URL}" >&2
+			exit 1
+			;;
+		https://?*|http://?*) ;;
+		*)
+			echo "build.sh: SLIDE_ANNOUNCER_SERVER_URL doesn't look like a URL (expected http(s)://...): ${SLIDE_ANNOUNCER_SERVER_URL}" >&2
+			exit 1
+			;;
+	esac
 fi
-case "$SLIDE_ANNOUNCER_SERVER_URL" in
-	https://*/|http://*/)
-		echo "build.sh: SLIDE_ANNOUNCER_SERVER_URL should not have a trailing slash: ${SLIDE_ANNOUNCER_SERVER_URL}" >&2
-		exit 1
-		;;
-	https://?*|http://?*) ;;
-	*)
-		echo "build.sh: SLIDE_ANNOUNCER_SERVER_URL doesn't look like a URL (expected http(s)://...): ${SLIDE_ANNOUNCER_SERVER_URL}" >&2
-		exit 1
-		;;
-esac
 
 # WiFi regulatory domain (ISO 3166-1 alpha-2, e.g. US) — the Pi's WiFi
 # radio ships soft rfkill-blocked until this is set (a kernel/cfg80211
@@ -312,6 +305,13 @@ if [ "$SSH_ENABLED" = "1" ]; then
 		sed 's/^/  /' "$SLIDE_ANNOUNCER_SSH_PUBLIC_KEY_PATH"
 	} >> "${FILES_DIR}/provisioning/slideannouncer.yaml.example"
 fi
+# Same rationale as the ssh_authorized_keys append above: seeded into the
+# yaml (read at runtime, per SLIDE_ANNOUNCER.md) rather than a separate
+# build-time file, so this is just a convenience default — not required,
+# and swappable per-device after the fact with no rebuild/reflash.
+if [ -n "$SLIDE_ANNOUNCER_SERVER_URL" ]; then
+	echo "server_url: ${SLIDE_ANNOUNCER_SERVER_URL}" >> "${FILES_DIR}/provisioning/slideannouncer.yaml.example"
+fi
 # Fixed OS-image infra, like local-app-seed.py — deliberately NOT part of
 # the versioned local-app release tarball below, so a bad app update can
 # never take the update mechanism itself down with it.
@@ -343,7 +343,6 @@ echo "==> Building slideannouncer ${OS_VERSION} (provenance: date=${BUILD_DATE} 
 # here; it's only ever passed as an argument to `rauc bundle` below.
 cp "$RAUC_KEYRING_CERT_PATH" "${FILES_DIR}/rauc-keyring.pem"
 
-echo "$SLIDE_ANNOUNCER_SERVER_URL" > "${FILES_DIR}/SERVER_URL"
 # Written even when empty (as a genuinely empty file, not just a blank
 # line) — 00-run.sh checks `[ -s ... ]` (non-empty) so an absent/blank
 # setting is just a no-op, no branching needed here.

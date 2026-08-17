@@ -44,18 +44,26 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-SERVER_URL_FILE = Path("/etc/slide-announcer/server-url")
+import yaml
+
+BOOT_YAML = Path("/boot/firmware/slideannouncer.yaml")
 DEVICE_TOKEN_FILE = Path("/data/device-token")
 VERSION_FILE = Path("/opt/slide-announcer/VERSION")
 
 
 def read_server_url():
-    if not SERVER_URL_FILE.exists():
-        sys.exit(
-            f"{SERVER_URL_FILE} missing — was this image built without "
-            "SLIDE_ANNOUNCER_SERVER_URL set? See image-builder/.env.example."
-        )
-    return SERVER_URL_FILE.read_text().strip()
+    """See local-app/backend/pairing.py's read_server_url() — same
+    server_url field in /boot/firmware/slideannouncer.yaml, same
+    fail-closed behavior, duplicated here since this CLI runs outside the
+    local-app backend's venv/process.
+    """
+    if not BOOT_YAML.exists():
+        sys.exit(f"{BOOT_YAML} missing — this device has no boot config at all.")
+    data = yaml.safe_load(BOOT_YAML.read_text()) or {}
+    server_url = data.get("server_url")
+    if not server_url:
+        sys.exit(f"server_url is not set in {BOOT_YAML}. See provisioning/slideannouncer.yaml.example.")
+    return server_url.rstrip("/")
 
 
 def read_device_token():
