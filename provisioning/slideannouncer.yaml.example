@@ -1,60 +1,48 @@
-# Slide Announcer pre-provisioning config — see docs/BUILDING.md's
-# "Pre-provisioning network + identity" for the full walkthrough.
+# Slide Announcer persistent config — see docs/BUILDING.md's
 #
-# NOTE: comments in this file do NOT survive the device's first boot.
-# provisioning/firstboot.py parses this file with a plain YAML load/dump
-# round-trip (no comment-preserving parser) the first time it writes
-# device_uuid/device_uuid_check back here, which happens on every
-# device's very first boot (and again after any factory reset). Values
-# and keys you set below survive that rewrite; these comments won't —
-# edit this file before first power-on if you want the documentation to
-# be useful to whoever mounts the card next.
 #
 # WiFi/network settings do NOT go in this file — edit network-config
-# (also on this boot partition) instead. This file only ever covers
-# identity and initial-setup hints.
+# (also on this boot partition) instead. 
 
 # Default UI language hint for initial setup only — "en" or "es". Used
 # once, to pick a sensible starting language for the first setup screen
 # before anyone has configured the device. Not a permanent setting: it
 # can be changed at any time afterward from the device's own Settings
 # menu, and doing so has no effect on this file.
+
 default_language: en
 
-# Set to "locked" to disable Ctrl+Alt+F# virtual-console switching on this
-# device (system/scripts/vtlock-apply.py, run once per boot before the
-# kiosk starts). Any other value, or omitting the key entirely, leaves VT
-# switching alone — the kernel default. Unlike default_language above, this
-# one IS read on every boot, not just the first: it's not a one-time
-# provisioning hint, just a config value that happens to live in this file.
-# Edit it on the boot partition and reboot (or power-cycle) to change it.
-# vt_lockswitch: locked
 
-# Set to "true" to let sshd actually start on this device (checked fresh
-# on every start attempt by system/scripts/ssh-gate.py — see
-# system/ssh/ssh-gate.conf). sshd is `systemctl enable`d in every image
-# regardless of build flags now, so THIS is the real on/off switch, not a
-# build-time flag: unset (or anything other than exactly "true") keeps it
-# refusing to start. Edit it and reboot (or `systemctl restart ssh`) to
-# flip it on an already-deployed device — no rebuild/reflash needed.
+# Set to "locked" to disable Ctrl+Alt+F# virtual-console switching on this 
+# device (system/scripts/vtlock-apply.py, run once per boot before the
+# kiosk starts). Comment this line to enable VT switching, use 
+# Ctrl+Alt+F3 (VT3) for debugging info.
+
+vt_lockswitch: locked
+
+# Set to "true" to enable sshd on this device.  (Default: disabled)
+
 # ssh_enabled: true
+
 
 # SSH public key(s) authorized to log in as 'slideadmin' — a literal
 # authorized_keys file's contents (one key per line), written to
-# /home/slideadmin/.ssh/authorized_keys on every boot. This IS read every
-# boot, not just the first: edit it and reboot (or power-cycle) to add,
-# rotate, or revoke a key. Removing this key entirely deletes the
+# /home/slideadmin/.ssh/authorized_keys on every boot. This is read every
+# boot. Removing this key entirely deletes the
 # authorized_keys file outright, revoking SSH access. Has no effect
-# without ssh_enabled: true above — sshd never starts to use it otherwise.
-# Password authentication over SSH is disabled globally, unconditionally,
-# in every image — there is no fallback login here; a device with SSH
-# turned on but no key set here simply has no way in over SSH at all.
+# without ssh_enabled: true above. There is no password authentication
+# over SSH.
+
 # ssh_authorized_keys: |
 #   ssh-ed25519 AAAA...
 
-# device_uuid / device_uuid_check: leave these out. firstboot.py
+
+# device_uuid / device_uuid_check: do not modify these. firstboot.py
 # generates a fresh, consistent pair on the device's first boot — see
 # provisioning/README.md and SLIDE_ANNOUNCER.md's "Device identity &
 # anti-clone protection". Hand-editing device_uuid without the matching
 # secret (which never leaves /data) just triggers a fresh identity
 # regeneration on the next boot rather than doing anything useful.
+
+device_uuid:
+device_uuid_check:

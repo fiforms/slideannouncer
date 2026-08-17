@@ -121,7 +121,26 @@ def load_boot_config() -> dict:
     return data or {}
 
 
-def save_boot_config(data: dict) -> None:
+def update_boot_config_keys(updates: dict) -> None:
+    """Patches top-level scalar keys into BOOT_YAML in place with a
+    per-line text substitution, instead of a yaml.safe_load/dump
+    round-trip — the operator's own comments and formatting in the file
+    (see slideannouncer.yaml.example) survive, since every other line is
+    left untouched. Only fit for the plain `key: value` scalars this
+    script writes (device_uuid/device_uuid_check) — not for anything
+    needing block/flow YAML structure.
+    """
+    text = BOOT_YAML.read_text() if BOOT_YAML.exists() else ""
+    for key, value in updates.items():
+        pattern = re.compile(rf"^{re.escape(key)}:.*$", re.MULTILINE)
+        line = f"{key}: {value}"
+        if pattern.search(text):
+            text = pattern.sub(line, text, count=1)
+        else:
+            if text and not text.endswith("\n"):
+                text += "\n"
+            text += line + "\n"
+
     # /boot/firmware is ro by default (see 00-run.sh's fstab entry) —
     # bracket this write the same way every other writer of this partition
     # does (rpi-tryboot-backend.sh, rpi-tryboot-commit.sh,
@@ -130,7 +149,7 @@ def save_boot_config(data: dict) -> None:
     # itself fails partway.
     subprocess.run(["slide-announcer-bootfw-remount", "rw"], check=True)
     try:
-        BOOT_YAML.write_text(yaml.safe_dump(data, sort_keys=False))
+        BOOT_YAML.write_text(text)
     finally:
         subprocess.run(["slide-announcer-bootfw-remount", "ro"], check=True)
 
@@ -181,9 +200,7 @@ def ensure_identity() -> None:
 
     new_uuid = str(uuid.uuid4())
     new_check = compute_check(new_identity_key, new_uuid, mac)
-    config["device_uuid"] = new_uuid
-    config["device_uuid_check"] = new_check
-    save_boot_config(config)
+    update_boot_config_keys({"device_uuid": new_uuid, "device_uuid_check": new_check})
     log(f"new identity written (device_uuid={new_uuid})")
 
 
