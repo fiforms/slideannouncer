@@ -45,6 +45,7 @@ install -m 755 files/system/scripts/update-check.py "${ROOTFS_DIR}/usr/local/sbi
 install -m 755 files/system/scripts/os-updater.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-os-updater"
 install -m 755 files/system/scripts/factory-reset-check.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-factory-reset-check"
 install -m 755 files/system/scripts/bootfw-remount.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-bootfw-remount"
+install -m 755 files/system/scripts/vtlock-apply.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-vtlock-apply"
 
 install -d "${ROOTFS_DIR}/etc/nginx/sites-available"
 install -m 644 files/system/nginx-slide-announcer.conf "${ROOTFS_DIR}/etc/nginx/sites-available/slide-announcer.conf"
@@ -462,6 +463,7 @@ systemctl enable slide-announcer-data-resize.service
 systemctl enable slide-announcer-firstboot.service
 systemctl enable slide-announcer-local-app-seed.service
 systemctl enable slide-announcer-backend.service
+systemctl enable slide-announcer-vtlock.service
 systemctl enable slide-announcer-kiosk.service
 systemctl enable slide-announcer-tryboot-check.service
 systemctl enable slide-announcer-local-app-updater.timer

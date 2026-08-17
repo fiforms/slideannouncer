@@ -10,12 +10,21 @@
 # session — with "User X is logged in on sshd ... retry after closing
 # inhibitors", which is what "Restart Device" in the web UI hit on a real
 # device (0.2.7) with an SSH session open.
+#
+# - /usr/local/sbin/slide-announcer-vtlock-apply +
+#   /etc/systemd/system/slide-announcer-vtlock.service: optional Ctrl+Alt+F#
+#   VT-switch lock, applied once per boot via the kernel's VT_LOCKSWITCH
+#   ioctl if /boot/firmware/slideannouncer.yaml has `vt_lockswitch: locked`
+#   (see docs/BUILDING.md and provisioning/slideannouncer.yaml.example).
+#   script.sh enables the new unit — a plain file drop doesn't create the
+#   WantedBy= symlink on its own.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FILES_DIR="${HERE}/files"
+SCRIPT="${HERE}/script.sh"
 
 REQUIRED_VERSION="0.2.7"
 NEW_VERSION="0.2.8"
 
-"${HERE}/../../make-hotfix-bundle.sh" "$FILES_DIR" "$REQUIRED_VERSION" "$NEW_VERSION"
+"${HERE}/../../make-hotfix-bundle.sh" "$FILES_DIR" "$REQUIRED_VERSION" "$NEW_VERSION" "$SCRIPT"

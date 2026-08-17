@@ -1,0 +1,13 @@
+[Unit]
+Description=Slide Announcer VT-switch lock (Ctrl+Alt+F# disable, boot-yaml controlled)
+After=boot-firmware.mount
+Before=slide-announcer-kiosk.service
+ConditionPathExists=/boot/firmware/slideannouncer.yaml
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/slide-announcer-vtlock-apply
+
+[Install]
+WantedBy=multi-user.target

@@ -139,12 +139,20 @@ examples (DHCP and static IP).
 
 ```yaml
 default_language: en
+# vt_lockswitch: locked
 ```
 
 `default_language` ("en" or "es") is only a hint for the very first setup
 screen, not a permanent setting — it can be changed later from the
-device's own Settings menu with no effect on this file. Leave
-`device_uuid`/`device_uuid_check` out entirely — `provisioning/firstboot.py`
+device's own Settings menu with no effect on this file.
+
+`vt_lockswitch: locked` disables Ctrl+Alt+F# virtual-console switching,
+applied by `slide-announcer-vtlock.service`/`system/scripts/vtlock-apply.py`
+on every boot (not a one-time hint like `default_language` above — edit
+this key and reboot/power-cycle to change it at any time). Omit the key,
+or set anything else, to leave VT switching at its kernel default.
+
+Leave `device_uuid`/`device_uuid_check` out entirely — `provisioning/firstboot.py`
 generates a fresh, consistent pair on first boot. If you hand-edit
 `device_uuid` later without the matching secret (which never leaves
 `/data`), the next boot detects the mismatch and regenerates a fresh

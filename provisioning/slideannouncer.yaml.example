@@ -21,6 +21,15 @@
 # menu, and doing so has no effect on this file.
 default_language: en
 
+# Set to "locked" to disable Ctrl+Alt+F# virtual-console switching on this
+# device (system/scripts/vtlock-apply.py, run once per boot before the
+# kiosk starts). Any other value, or omitting the key entirely, leaves VT
+# switching alone — the kernel default. Unlike default_language above, this
+# one IS read on every boot, not just the first: it's not a one-time
+# provisioning hint, just a config value that happens to live in this file.
+# Edit it on the boot partition and reboot (or power-cycle) to change it.
+# vt_lockswitch: locked
+
 # device_uuid / device_uuid_check: leave these out. firstboot.py
 # generates a fresh, consistent pair on the device's first boot — see
 # provisioning/README.md and SLIDE_ANNOUNCER.md's "Device identity &
