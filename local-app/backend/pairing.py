@@ -180,6 +180,9 @@ async def pair(code: str, device_name: str) -> dict:
         "mac_address": identity.get_mac_address(),
         "device_uuid": identity.get_device_uuid(),
     }
+    language_hint = read_language_boot_hint()
+    if language_hint:
+        payload["language"] = language_hint
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:

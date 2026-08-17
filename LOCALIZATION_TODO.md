@@ -34,8 +34,12 @@ per-device from the server once paired.
 - [x] `resources/js/Pages/Entity/SlideAnnouncerShow.vue` has a language
   `<select>` in the device settings form (unset = "use the device's own
   default").
-- [x] `SlideAnnouncerPairingController` untouched — a freshly paired device
-  has `language_id = null`.
+- [x] `pairing.py::pair()` sends its boot-yaml language hint (via
+  `read_language_boot_hint()`) as a `language` field on the pairing POST.
+  `SlideAnnouncerPairingController` accepts it, resolves it to a `Language`
+  by abbreviation, and seeds `language_id` on both create and re-pair —
+  but only when the device doesn't already have one assigned, so an entity
+  admin's explicit choice is never overwritten by a later re-pair.
 
 ## 3. Server: filter slide sync by device language — done
 
