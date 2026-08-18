@@ -162,22 +162,19 @@ onUnmounted(() => {
 <template>
   <div class="kiosk">
     <transition name="crossfade" mode="out-in">
-      <video
-        v-if="currentSlide && isVideoSlide(currentSlide)"
-        :key="currentSlide.id"
-        :src="currentSlide.media_url"
-        :loop="currentSlide.video_playback_mode === 'loop'"
-        playsinline
-        class="slide-image"
-        @ended="onVideoEnded"
-        @loadedmetadata="playWithSound"
-      />
-      <img
-        v-else-if="currentSlide"
-        :key="currentSlide.id"
-        :src="currentSlide.media_url"
-        class="slide-image"
-      >
+      <div v-if="currentSlide" :key="currentSlide.id" class="slide-layers">
+        <video
+          v-if="isVideoSlide(currentSlide)"
+          :src="currentSlide.media_url"
+          :loop="currentSlide.video_playback_mode === 'loop'"
+          playsinline
+          class="slide-image"
+          @ended="onVideoEnded"
+          @loadedmetadata="playWithSound"
+        />
+        <img v-else :src="currentSlide.media_url" class="slide-image">
+        <img v-if="currentSlide.overlay_media_url" :src="currentSlide.overlay_media_url" class="slide-image overlay">
+      </div>
       <div v-else class="empty-state" key="empty">
         <p v-if="status && !status.paired">{{ t('slideshow.notPaired') }}</p>
         <p v-else>{{ t('slideshow.waiting') }}</p>
@@ -204,10 +201,19 @@ onUnmounted(() => {
   overflow: hidden;
   cursor: none;
 }
+.slide-layers {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
 .slide-image {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+.slide-image.overlay {
+  position: absolute;
+  inset: 0;
 }
 .crossfade-enter-active,
 .crossfade-leave-active {
