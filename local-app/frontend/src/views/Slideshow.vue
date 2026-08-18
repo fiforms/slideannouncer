@@ -30,6 +30,10 @@ const VOLUME_INDICATOR_HOLD_MS = 1500
 // still ends in exactly one poll, right after release.
 const VOLUME_POLL_SETTLE_MS = 250
 const VOLUME_KEYS = ['AudioVolumeUp', 'AudioVolumeDown', 'AudioVolumeMute']
+// Safety margin added on top of a play_through video's own reported
+// duration for the fallback advance below — covers normal decode/paint
+// latency, not a real wait.
+const PLAY_THROUGH_FALLBACK_BUFFER_MS = 3000
 
 // Manual slide navigation. Right/Down and MediaFastForward advance one
 // slide, Left/Up and MediaRewind go back one slide. MediaTrackNext/
@@ -58,6 +62,7 @@ let refreshTimer = null
 let statusTimer = null
 let volumeSettleTimer = null
 let volumeHideTimer = null
+let playThroughFallbackTimer = null
 // False until the first poll lands, so that poll can set the baseline
 // silently instead of popping the indicator up on page load.
 let hasVolumeBaseline = false
@@ -79,6 +84,13 @@ function slideIntervalMs() {
   return (typeof seconds === 'number' && seconds > 0 ? seconds : DEFAULT_INTERVAL_SECONDS) * 1000
 }
 
+function clearPlayThroughFallback() {
+  if (playThroughFallbackTimer) {
+    clearTimeout(playThroughFallbackTimer)
+    playThroughFallbackTimer = null
+  }
+}
+
 function restartAdvanceTimer() {
   if (advanceTimer) clearInterval(advanceTimer)
   advanceTimer = null
@@ -87,12 +99,20 @@ function restartAdvanceTimer() {
   // instead of a fixed delay — skip the interval entirely for it.
   const slide = currentSlide.value
   if (isVideoSlide(slide) && slide.video_playback_mode === 'play_through') return
+  // Routed through goToIndex (which calls back into this function) rather
+  // than mutating currentIndex directly, so a tick that lands on a
+  // play_through video is recognized immediately — otherwise this same
+  // interval, started for a run of non-video/non-play_through slides,
+  // would keep ticking on its old schedule straight through a
+  // play_through video it was never restarted for, and cut it off
+  // mid-playback instead of waiting for onVideoEnded.
   advanceTimer = setInterval(() => {
-    currentIndex.value = (currentIndex.value + 1) % playlist.value.length
+    goToIndex(currentIndex.value + 1)
   }, slideIntervalMs())
 }
 
 function onVideoEnded() {
+  clearPlayThroughFallback()
   const slide = currentSlide.value
   if (isVideoSlide(slide) && slide.video_playback_mode === 'play_through') {
     goToIndex(currentIndex.value + 1)
@@ -115,6 +135,31 @@ async function playWithSound(event) {
     el.muted = true
     try { await el.play() } catch { /* give up silently */ }
   }
+}
+
+// A play_through video is supposed to advance from onVideoEnded's 'ended'
+// listener — but on real hardware, a video has been observed to visibly
+// freeze on its last frame without 'ended' ever firing (most likely a
+// codec/decode quirk or imprecise container duration metadata specific to
+// that file/device combination, not reproducible from the code alone).
+// On the web slideshow that's recoverable (a person just clicks Next);
+// on an unattended kiosk it's stuck until someone walks up with the
+// remote. So this schedules a fallback advance at the video's own
+// reported duration (plus a small buffer for normal decode/paint
+// latency) — a no-op if 'ended' fires first (onVideoEnded clears it), and
+// a no-op if the slide has already moved on for some other reason
+// (manual nav, playlist refresh) by the time it fires.
+function onVideoLoadedMetadata(event) {
+  playWithSound(event)
+  clearPlayThroughFallback()
+  const slide = currentSlide.value
+  if (!isVideoSlide(slide) || slide.video_playback_mode !== 'play_through') return
+  const el = event.target
+  const expectedIndex = currentIndex.value
+  const durationMs = Number.isFinite(el.duration) ? el.duration * 1000 : slideIntervalMs()
+  playThroughFallbackTimer = setTimeout(() => {
+    if (currentIndex.value === expectedIndex) goToIndex(expectedIndex + 1)
+  }, durationMs + PLAY_THROUGH_FALLBACK_BUFFER_MS)
 }
 
 async function refreshPlaylist() {
@@ -207,6 +252,7 @@ onUnmounted(() => {
   if (statusTimer) clearInterval(statusTimer)
   if (volumeSettleTimer) clearTimeout(volumeSettleTimer)
   if (volumeHideTimer) clearTimeout(volumeHideTimer)
+  clearPlayThroughFallback()
   window.removeEventListener('keydown', onKeydown)
 })
 </script>
@@ -222,7 +268,7 @@ onUnmounted(() => {
           playsinline
           class="slide-image"
           @ended="onVideoEnded"
-          @loadedmetadata="playWithSound"
+          @loadedmetadata="onVideoLoadedMetadata"
         />
         <img v-else :src="currentSlide.media_url" class="slide-image">
         <img v-if="currentSlide.overlay_media_url" :src="currentSlide.overlay_media_url" class="slide-image overlay">
