@@ -151,8 +151,15 @@ export function installRemoteNav(router) {
       return
     }
 
+    // While already on /kiosk with the Menu overlay closed, Home/Back are
+    // owned by Slideshow.vue's own listener (RESTART_KEYS) — they restart
+    // the show in place rather than navigating, so this global handler must
+    // not also push/back the route out from under it.
+    const onKioskWithoutMenu = router.currentRoute.value.path === '/kiosk' && !menuOpen.value
+
     if (HOME_KEYS.includes(event.key)) {
       event.preventDefault()
+      if (onKioskWithoutMenu) return
       router.push('/kiosk')
       return
     }
@@ -166,6 +173,7 @@ export function installRemoteNav(router) {
         closeMenu()
         return
       }
+      if (onKioskWithoutMenu) return
       if (window.history.state?.back) router.back()
       else router.push('/kiosk')
       return

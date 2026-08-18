@@ -37,18 +37,30 @@ const VOLUME_KEYS = ['AudioVolumeUp', 'AudioVolumeDown', 'AudioVolumeMute']
 // latency, not a real wait.
 const PLAY_THROUGH_FALLBACK_BUFFER_MS = 3000
 
-// Manual slide navigation. Right/Down and MediaFastForward advance one
-// slide, Left/Up and MediaRewind go back one slide. MediaTrackNext/
-// MediaTrackPrevious ("skip") jump straight to the last/first slide.
-// Confirmed via Settings > Key Debug on real hardware — the remote has 4
-// distinct media buttons, not aliases of one another. Space and P are a
-// plain-keyboard equivalent to the remote's MediaPlayPause button, for
-// anyone testing/operating this without the physical remote.
-const NEXT_KEYS = ['ArrowRight', 'ArrowDown', 'MediaFastForward']
-const PREV_KEYS = ['ArrowLeft', 'ArrowUp', 'MediaRewind']
-const LAST_KEYS = ['MediaTrackNext']
-const FIRST_KEYS = ['MediaTrackPrevious']
+// Manual slide navigation. Down and MediaTrackNext ("skip forward") advance
+// one slide; Up and MediaTrackPrevious ("skip back") go back one slide.
+// Right/MediaFastForward and Left/MediaRewind instead seek within a playing
+// video (see seekOrGoToIndex) — falling back to next/prev slide when the
+// current slide isn't a video. Confirmed via Settings > Key Debug on real
+// hardware — the remote has 4 distinct media buttons, not aliases of one
+// another. Space and P are a plain-keyboard equivalent to the remote's
+// MediaPlayPause button, for anyone testing/operating this without the
+// physical remote.
+const NEXT_SLIDE_KEYS = ['ArrowDown', 'MediaTrackNext']
+const PREV_SLIDE_KEYS = ['ArrowUp', 'MediaTrackPrevious']
+const SEEK_FORWARD_KEYS = ['ArrowRight', 'MediaFastForward']
+const SEEK_BACK_KEYS = ['ArrowLeft', 'MediaRewind']
+// Home and Back both restart the current show rather than navigating away —
+// remoteNav.js's global listener defers to this view for these keys while
+// on /kiosk with the Menu overlay closed (see remoteNav.js).
+const RESTART_KEYS = ['Home', 'BrowserHome', 'BrowserBack', 'GoBack', 'Back']
 const PLAY_PAUSE_KEYS = ['MediaPlayPause', ' ', 'p', 'P']
+// Seeking ramps up to a bigger step after rapid repeat presses in the same
+// direction, so a long video can be scrubbed without endless button mashing.
+const SEEK_STEP_SECONDS = 15
+const SEEK_FAST_STEP_SECONDS = 30
+const SEEK_RAPID_WINDOW_MS = 1500
+const SEEK_INDICATOR_HOLD_MS = 1500
 
 // The active show's slides (pinned, else Main, else the first show — see
 // slideshowState.js's activeShow()). Everything below keeps working
@@ -61,12 +73,19 @@ const paused = ref(false)
 const volume = ref(100)
 const muted = ref(false)
 const showVolumeIndicator = ref(false)
+const showSeekIndicator = ref(false)
+const seekPositionSeconds = ref(0)
+const seekDurationSeconds = ref(0)
+const videoEl = ref(null)
+let lastSeekAt = 0
+let lastSeekDirection = 0
 
 let advanceTimer = null
 let refreshTimer = null
 let statusTimer = null
 let volumeSettleTimer = null
 let volumeHideTimer = null
+let seekHideTimer = null
 let playThroughFallbackTimer = null
 // False until the first poll lands, so that poll can set the baseline
 // silently instead of popping the indicator up on page load.
@@ -76,6 +95,13 @@ const currentSlide = computed(() => playlist.value[currentIndex.value] ?? null)
 
 function isVideoSlide(slide) {
   return !!slide?.mime_type?.startsWith('video/')
+}
+
+function formatTime(seconds) {
+  const safe = Number.isFinite(seconds) && seconds > 0 ? seconds : 0
+  const mins = Math.floor(safe / 60)
+  const secs = Math.floor(safe % 60)
+  return `${mins}:${String(secs).padStart(2, '0')}`
 }
 
 const needsAttention = computed(() => {
@@ -187,11 +213,68 @@ function goToIndex(index) {
   if (len === 0) return
   currentIndex.value = ((index % len) + len) % len
   restartAdvanceTimer()
+  // A slide change makes any in-progress seek indicator stale (wrong video).
+  if (seekHideTimer) { clearTimeout(seekHideTimer); seekHideTimer = null }
+  showSeekIndicator.value = false
+}
+
+// Left/Right (and MediaRewind/MediaFastForward) seek a playing video by
+// SEEK_STEP_SECONDS; a second press in the same direction within
+// SEEK_RAPID_WINDOW_MS escalates to SEEK_FAST_STEP_SECONDS so a long video
+// can be scrubbed quickly. On a non-video slide there's nothing to seek, so
+// these keys fall back to plain next/prev slide navigation instead.
+function seekOrGoToIndex(direction) {
+  const el = videoEl.value
+  if (!el) {
+    goToIndex(currentIndex.value + direction)
+    return
+  }
+  const now = Date.now()
+  const rapid = lastSeekDirection === direction && (now - lastSeekAt) < SEEK_RAPID_WINDOW_MS
+  const step = rapid ? SEEK_FAST_STEP_SECONDS : SEEK_STEP_SECONDS
+  lastSeekAt = now
+  lastSeekDirection = direction
+  const max = Number.isFinite(el.duration) ? el.duration : Infinity
+  el.currentTime = Math.min(Math.max(el.currentTime + direction * step, 0), max)
+  showSeekIndicatorFor(el)
+}
+
+// Position/duration bar shown briefly on each seek press — there's no
+// pointer on the kiosk remote to scrub a native <video> progress bar with,
+// so this is the only way to see where a seek landed. Re-arms on every
+// press rather than a fixed duration, so a run of rapid presses keeps it
+// visible throughout instead of flickering off between them.
+function showSeekIndicatorFor(el) {
+  seekPositionSeconds.value = el.currentTime
+  seekDurationSeconds.value = Number.isFinite(el.duration) ? el.duration : 0
+  showSeekIndicator.value = true
+  if (seekHideTimer) clearTimeout(seekHideTimer)
+  seekHideTimer = setTimeout(() => { showSeekIndicator.value = false }, SEEK_INDICATOR_HOLD_MS)
+}
+
+// Home/Back restart the show: jump to slide 1 and, if we're already there,
+// reset the video's playback position too (goToIndex's own remount handles
+// the "already elsewhere" case, since a fresh <video> starts at 0 anyway).
+function restartShow() {
+  const wasIndex = currentIndex.value
+  goToIndex(0)
+  if (wasIndex === 0) {
+    const el = videoEl.value
+    if (el) {
+      el.currentTime = 0
+      if (!paused.value) el.play().catch(() => {})
+    }
+  }
 }
 
 function togglePause() {
   paused.value = !paused.value
   restartAdvanceTimer()
+  const el = videoEl.value
+  if (el) {
+    if (paused.value) el.pause()
+    else el.play().catch(() => {})
+  }
 }
 
 // Stop auto-advancing while the Menu overlay is open — a slide change
@@ -218,10 +301,11 @@ function onKeydown(event) {
   // still visible behind the scrim. remoteNav.js's global listener handles
   // the overlay's own focus movement separately.
   if (menuOpen.value) return
-  if (NEXT_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(currentIndex.value + 1) }
-  else if (PREV_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(currentIndex.value - 1) }
-  else if (LAST_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(playlist.value.length - 1) }
-  else if (FIRST_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(0) }
+  if (NEXT_SLIDE_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(currentIndex.value + 1) }
+  else if (PREV_SLIDE_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(currentIndex.value - 1) }
+  else if (SEEK_FORWARD_KEYS.includes(event.key)) { event.preventDefault(); seekOrGoToIndex(1) }
+  else if (SEEK_BACK_KEYS.includes(event.key)) { event.preventDefault(); seekOrGoToIndex(-1) }
+  else if (RESTART_KEYS.includes(event.key)) { event.preventDefault(); restartShow() }
   else if (PLAY_PAUSE_KEYS.includes(event.key)) { event.preventDefault(); togglePause() }
   else if (VOLUME_KEYS.includes(event.key)) { event.preventDefault(); scheduleVolumePoll() }
 }
@@ -278,6 +362,7 @@ onUnmounted(() => {
   if (statusTimer) clearInterval(statusTimer)
   if (volumeSettleTimer) clearTimeout(volumeSettleTimer)
   if (volumeHideTimer) clearTimeout(volumeHideTimer)
+  if (seekHideTimer) clearTimeout(seekHideTimer)
   clearPlayThroughFallback()
   window.removeEventListener('keydown', onKeydown)
 })
@@ -289,6 +374,7 @@ onUnmounted(() => {
       <div v-if="currentSlide" :key="currentSlide.id" class="slide-layers">
         <video
           v-if="isVideoSlide(currentSlide)"
+          ref="videoEl"
           :src="currentSlide.media_url"
           :loop="currentSlide.video_playback_mode === 'loop'"
           playsinline
@@ -310,6 +396,13 @@ onUnmounted(() => {
     <div v-if="paused" class="pause-indicator" :title="t('slideshow.paused')">
       <span class="pause-icon" />
       {{ t('slideshow.paused') }}
+    </div>
+
+    <div v-if="showSeekIndicator" class="seek-indicator">
+      <span class="seek-time">{{ formatTime(seekPositionSeconds) }} / {{ formatTime(seekDurationSeconds) }}</span>
+      <div class="seek-track">
+        <div class="seek-fill" :style="{ width: (seekDurationSeconds ? (seekPositionSeconds / seekDurationSeconds) * 100 : 0) + '%' }" />
+      </div>
     </div>
 
     <div v-if="showVolumeIndicator" class="volume-indicator">
@@ -392,6 +485,38 @@ onUnmounted(() => {
   background:
     linear-gradient(#fff, #fff) 0 0 / 35% 100% no-repeat,
     linear-gradient(#fff, #fff) 100% 0 / 35% 100% no-repeat;
+}
+.seek-indicator {
+  position: absolute;
+  bottom: 4.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+}
+.seek-time {
+  min-width: 7ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.seek-track {
+  width: 12rem;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+.seek-fill {
+  height: 100%;
+  background: #fff;
+  transition: width 0.1s linear;
 }
 .volume-indicator {
   position: absolute;
