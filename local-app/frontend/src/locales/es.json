@@ -13,7 +13,8 @@
         "notPaired": "Aún no emparejado. Use el botón Menú para abrir Configuración.",
         "waiting": "Esperando diapositivas…",
         "needsAttention": "Requiere atención — revise Configuración",
-        "paused": "En pausa"
+        "paused": "En pausa",
+        "muted": "Silenciado"
     },
     "settingsLayout": {
         "backToSlideshow": "← Volver a la presentación",

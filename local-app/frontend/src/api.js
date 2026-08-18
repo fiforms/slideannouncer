@@ -42,6 +42,7 @@ export const api = {
   triggerUpdateApply: () => request('/api/local/system/update-apply', { method: 'POST' }),
   updateProgress: () => request('/api/local/system/update-progress'),
   audioOutputStatus: () => request('/api/local/audio-output'),
+  audioVolumeStatus: () => request('/api/local/audio-volume'),
   setAudioOutput: (value) =>
     request('/api/local/audio-output', {
       method: 'POST',

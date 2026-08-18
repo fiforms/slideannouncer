@@ -16,6 +16,20 @@ const { t } = useI18n()
 const REFRESH_INTERVAL_MS = 60000 // matches sync.py's own poll cadence — no point checking faster
 const STATUS_INTERVAL_MS = 15000
 const DEFAULT_INTERVAL_SECONDS = 10
+const VOLUME_INDICATOR_HOLD_MS = 1500
+// Volume/mute is applied by a separate process (volume-key-monitor.py)
+// that this page has no other way to hear about — but Chromium receives
+// the same raw AudioVolumeUp/Down/Mute keydowns volume-key-monitor.py
+// reads from evdev (confirmed via Settings > Key Debug), since evdev
+// nodes aren't exclusively grabbed. So rather than polling on a fixed
+// interval, this page just listens for the same keys and polls once,
+// after a short settle delay — long enough for volume-key-monitor.py to
+// debounce, call wpctl, and persist the new value first (see that
+// script's own DEBOUNCE_SECONDS). A key held down (autorepeat) re-arms
+// the delay each time rather than polling per repeat, so a press-and-hold
+// still ends in exactly one poll, right after release.
+const VOLUME_POLL_SETTLE_MS = 250
+const VOLUME_KEYS = ['AudioVolumeUp', 'AudioVolumeDown', 'AudioVolumeMute']
 
 // Manual slide navigation. Right/Down and MediaFastForward advance one
 // slide, Left/Up and MediaRewind go back one slide. MediaTrackNext/
@@ -35,10 +49,18 @@ const settings = ref({})
 const status = ref(null)
 const currentIndex = ref(0)
 const paused = ref(false)
+const volume = ref(100)
+const muted = ref(false)
+const showVolumeIndicator = ref(false)
 
 let advanceTimer = null
 let refreshTimer = null
 let statusTimer = null
+let volumeSettleTimer = null
+let volumeHideTimer = null
+// False until the first poll lands, so that poll can set the baseline
+// silently instead of popping the indicator up on page load.
+let hasVolumeBaseline = false
 
 const currentSlide = computed(() => playlist.value[currentIndex.value] ?? null)
 
@@ -130,6 +152,15 @@ function onKeydown(event) {
   else if (LAST_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(playlist.value.length - 1) }
   else if (FIRST_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(0) }
   else if (PLAY_PAUSE_KEYS.includes(event.key)) { event.preventDefault(); togglePause() }
+  else if (VOLUME_KEYS.includes(event.key)) { event.preventDefault(); scheduleVolumePoll() }
+}
+
+// Re-arms on every matching keydown rather than polling immediately, so a
+// held/autorepeating key collapses into a single poll shortly after the
+// last event instead of one per repeat.
+function scheduleVolumePoll() {
+  if (volumeSettleTimer) clearTimeout(volumeSettleTimer)
+  volumeSettleTimer = setTimeout(refreshVolume, VOLUME_POLL_SETTLE_MS)
 }
 
 async function refreshStatus() {
@@ -143,9 +174,28 @@ async function refreshStatus() {
   }
 }
 
+async function refreshVolume() {
+  try {
+    const data = await api.audioVolumeStatus()
+    const changed = hasVolumeBaseline && (data.volume !== volume.value || data.muted !== muted.value)
+    volume.value = data.volume
+    muted.value = data.muted
+    hasVolumeBaseline = true
+    if (changed) {
+      showVolumeIndicator.value = true
+      if (volumeHideTimer) clearTimeout(volumeHideTimer)
+      volumeHideTimer = setTimeout(() => { showVolumeIndicator.value = false }, VOLUME_INDICATOR_HOLD_MS)
+    }
+  } catch {
+    // Leave whatever was last shown — a fetch hiccup shouldn't flicker
+    // the indicator or reset the displayed level.
+  }
+}
+
 onMounted(async () => {
   await refreshPlaylist()
   await refreshStatus()
+  await refreshVolume()
   refreshTimer = setInterval(refreshPlaylist, REFRESH_INTERVAL_MS)
   statusTimer = setInterval(refreshStatus, STATUS_INTERVAL_MS)
   window.addEventListener('keydown', onKeydown)
@@ -155,6 +205,8 @@ onUnmounted(() => {
   if (advanceTimer) clearInterval(advanceTimer)
   if (refreshTimer) clearInterval(refreshTimer)
   if (statusTimer) clearInterval(statusTimer)
+  if (volumeSettleTimer) clearTimeout(volumeSettleTimer)
+  if (volumeHideTimer) clearTimeout(volumeHideTimer)
   window.removeEventListener('keydown', onKeydown)
 })
 </script>
@@ -186,6 +238,14 @@ onUnmounted(() => {
     <div v-if="paused" class="pause-indicator" :title="t('slideshow.paused')">
       <span class="pause-icon" />
       {{ t('slideshow.paused') }}
+    </div>
+
+    <div v-if="showVolumeIndicator" class="volume-indicator">
+      <span class="volume-icon" :class="{ muted }" />
+      <div class="volume-track">
+        <div class="volume-fill" :style="{ width: (muted ? 0 : volume) + '%' }" />
+      </div>
+      <span class="volume-value">{{ muted ? t('slideshow.muted') : `${volume}%` }}</span>
     </div>
   </div>
 </template>
@@ -260,5 +320,45 @@ onUnmounted(() => {
   background:
     linear-gradient(#fff, #fff) 0 0 / 35% 100% no-repeat,
     linear-gradient(#fff, #fff) 100% 0 / 35% 100% no-repeat;
+}
+.volume-indicator {
+  position: absolute;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+}
+.volume-icon {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  background: #fff;
+  clip-path: polygon(0% 35%, 35% 35%, 65% 5%, 65% 95%, 35% 65%, 0% 65%);
+}
+.volume-icon.muted {
+  background: var(--danger);
+}
+.volume-track {
+  width: 6rem;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+.volume-fill {
+  height: 100%;
+  background: #fff;
+  transition: width 0.15s ease;
+}
+.volume-value {
+  min-width: 3ch;
+  text-align: right;
 }
 </style>

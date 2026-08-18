@@ -53,12 +53,23 @@ LANGUAGE_FILE = Path("/data/status/language")
 # Which physical output PipeWire should default to — "hdmi" (the TV, via
 # the same cable driving the display) or "headphones" (the Pi's analogue
 # jack, e.g. feeding a church PA). Purely a device-local hardware
-# preference, set from the Settings screen — see AUDIO_TODO.md for the
-# full design and what's still open (volume control). Deliberately NOT in
-# WIPE_PATHS below, since it describes how this device is wired into the
-# room, not anything about its pairing.
+# preference, set from the Settings screen — see AUDIO_IMPLEMENTATION.md
+# for the full design. Deliberately NOT in WIPE_PATHS below, since it
+# describes how this device is wired into the room, not anything about
+# its pairing.
 AUDIO_OUTPUT_FILE = Path("/data/status/audio-output")
 DEFAULT_AUDIO_OUTPUT = "hdmi"
+# Current volume (0-100) and mute state — written by the remote's
+# volume/mute keys (system/scripts/volume-key-monitor.py, a standalone
+# process, not this backend) and re-applied at boot/output-switch time by
+# apply-audio-output.sh. This module only reads them, for the
+# /api/local/audio-volume endpoint the kiosk page polls to reflect
+# changes on screen. Same not-in-WIPE_PATHS reasoning as
+# AUDIO_OUTPUT_FILE — a volume level is a property of the room, not of
+# this device's pairing state.
+AUDIO_VOLUME_FILE = Path("/data/status/audio-volume")
+AUDIO_MUTED_FILE = Path("/data/status/audio-muted")
+DEFAULT_AUDIO_VOLUME = 100
 
 # Wiped together, always — see this module's docstring for the three
 # triggers that share this list (explicit unpair, 401 revocation, and
@@ -156,6 +167,22 @@ def write_audio_output(value: str) -> None:
     AUDIO_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     AUDIO_OUTPUT_FILE.write_text(value)
     AUDIO_OUTPUT_FILE.chmod(0o644)
+
+
+def read_audio_volume() -> int:
+    if not AUDIO_VOLUME_FILE.exists():
+        return DEFAULT_AUDIO_VOLUME
+    try:
+        value = int(AUDIO_VOLUME_FILE.read_text().strip())
+    except ValueError:
+        return DEFAULT_AUDIO_VOLUME
+    return max(0, min(100, value))
+
+
+def read_audio_muted() -> bool:
+    if not AUDIO_MUTED_FILE.exists():
+        return False
+    return AUDIO_MUTED_FILE.read_text().strip() == "true"
 
 
 def read_language_boot_hint() -> str | None:

@@ -1,0 +1,25 @@
+[Unit]
+Description=Slide Announcer volume-key remote: adjust/mute kiosk audio volume
+# Ordering only, not Requires= — volume/mute should still work while the
+# kiosk is asleep/stopped (same reasoning as slide-announcer-power-button
+# staying independent of it), this just avoids racing kiosk-start.sh's own
+# XDG_RUNTIME_DIR/PipeWire bring-up on a fresh boot.
+After=slide-announcer-kiosk.service
+
+[Service]
+Type=simple
+# Unprivileged, same as slide-announcer-power-button.service — reading
+# /dev/input/event* only needs the `input` group, and `wpctl` is already
+# reachable by this account without elevation (PipeWire/WirePlumber run
+# as this same user, started directly by kiosk-start.sh — see
+# apply-audio-output.sh's own comment). volume-key-monitor.py sets its own
+# XDG_RUNTIME_DIR default to match kiosk-start.sh's, since this unit has
+# no PAMName= to get one from logind automatically.
+User=slideannouncer
+Group=slideannouncer
+ExecStart=/usr/local/sbin/slide-announcer-volume-key-monitor
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -165,6 +165,16 @@ async def audio_output_set(body: AudioOutputRequest):
     return {"ok": True, "audio_output": body.value}
 
 
+@app.get("/api/local/audio-volume")
+def audio_volume_status():
+    # Deliberately its own tiny endpoint rather than folded into
+    # /api/local/status: Slideshow.vue calls this once per volume/mute
+    # keypress (debounced, not on a fixed interval — see that component's
+    # own comment), and /api/local/status pulls in heavier heartbeat/sync
+    # state this doesn't need.
+    return {"volume": pairing.read_audio_volume(), "muted": pairing.read_audio_muted()}
+
+
 @app.get("/api/local/system/update-check")
 def system_update_check_status():
     return {"result": system_control.read_update_check_status()}
