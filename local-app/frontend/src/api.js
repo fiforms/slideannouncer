@@ -41,6 +41,13 @@ export const api = {
   triggerUpdateCheck: () => request('/api/local/system/update-check', { method: 'POST' }),
   triggerUpdateApply: () => request('/api/local/system/update-apply', { method: 'POST' }),
   updateProgress: () => request('/api/local/system/update-progress'),
+  audioOutputStatus: () => request('/api/local/audio-output'),
+  setAudioOutput: (value) =>
+    request('/api/local/audio-output', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value }),
+    }),
   reboot: () => request('/api/local/system/reboot', { method: 'POST' }),
   sleepDisplay: () => request('/api/local/system/sleep', { method: 'POST' }),
   factoryReset: () => request('/api/local/system/factory-reset', { method: 'POST' }),

@@ -50,6 +50,7 @@ install -m 755 files/system/scripts/home-dirs.sh "${ROOTFS_DIR}/usr/local/sbin/s
 install -m 755 files/system/scripts/ssh-gate.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-ssh-gate"
 install -m 755 files/system/scripts/power-button-monitor.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-power-button-monitor"
 install -m 755 files/system/scripts/display-power.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-display-power"
+install -m 755 files/system/scripts/apply-audio-output.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-audio-output"
 
 # HandlePowerKey=ignore: without it, systemd-logind's own default power-key
 # handling (suspend) races slide-announcer-power-button.service for the
@@ -404,7 +405,7 @@ WirelessEnabled=true
 NMEOF
 
 useradd --system --create-home --home-dir /var/lib/slide-announcer \
-	--groups video,render,input,dialout,netdev slideannouncer
+	--groups video,render,input,dialout,netdev,audio slideannouncer
 
 # labwc config dir for the kiosk session (see system/labwc/rc.xml for why
 # this exists and what it blocks) — labwc reads $HOME/.config/labwc/rc.xml

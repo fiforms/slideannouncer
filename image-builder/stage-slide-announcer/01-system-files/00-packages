@@ -3,6 +3,10 @@ adwaita-icon-theme
 labwc
 seatd
 xwayland
+pipewire
+pipewire-pulse
+wireplumber
+alsa-utils
 network-manager
 nginx-light
 python3-venv

@@ -50,6 +50,15 @@ ENTITY_NAME_FILE = Path("/data/status/entity-name")
 # DEVICE_NAME_FILE/ENTITY_NAME_FILE. Always wins over LANGUAGE_BOOT_HINT_FILE
 # once it exists; see read_effective_language().
 LANGUAGE_FILE = Path("/data/status/language")
+# Which physical output PipeWire should default to — "hdmi" (the TV, via
+# the same cable driving the display) or "headphones" (the Pi's analogue
+# jack, e.g. feeding a church PA). Purely a device-local hardware
+# preference, set from the Settings screen — see AUDIO_TODO.md for the
+# full design and what's still open (volume control). Deliberately NOT in
+# WIPE_PATHS below, since it describes how this device is wired into the
+# room, not anything about its pairing.
+AUDIO_OUTPUT_FILE = Path("/data/status/audio-output")
+DEFAULT_AUDIO_OUTPUT = "hdmi"
 
 # Wiped together, always — see this module's docstring for the three
 # triggers that share this list (explicit unpair, 401 revocation, and
@@ -134,6 +143,19 @@ def write_language(code: str) -> None:
     LANGUAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
     LANGUAGE_FILE.write_text(code)
     LANGUAGE_FILE.chmod(0o644)
+
+
+def read_audio_output() -> str:
+    if not AUDIO_OUTPUT_FILE.exists():
+        return DEFAULT_AUDIO_OUTPUT
+    value = AUDIO_OUTPUT_FILE.read_text().strip()
+    return value if value in ("hdmi", "headphones") else DEFAULT_AUDIO_OUTPUT
+
+
+def write_audio_output(value: str) -> None:
+    AUDIO_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    AUDIO_OUTPUT_FILE.write_text(value)
+    AUDIO_OUTPUT_FILE.chmod(0o644)
 
 
 def read_language_boot_hint() -> str | None:

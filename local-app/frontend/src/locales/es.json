@@ -54,6 +54,9 @@
             "updateInstalled": "Actualización instalada.",
             "updateStaged": "Actualización preparada — reiniciando para aplicarla.",
             "updateResult": "Resultado de la actualización: {result}",
+            "audioOutput": "Salida de Audio",
+            "audioOutputHdmi": "HDMI (altavoces del televisor)",
+            "audioOutputHeadphones": "Conector de Auriculares",
             "deviceToolsLink": "Reiniciar, restablecer y depurar el dispositivo"
         },
         "pairing": {

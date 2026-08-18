@@ -147,6 +147,24 @@ async def network_forget(body: ForgetRequest):
     return {"ok": True}
 
 
+@app.get("/api/local/audio-output")
+def audio_output_status():
+    return {"audio_output": pairing.read_audio_output()}
+
+
+class AudioOutputRequest(BaseModel):
+    value: str
+
+
+@app.post("/api/local/audio-output")
+async def audio_output_set(body: AudioOutputRequest):
+    if body.value not in ("hdmi", "headphones"):
+        raise HTTPException(status_code=422, detail="value must be 'hdmi' or 'headphones'")
+    pairing.write_audio_output(body.value)
+    await system_control.apply_audio_output()
+    return {"ok": True, "audio_output": body.value}
+
+
 @app.get("/api/local/system/update-check")
 def system_update_check_status():
     return {"result": system_control.read_update_check_status()}

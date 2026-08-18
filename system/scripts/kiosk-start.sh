@@ -26,6 +26,21 @@ export WLR_SEATD=1
 export XCURSOR_THEME=slide-announcer-blank
 export XCURSOR_SIZE=24
 
+# Audio session — there's no logind/systemd user session here (see this
+# script's own docstring above), so PipeWire/WirePlumber can't start the
+# normal way (systemd --user units activated by a login session). Instead
+# they're plain background processes under the same manually-built
+# XDG_RUNTIME_DIR Chromium itself will use, so pipewire-pulse's socket is
+# where Chromium's PulseAudio-protocol audio backend expects to find it.
+# Backgrounded before the `exec` below, so they stay in this same process's
+# cgroup and systemd tears them down with the rest of the unit on stop,
+# same as everything else this script launches.
+pipewire &
+wireplumber &
+pipewire-pulse &
+sleep 1
+/usr/local/sbin/slide-announcer-apply-audio-output || true
+
 CHROMIUM_CMD=(
 	chromium
 	--kiosk

@@ -54,6 +54,9 @@
             "updateInstalled": "Update installed.",
             "updateStaged": "Update staged — rebooting to apply it.",
             "updateResult": "Update result: {result}",
+            "audioOutput": "Audio Output",
+            "audioOutputHdmi": "HDMI (TV speakers)",
+            "audioOutputHeadphones": "Headphone Jack",
             "deviceToolsLink": "Device Restart, Reset & Debugging"
         },
         "pairing": {

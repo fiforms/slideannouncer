@@ -16,6 +16,33 @@ const updateRunning = ref(false)
 const progress = ref(null)
 let progressTimer = null
 
+const audioOutput = ref(null)
+const audioOutputSaving = ref(false)
+const audioOutputError = ref(null)
+
+async function loadAudioOutput() {
+  try {
+    const data = await api.audioOutputStatus()
+    audioOutput.value = data.audio_output
+  } catch {
+    // leave blank rather than erroring out the page
+  }
+}
+
+async function selectAudioOutput(value) {
+  if (value === audioOutput.value || audioOutputSaving.value) return
+  audioOutputSaving.value = true
+  audioOutputError.value = null
+  try {
+    const data = await api.setAudioOutput(value)
+    audioOutput.value = data.audio_output
+  } catch (err) {
+    audioOutputError.value = err.message
+  } finally {
+    audioOutputSaving.value = false
+  }
+}
+
 // checkResult.data is the structured heartbeat response update-check.py
 // pulls out of the CLI's stdout (see that script's _leading_json) — null
 // when the device isn't paired yet (the CLI exits with a plain-text error
@@ -113,6 +140,7 @@ function stopPolling() {
 onMounted(async () => {
   loadVersions()
   loadLastCheck()
+  loadAudioOutput()
   const data = await api.updateProgress().catch(() => null)
   if (data) {
     updateRunning.value = data.running
@@ -246,6 +274,31 @@ async function updateNow() {
     </section>
 
     <section class="block">
+      <div class="tile result">
+        <h2>{{ t('settings.system.audioOutput') }}</h2>
+        <div class="actions">
+          <button
+            class="tile action"
+            :class="{ active: audioOutput === 'hdmi' }"
+            :disabled="audioOutputSaving"
+            @click="selectAudioOutput('hdmi')"
+          >
+            {{ t('settings.system.audioOutputHdmi') }}
+          </button>
+          <button
+            class="tile action"
+            :class="{ active: audioOutput === 'headphones' }"
+            :disabled="audioOutputSaving"
+            @click="selectAudioOutput('headphones')"
+          >
+            {{ t('settings.system.audioOutputHeadphones') }}
+          </button>
+        </div>
+        <p v-if="audioOutputError" class="pill warn">{{ audioOutputError }}</p>
+      </div>
+    </section>
+
+    <section class="block">
       <router-link to="/settings/device-tools" class="tile action device-tools-link">
         {{ t('settings.system.deviceToolsLink') }}
       </router-link>
@@ -272,6 +325,10 @@ h2 {
   font-size: 1.05rem;
 }
 .action:disabled { opacity: 0.6; cursor: default; }
+.action.active {
+  border-color: var(--accent, #6c8cff);
+  color: var(--accent, #6c8cff);
+}
 .action.danger {
   border-color: var(--danger);
   color: var(--danger);

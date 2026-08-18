@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 
 DISPLAY_POWER_CLI = "/usr/local/sbin/slide-announcer-display-power"
+AUDIO_OUTPUT_CLI = "/usr/local/sbin/slide-announcer-apply-audio-output"
 
 UPDATE_CHECK_STATUS_FILE = Path("/data/status/update-check.json")
 # Written by whichever of os-updater.py / local_app_updater.py is currently
@@ -74,6 +75,20 @@ async def sleep_display() -> None:
     await proc.wait()
     if proc.returncode != 0:
         raise SystemCommandError(f"{DISPLAY_POWER_CLI} sleep failed (exit {proc.returncode})")
+
+
+async def apply_audio_output() -> None:
+    """Re-runs PipeWire's default-sink selection against whatever
+    pairing.read_audio_output() currently says. No polkit rule needed —
+    same reasoning as sleep_display() above: PipeWire/WirePlumber run as
+    this same unprivileged `slideannouncer` user (started directly by
+    kiosk-start.sh, not a separate root-owned unit), so `wpctl` is already
+    reachable without elevation. Failures are logged by the script itself
+    rather than raised — a missing/renamed ALSA sink shouldn't 500 the
+    Settings page, it should just leave the previous output in place.
+    """
+    proc = await asyncio.create_subprocess_exec(AUDIO_OUTPUT_CLI)
+    await proc.wait()
 
 
 async def trigger_update_check() -> dict | None:
