@@ -1,8 +1,10 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '../api.js'
 import { setLocale } from '../i18n.js'
+import { settings, refreshShows, activeShow } from '../slideshowState.js'
+import { menuOpen } from '../menuOverlay.js'
 
 const { t } = useI18n()
 
@@ -48,8 +50,11 @@ const LAST_KEYS = ['MediaTrackNext']
 const FIRST_KEYS = ['MediaTrackPrevious']
 const PLAY_PAUSE_KEYS = ['MediaPlayPause', ' ', 'p', 'P']
 
-const playlist = ref([])
-const settings = ref({})
+// The active show's slides (pinned, else Main, else the first show — see
+// slideshowState.js's activeShow()). Everything below keeps working
+// against a flat "playlist" of slide entries; only how that list gets
+// selected out of the multi-show sync response has changed.
+const playlist = computed(() => activeShow()?.slides || [])
 const status = ref(null)
 const currentIndex = ref(0)
 const paused = ref(false)
@@ -164,9 +169,7 @@ function onVideoLoadedMetadata(event) {
 
 async function refreshPlaylist() {
   try {
-    const data = await api.slideshow()
-    playlist.value = data.playlist || []
-    settings.value = data.settings || {}
+    await refreshShows()
     if (currentIndex.value >= playlist.value.length) currentIndex.value = 0
     restartAdvanceTimer()
   } catch {
@@ -191,7 +194,30 @@ function togglePause() {
   restartAdvanceTimer()
 }
 
+// Stop auto-advancing while the Menu overlay is open — a slide change
+// underneath the scrim is distracting, and it'd also disrupt whatever the
+// user is doing in the overlay if it landed on a play_through video's
+// fallback timer. Deliberately doesn't touch `paused`, so this is
+// invisible to the user (no "Paused" indicator) and playback resumes
+// exactly where it would have been once the overlay closes.
+watch(menuOpen, (open) => {
+  if (open) {
+    if (advanceTimer) clearInterval(advanceTimer)
+    advanceTimer = null
+    clearPlayThroughFallback()
+  } else {
+    restartAdvanceTimer()
+  }
+})
+
 function onKeydown(event) {
+  // The Menu overlay (MenuOverlay.vue) is drawn on top of this view without
+  // unmounting it, so this listener would otherwise still see the same
+  // arrow-key presses the overlay uses for its own navigation and advance/
+  // rewind slides underneath it — distracting since the kiosk display is
+  // still visible behind the scrim. remoteNav.js's global listener handles
+  // the overlay's own focus movement separately.
+  if (menuOpen.value) return
   if (NEXT_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(currentIndex.value + 1) }
   else if (PREV_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(currentIndex.value - 1) }
   else if (LAST_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(playlist.value.length - 1) }

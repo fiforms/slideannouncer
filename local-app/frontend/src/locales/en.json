@@ -9,6 +9,10 @@
         "prompt": "Enter Settings PIN",
         "countdown": "Returning to slideshow in {seconds}s…"
     },
+    "menu": {
+        "playing": "Playing",
+        "settings": "Settings…"
+    },
     "slideshow": {
         "notPaired": "Not yet paired. Use the Menu button to open Settings.",
         "waiting": "Waiting for slides…",

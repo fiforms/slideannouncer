@@ -37,6 +37,12 @@ export const api = {
   unpair: () => request('/api/local/unpair', { method: 'POST' }),
   syncStatus: () => request('/api/local/sync/status'),
   slideshow: () => request('/api/local/slideshow'),
+  pinShow: (showId) =>
+    request('/api/local/pin-show', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ show_id: showId }),
+    }),
   updateCheckStatus: () => request('/api/local/system/update-check'),
   triggerUpdateCheck: () => request('/api/local/system/update-check', { method: 'POST' }),
   triggerUpdateApply: () => request('/api/local/system/update-apply', { method: 'POST' }),

@@ -23,6 +23,7 @@ import httpx
 import yaml
 
 import identity
+import pinning
 
 BOOT_YAML = Path("/boot/firmware/slideannouncer.yaml")
 DEVICE_TOKEN_FILE = Path("/data/device-token")
@@ -83,6 +84,11 @@ WIPE_PATHS = [
     LANGUAGE_FILE,
     Path("/data/slides"),
     Path("/data/local-app/settings.json"),
+    # A pinned show id is meaningless once unpaired — a re-pair may attach
+    # this device to a different entity's show catalog entirely, so it's
+    # wiped with the rest of the pairing state, unlike the room-property
+    # settings (audio-output, audio-volume) above.
+    pinning.PINNED_SHOW_ID_FILE,
 ]
 
 

@@ -10,14 +10,20 @@
 //   - Arrow keys move focus to the nearest focusable element in that
 //     direction. Works unchanged for both a single-column form (Pairing,
 //     WifiConnect) and the two-column Settings rail+content layout, since
-//     it's based on actual on-screen position, not DOM order.
+//     it's based on actual on-screen position, not DOM order. While the
+//     Menu overlay is open, candidates are scoped to just its own list and
+//     Up/Down wrap top-to-bottom/bottom-to-top (wrapCandidate below) — the
+//     rest of the app deliberately doesn't wrap.
 //   - Enter is deliberately left alone — a focused button/link/list item
 //     already activates on Enter natively; Pairing.vue additionally wires
 //     Enter on its own text fields to move to the next field, which this
 //     module doesn't need to know about.
-//   - The Back button navigates up one level via the router.
-//   - The Menu/Compose button jumps straight to Settings from anywhere,
-//     standing in for an on-screen menu affordance this kiosk doesn't have.
+//   - The Back button navigates up one level via the router — unless the
+//     Menu overlay (menuOverlay.js) is open, in which case Back just closes
+//     it without touching route history.
+//   - The Menu/Compose button opens the Menu overlay on top of whatever's
+//     currently showing (unless already inside /settings, where Menu is a
+//     no-op — Settings is reached *from* the overlay, not the reverse).
 //
 // Evdev key names Chromium/labwc report for Back/Compose depend on the
 // XKB mapping in use and haven't been confirmed on real hardware yet —
@@ -28,6 +34,8 @@
 //
 // The remote's Home button is confirmed on real hardware (via Key Debug)
 // to report event.key === 'BrowserHome' (keyCode 172).
+import { menuOpen, openMenu, closeMenu } from './menuOverlay.js'
+
 const DIRECTION_KEYS = { ArrowDown: 'down', ArrowUp: 'up', ArrowLeft: 'left', ArrowRight: 'right' }
 const BACK_KEYS = ['GoBack', 'BrowserBack', 'Back', 'Escape']
 const MENU_KEYS = ['ContextMenu', 'Menu', 'Compose', 'AppSwitch']
@@ -43,7 +51,12 @@ const FOCUSABLE_SELECTOR = [
 ].join(', ')
 
 function focusableElements() {
-  return Array.from(document.querySelectorAll(FOCUSABLE_SELECTOR))
+  // While the Menu overlay is open, scope candidates to just its own
+  // buttons — otherwise a press at the top/bottom edge of the (much
+  // shorter) menu list could find its way to something in the slideshow
+  // or settings page sitting underneath the scrim.
+  const root = menuOpen.value ? document.querySelector('.menu-overlay') : document
+  return Array.from((root || document).querySelectorAll(FOCUSABLE_SELECTOR))
     .filter((el) => el.offsetParent !== null) // skip display:none / hidden ancestors
 }
 
@@ -81,6 +94,17 @@ function findNext(current, direction) {
   return best
 }
 
+// Top/bottom-edge wrap, used only for the Menu overlay's vertical list
+// (see findNext's caller below) — the rest of the app's spatial nav stays
+// non-wrapping, since findNext() already returns null there and nothing
+// calls this otherwise.
+function wrapCandidate(direction) {
+  const elements = focusableElements()
+  if (!elements.length) return null
+  const byY = [...elements].sort((a, b) => center(a).y - center(b).y)
+  return direction === 'down' ? byY[0] : byY[byY.length - 1]
+}
+
 function isTypingTarget(el) {
   return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
 }
@@ -116,7 +140,10 @@ export function installRemoteNav(router) {
         (isTypingTarget(active) || active?.tagName === 'SELECT')
       if (blockedForTyping) return
 
-      const next = findNext(active || document.body, direction)
+      let next = findNext(active || document.body, direction)
+      if (!next && menuOpen.value && (direction === 'up' || direction === 'down')) {
+        next = wrapCandidate(direction)
+      }
       if (next) {
         event.preventDefault()
         next.focus()
@@ -132,6 +159,13 @@ export function installRemoteNav(router) {
 
     if (BACK_KEYS.includes(event.key)) {
       event.preventDefault()
+      if (menuOpen.value) {
+        // Dismiss without falling through to router.back() — the overlay
+        // isn't a route, so there's no history entry to undo, and closing
+        // it must never change the pin.
+        closeMenu()
+        return
+      }
       if (window.history.state?.back) router.back()
       else router.push('/kiosk')
       return
@@ -139,7 +173,8 @@ export function installRemoteNav(router) {
 
     if (MENU_KEYS.includes(event.key)) {
       event.preventDefault()
-      router.push('/settings')
+      if (menuOpen.value || router.currentRoute.value.path.startsWith('/settings')) return
+      openMenu()
     }
   })
 }

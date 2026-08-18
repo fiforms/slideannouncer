@@ -1,21 +1,28 @@
-"""Slide sync daemon — polls `GET /api/slide-announcers/slides` on a 60s
-baseline (see SLIDE_ANNOUNCER.md, "Slide sync daemon") and maintains the
-on-disk slide cache the kiosk frontend (frontend/src/views/Slideshow.vue,
-served via `GET /api/local/slideshow` in main.py) renders from.
+"""Slide sync daemon — polls `GET /api/slide-announcers/shows` on a 60s
+baseline (see MULTI_SHOW_IMPLEMENTATION.md and SLIDE_ANNOUNCER.md, "Slide
+sync daemon") and maintains the on-disk multi-show cache the kiosk frontend
+(frontend/src/views/Slideshow.vue and MenuOverlay.vue, served via
+`GET /api/local/slideshow` in main.py) renders from.
 
 Runs as a background asyncio task inside this backend, alongside
 heartbeat.py (same lifespan-task pattern in main.py, same "a bug here must
 never take the backend down" rule) — not a separate systemd timer, for the
 same reasons heartbeat.py gives.
 
-The v1 sync endpoint (SlideAnnouncerSyncController::index()) returns no
-`updated_at`/version field per slide — only `id, file_url, thumbnail_url,
-mime_type, video_playback_mode, overlay_url, overlay_mime_type, sort_order,
-expires_at`. "New/changed" is therefore detected by comparing `file_url`
-(and, separately, `overlay_url`) against the manifest's last-known values
-for that id: the app never mutates a slide's stored file in place without
-changing its storage path (a re-upload is a new path), so a URL change is a
-reliable proxy for "content changed" without a real version field.
+Every entity now has one or more named, orderable "shows" instead of one
+flat slide list. The `/shows` endpoint returns every show belonging to the
+device's paired entity, each already server-resolved for order and
+language — **no `sort_order` field is provided**, on either the show list
+or a show's `slides` array: array order is display order, period.
+
+"New/changed" for a given slide is detected the same way it always was —
+by comparing `file_url` (and, separately, `overlay_url`) against the
+last-known value for that slide id, flattened across all shows so a slide
+that appears in more than one show is only downloaded once per cycle
+(`_flatten`/`downloaded_this_cycle` below) — the app never mutates a
+slide's stored file in place without changing its storage path, so a URL
+change is a reliable proxy for "content changed" without a real version
+field.
 
 `overlay_url` is a slide's optional 'slide-overlay' media (uploaded from the
 admin/contributor Edit pages' Media Manager) — a future feature will
@@ -50,6 +57,7 @@ from urllib.parse import urlparse
 import httpx
 
 import pairing
+import pinning
 import system_control
 
 INTERVAL_SECONDS = 60
@@ -100,12 +108,22 @@ def read_status() -> dict:
     })
 
 
-def read_playlist() -> list:
-    return _read_json(PLAYLIST_FILE, [])
+def read_shows() -> list:
+    return _read_json(PLAYLIST_FILE, {"shows": []}).get("shows", [])
 
 
 def read_settings() -> dict:
     return _read_json(SETTINGS_FILE, {})
+
+
+def _flatten(manifest: dict) -> dict:
+    """All slide entries across every show, keyed by slide id — used to
+    look up a slide's last-known state for diffing/reuse regardless of
+    which show(s) it currently belongs to."""
+    flat = {}
+    for show in manifest.values():
+        flat.update(show.get("slides", {}))
+    return flat
 
 
 def _local_filename(slide: dict, suffix: str = "", url_key: str = "file_url", mime_key: str = "mime_type") -> str:
@@ -139,20 +157,23 @@ async def _download(client: httpx.AsyncClient, url: str, dest: Path) -> None:
 
 def _build_active_playlist(manifest: dict) -> list:
     now = datetime.now(timezone.utc)
-    entries = [
-        {
-            "id": entry["id"],
-            "media_url": f"/media/{entry['local_filename']}",
-            "mime_type": entry.get("mime_type"),
-            "video_playback_mode": entry.get("video_playback_mode"),
-            "overlay_media_url": f"/media/{entry['overlay_local_filename']}" if entry.get("overlay_local_filename") else None,
-            "sort_order": entry.get("sort_order", 0),
-        }
-        for entry in manifest.values()
-        if not _is_expired(entry, now) and (MEDIA_DIR / entry["local_filename"]).exists()
-    ]
-    entries.sort(key=lambda e: e["sort_order"])
-    return entries
+    shows = []
+    for show_id, show in manifest.items():
+        slides = [
+            {
+                "id": entry["id"],
+                "media_url": f"/media/{entry['local_filename']}",
+                "mime_type": entry.get("mime_type"),
+                "video_playback_mode": entry.get("video_playback_mode"),
+                "overlay_media_url": f"/media/{entry['overlay_local_filename']}" if entry.get("overlay_local_filename") else None,
+            }
+            # dict insertion order (preserved through json dump/load) is the
+            # server's display order for this show — no sort key to apply.
+            for entry in show.get("slides", {}).values()
+            if not _is_expired(entry, now) and (MEDIA_DIR / entry["local_filename"]).exists()
+        ]
+        shows.append({"id": show_id, "name": show.get("name"), "is_main": bool(show.get("is_main")), "slides": slides})
+    return shows
 
 
 async def sync_once() -> None:
@@ -163,7 +184,7 @@ async def sync_once() -> None:
 
     token = pairing.read_device_token()
     if not token:
-        _write_json(PLAYLIST_FILE, _build_active_playlist(manifest))
+        _write_json(PLAYLIST_FILE, {"shows": _build_active_playlist(manifest)})
         return
 
     server_url = pairing.read_server_url()
@@ -171,12 +192,12 @@ async def sync_once() -> None:
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
-                f"{server_url}/api/slide-announcers/slides",
+                f"{server_url}/api/slide-announcers/shows",
                 headers={"Authorization": f"Bearer {token}"},
             )
     except httpx.RequestError as exc:
         _write_status({"last_attempt_at": _now_iso(), "last_error": str(exc)})
-        _write_json(PLAYLIST_FILE, _build_active_playlist(manifest))
+        _write_json(PLAYLIST_FILE, {"shows": _build_active_playlist(manifest)})
         return
 
     if resp.status_code == 401:
@@ -187,73 +208,103 @@ async def sync_once() -> None:
 
     if resp.status_code >= 400:
         _write_status({"last_attempt_at": _now_iso(), "last_error": f"HTTP {resp.status_code}"})
-        _write_json(PLAYLIST_FILE, _build_active_playlist(manifest))
+        _write_json(PLAYLIST_FILE, {"shows": _build_active_playlist(manifest)})
         return
 
     body = resp.json()
-    slides = body.get("slides", [])
+    shows_resp = body.get("shows", [])
     settings = body.get("settings", {})
 
-    seen_ids = set()
+    old_flat = _flatten(manifest)
+    seen_slide_ids = set()
+    downloaded_this_cycle = {}
     new_manifest = {}
-    async with httpx.AsyncClient(timeout=30) as client:
-        for slide in slides:
-            slide_id = str(slide["id"])
-            seen_ids.add(slide_id)
-            local_filename = _local_filename(slide)
-            previous = manifest.get(slide_id)
-            changed = previous is None or previous.get("file_url") != slide["file_url"]
 
-            if changed:
-                try:
-                    await _download(client, slide["file_url"], MEDIA_DIR / local_filename)
-                except httpx.HTTPError:
-                    # Keep whatever was already cached for this id rather
-                    # than dropping the slide over one bad download — it'll
-                    # retry next cycle since `changed` will still be true.
-                    if previous:
-                        new_manifest[slide_id] = previous
+    async with httpx.AsyncClient(timeout=30) as client:
+        for show in shows_resp:
+            show_id = str(show["id"])
+            slides_manifest = {}
+
+            for slide in show.get("slides", []):
+                slide_id = str(slide["id"])
+                seen_slide_ids.add(slide_id)
+
+                if slide_id in downloaded_this_cycle:
+                    slides_manifest[slide_id] = downloaded_this_cycle[slide_id]
                     continue
 
-            entry = {**slide, "id": slide_id, "local_filename": local_filename}
+                local_filename = _local_filename(slide)
+                previous = old_flat.get(slide_id)
+                changed = previous is None or previous.get("file_url") != slide["file_url"]
 
-            # Optional 'slide-overlay' media — cached alongside the base
-            # file so a future feature can composite it; not consumed by
-            # the kiosk frontend yet.
-            overlay_url = slide.get("overlay_url")
-            if overlay_url:
-                overlay_filename = _local_filename(slide, suffix="-overlay", url_key="overlay_url", mime_key="overlay_mime_type")
-                overlay_changed = previous is None or previous.get("overlay_url") != overlay_url
-                if overlay_changed:
+                if changed:
                     try:
-                        await _download(client, overlay_url, MEDIA_DIR / overlay_filename)
-                        entry["overlay_local_filename"] = overlay_filename
+                        await _download(client, slide["file_url"], MEDIA_DIR / local_filename)
                     except httpx.HTTPError:
-                        # Same "keep the cached one, retry next cycle" rule
-                        # as the base file above.
-                        if previous and previous.get("overlay_local_filename"):
-                            entry["overlay_local_filename"] = previous["overlay_local_filename"]
-                else:
-                    entry["overlay_local_filename"] = previous.get("overlay_local_filename")
-            elif previous and previous.get("overlay_local_filename"):
-                # Overlay was removed from this slide server-side — drop the
-                # now-orphaned cached file.
-                (MEDIA_DIR / previous["overlay_local_filename"]).unlink(missing_ok=True)
+                        # Keep whatever was already cached for this id rather
+                        # than dropping the slide over one bad download — it'll
+                        # retry next cycle since `changed` will still be true.
+                        if previous:
+                            slides_manifest[slide_id] = previous
+                            downloaded_this_cycle[slide_id] = previous
+                        continue
 
-            new_manifest[slide_id] = entry
+                entry = {**slide, "id": slide_id, "local_filename": local_filename}
 
-    # Slides that disappeared from the server response (deleted, expired,
-    # or reassigned away from this entity) lose their cached media too.
-    for slide_id, entry in manifest.items():
-        if slide_id not in seen_ids:
+                # Optional 'slide-overlay' media — cached alongside the base
+                # file so a future feature can composite it; not consumed by
+                # the kiosk frontend yet.
+                overlay_url = slide.get("overlay_url")
+                if overlay_url:
+                    overlay_filename = _local_filename(slide, suffix="-overlay", url_key="overlay_url", mime_key="overlay_mime_type")
+                    overlay_changed = previous is None or previous.get("overlay_url") != overlay_url
+                    if overlay_changed:
+                        try:
+                            await _download(client, overlay_url, MEDIA_DIR / overlay_filename)
+                            entry["overlay_local_filename"] = overlay_filename
+                        except httpx.HTTPError:
+                            # Same "keep the cached one, retry next cycle" rule
+                            # as the base file above.
+                            if previous and previous.get("overlay_local_filename"):
+                                entry["overlay_local_filename"] = previous["overlay_local_filename"]
+                    else:
+                        entry["overlay_local_filename"] = previous.get("overlay_local_filename")
+                elif previous and previous.get("overlay_local_filename"):
+                    # Overlay was removed from this slide server-side — drop the
+                    # now-orphaned cached file.
+                    (MEDIA_DIR / previous["overlay_local_filename"]).unlink(missing_ok=True)
+
+                slides_manifest[slide_id] = entry
+                downloaded_this_cycle[slide_id] = entry
+
+            new_manifest[show_id] = {
+                "name": show.get("name"),
+                "is_main": bool(show.get("is_main")),
+                "slides": slides_manifest,
+            }
+
+    # Slides no longer present in any current show — deleted, expired,
+    # reassigned, or belonging only to a show that disappeared entirely
+    # (deleted server-side, or swept by shows:prune-empty) — lose their
+    # cached media, same as the old flat-list behavior.
+    for slide_id, entry in old_flat.items():
+        if slide_id not in seen_slide_ids:
             (MEDIA_DIR / entry["local_filename"]).unlink(missing_ok=True)
             if entry.get("overlay_local_filename"):
                 (MEDIA_DIR / entry["overlay_local_filename"]).unlink(missing_ok=True)
 
     _write_json(MANIFEST_FILE, new_manifest)
     _write_json(SETTINGS_FILE, settings)
-    _write_json(PLAYLIST_FILE, _build_active_playlist(new_manifest))
+    _write_json(PLAYLIST_FILE, {"shows": _build_active_playlist(new_manifest)})
     _write_status({"last_attempt_at": _now_iso(), "last_success_at": _now_iso(), "last_error": None})
+
+    # Only clear a stale pin after a *successful* sync — an offline kiosk
+    # must keep playing whatever it last had, including a pinned one-off
+    # show, rather than reverting to Main just because it couldn't reach
+    # the server to confirm the show still exists.
+    pinned = pinning.read_pinned_show_id()
+    if pinned and pinned not in new_manifest:
+        pinning.write_pinned_show_id(None)
 
 
 async def run_forever() -> None:

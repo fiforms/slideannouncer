@@ -2,8 +2,9 @@
 (see SLIDE_ANNOUNCER.md, "Kiosk display", "Local settings menu"), the
 pairing screen's API, the heartbeat and slide-sync background tasks, the
 local-status endpoint the kiosk home page polls, and the slideshow endpoint
-the kiosk display (frontend/src/views/Slideshow.vue) polls for the cached
-playlist/settings sync.py maintains on disk.
+the kiosk display (frontend/src/views/Slideshow.vue) and Menu overlay
+(MenuOverlay.vue) poll for the cached shows/settings sync.py maintains on
+disk, plus the local-only show-pin endpoint (pinning.py).
 """
 import asyncio
 import json
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 import heartbeat
 import network
 import pairing
+import pinning
 import sync
 import system_control
 
@@ -71,9 +73,42 @@ def sync_status():
     return sync.read_status()
 
 
+def _resolve_pinned_show_id(shows: list) -> str | None:
+    """The pin as the kiosk should actually use right now: the on-device
+    pin if it's set and still among the synced shows, else the Main show,
+    else (only if there are no shows at all) None. sync.py already clears
+    a pin that's gone stale after a successful sync — this is cheap
+    defense-in-depth for the window before that's happened."""
+    pinned = pinning.read_pinned_show_id()
+    if pinned and any(show["id"] == pinned for show in shows):
+        return pinned
+    main_show = next((show for show in shows if show.get("is_main")), None)
+    if main_show:
+        return main_show["id"]
+    return shows[0]["id"] if shows else None
+
+
 @app.get("/api/local/slideshow")
 def slideshow():
-    return {"playlist": sync.read_playlist(), "settings": sync.read_settings()}
+    shows = sync.read_shows()
+    return {
+        "shows": shows,
+        "settings": sync.read_settings(),
+        "pinned_show_id": _resolve_pinned_show_id(shows),
+    }
+
+
+class PinShowRequest(BaseModel):
+    show_id: str | None = None
+
+
+@app.post("/api/local/pin-show")
+def pin_show(body: PinShowRequest):
+    # Local-only action — no server round trip. The main Laravel backend
+    # has no concept of "what a kiosk currently has pinned"; see
+    # MULTI_SHOW_IMPLEMENTATION.md.
+    pinning.write_pinned_show_id(body.show_id)
+    return {"ok": True, "pinned_show_id": body.show_id}
 
 
 class PairRequest(BaseModel):

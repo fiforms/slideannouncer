@@ -9,6 +9,10 @@
         "prompt": "Ingrese el PIN de configuración",
         "countdown": "Volviendo a la presentación en {seconds}s…"
     },
+    "menu": {
+        "playing": "Reproduciendo",
+        "settings": "Configuración…"
+    },
     "slideshow": {
         "notPaired": "Aún no emparejado. Use el botón Menú para abrir Configuración.",
         "waiting": "Esperando diapositivas…",
