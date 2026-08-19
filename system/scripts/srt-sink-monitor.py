@@ -38,6 +38,8 @@ import select
 import socket
 import subprocess
 import time
+import os
+import platform
 from pathlib import Path
 from urllib.parse import quote
 
@@ -53,6 +55,53 @@ PROBE_TIMEOUT_SECONDS = 5.0
 # nothing, if returning to sleep) tries to claim the display again.
 CLEANUP_DELAY_SECONDS = 1.0
 
+def get_pi_model():
+    """
+    Detects the Raspberry Pi model by reading /proc/device-tree/model.
+    Returns: 'pi5', 'pi4', 'pi_other', or 'generic_linux'
+    """
+    model_path = "/proc/device-tree/model"
+    if os.path.exists(model_path):
+        try:
+            with open(model_path, "r") as f:
+                model_str = f.read().strip().lower()
+                
+            if "raspberry pi 5" in model_str:
+                return "pi5"
+            elif "raspberry pi 4" in model_str or "400" in model_str:
+                return "pi4"
+            elif "raspberry pi" in model_str:
+                return "pi_other"  # Pi 3, Zero 2W, etc.
+        except Exception:
+            pass
+            
+    return "generic_linux"
+
+def get_hwdec_flags():
+    """
+    Returns the optimal mpv hardware decoding arguments based on detected hardware.
+    """
+    model = get_pi_model()
+    
+    if model == "pi4" or model == "pi_other":
+        # Pi 4 / 3 have a physical H.264 block using V4L2 M2M
+        return [
+            "--hwdec=v4l2m2m-copy",
+            "--hwdec-codecs=h264",
+        ]
+    elif model == "pi5":
+        # Pi 5 dropped the dedicated H.264 V4L2 block. 
+        # Its fast CPU/GPU handles high-bitrate video via drm-copy / auto-safe zero-copy
+        return [
+            "--hwdec=drm-copy",
+            "--hwdec-codecs=all",
+        ]
+    else:
+        # Generic Linux / Desktop fallback
+        return [
+            "--hwdec=auto-safe",
+            "--hwdec-codecs=all",
+        ]
 
 def read_config():
     if not SRT_SINK_CONFIG.exists():
@@ -75,7 +124,7 @@ def effective_enabled(config):
 
 
 def srt_url(passphrase):
-    return f"srt://0.0.0.0:{SRT_PORT}?mode=listener&passphrase={quote(passphrase)}"
+    return f"srt://0.0.0.0:{SRT_PORT}?mode=listener&passphrase={quote(passphrase)}&latency=120000"
 
 
 def open_poll_socket():
@@ -116,15 +165,40 @@ def handle_candidate_stream(passphrase):
 
     subprocess.run([DISPLAY_POWER_CLI, "takeover"], check=False)
 
-    subprocess.run(
-        [
-            MPV_BIN, "--no-config", "--fs",
-            "--vo=gpu", "--gpu-context=drm", "--ao=alsa",
-            "--loop=no", "--keep-open=no", "--really-quiet",
-            srt_url(passphrase),
-        ],
-        check=False,
-    )
+    # Base low-latency DRM arguments
+    mpv_cmd = [
+        MPV_BIN,
+        "--no-config",
+        "--fs",
+        # DRM & Output Overrides
+        "--vo=drm",
+        "--gpu-context=drm",
+        "--drm-mode=1920x1080@60",
+        "--scale=bilinear",
+        # Real-Time Zero-Latency Sync
+        "--ao=alsa",
+        "--video-sync=desync",
+        "--untimed",
+        "--no-correct-pts",
+        "--cache=no",
+        "--demuxer-max-bytes=150KiB",
+        "--demuxer-max-back-bytes=0",
+        "--framedrop=vo",
+        "--demuxer-lavf-o=probesize=32000,analyzeduration=0",
+        # Execution Controls
+        "--loop=no",
+        "--keep-open=no",
+        "--idle=no",
+        "--really-quiet",
+    ]
+
+    # Inject hardware-specific decoder flags
+    mpv_cmd.extend(get_hwdec_flags())
+    
+    # Add the target stream URL
+    mpv_cmd.append(srt_url(passphrase))
+
+    subprocess.run(mpv_cmd, check=False)
 
     time.sleep(CLEANUP_DELAY_SECONDS)
     subprocess.run([DISPLAY_POWER_CLI, "sleep" if was_sleeping else "wake"], check=False)
