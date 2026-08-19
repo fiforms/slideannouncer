@@ -672,7 +672,7 @@ slot-install)
 	# that RAUC always installs [image.rootfs] before [image.kernel] (this
 	# manifest's own declaration order), so "root${ROOTLABEL}" already
 	# resolves to the just-written partition by the time this runs.
-	ROOT_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -L "root${ROOTLABEL}")")"
+	ROOT_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -c /dev/null -L "root${ROOTLABEL}")")"
 	sed -i -E "s/__ROOTPARTUUID__/${ROOT_PARTUUID}/; s#(root=PARTUUID=${ROOT_PARTUUID})#\1 rauc.slot=rootfs.$([ "$ROOTLABEL" = A ] && echo 0 || echo 1)#" \
 		"${TARGET}/cmdline.txt"
 	;;
@@ -681,9 +681,17 @@ slot-post-install)
 	# [image.rootfs]'s hooks=post-install makes RAUC auto-mount this slot
 	# and provide RAUC_SLOT_MOUNT_POINT for exactly this kind of fixup.
 	mount -o remount,rw "${RAUC_SLOT_MOUNT_POINT:?}"
+	# Every blkid -L below needs -c /dev/null: blkid resolves -L against its
+	# on-disk cache (/etc/blkid.tab) by default, and the e2label call just
+	# above changes the ext4 superblock directly without invalidating that
+	# cache. Confirmed on real hardware (2026-08-19): without -c /dev/null,
+	# blkid -L rootA and -L rootB both resolved to the partition this hook
+	# had JUST relabeled, so system.conf's [slot.rootfs.0] and
+	# [slot.rootfs.1] ended up with the same device= — the next `rauc
+	# install` then tried to write the currently-booted (busy) partition.
 	ROOT_PARTUUID="$(blkid -s PARTUUID -o value "${RAUC_SLOT_DEVICE:?}")"
-	BOOT_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -L bootfs)")"
-	DATA_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -L data)")"
+	BOOT_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -c /dev/null -L bootfs)")"
+	DATA_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -c /dev/null -L data)")"
 	sed -i -E \
 		-e "s#^\S+(\s+/\s)#PARTUUID=${ROOT_PARTUUID}\1#" \
 		-e "s#^\S+(\s+/boot/firmware\s)#PARTUUID=${BOOT_PARTUUID}\1#" \
@@ -694,8 +702,8 @@ slot-post-install)
 	# same fix, by LOCATION (each address range scoped to its own
 	# [slot.rootfs.N] stanza) rather than by matching whatever garbage
 	# value happens to already be there.
-	ROOTA_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -L rootA)")"
-	ROOTB_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -L rootB)")"
+	ROOTA_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -c /dev/null -L rootA)")"
+	ROOTB_PARTUUID="$(blkid -s PARTUUID -o value "$(blkid -c /dev/null -L rootB)")"
 	sed -i -E \
 		-e "/^\[slot\.rootfs\.0\]/,/^\[/{s#^device=/dev/disk/by-partuuid/[0-9a-fA-F-]+#device=/dev/disk/by-partuuid/${ROOTA_PARTUUID}#}" \
 		-e "/^\[slot\.rootfs\.1\]/,/^\[/{s#^device=/dev/disk/by-partuuid/[0-9a-fA-F-]+#device=/dev/disk/by-partuuid/${ROOTB_PARTUUID}#}" \
