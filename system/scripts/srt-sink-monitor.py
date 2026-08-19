@@ -123,14 +123,19 @@ def get_hwdec_flags():
     model = get_pi_model()
 
     if model == "pi4" or model == "pi_other":
-        # Pi 4 / 3 have a physical H.264 block using V4L2 M2M. No -copy:
-        # under --gpu-context=wayland, mpv can hand the decoded frame to
-        # the compositor as a zero-copy dmabuf (this mpv build lists
-        # dmabuf-wayland/egl-wayland/gbm among its enabled features) —
-        # -copy forces a CPU-side copy that only made sense for the old
-        # direct-DRM vo, which couldn't take a dmabuf source at all.
+        # Pi 4 / 3 have a physical H.264 block using V4L2 M2M. Tried
+        # plain v4l2m2m (no -copy) for a zero-copy dmabuf handoff to
+        # --gpu-context=wayland, but confirmed on hardware it leaks a
+        # duplicated dmabuf fd per frame in this Mesa/v3d driver stack —
+        # a ~50s test clip ended in "Failed to duplicate dmabuf fd: Too
+        # many open files" and visibly corrupted/frozen frames once the
+        # process's fd table filled up. -copy avoids that whole path (a
+        # real CPU-side copy per frame instead of a dmabuf export) at the
+        # cost of the CPU savings zero-copy would have given — stability
+        # over that savings, since any external feed running more than a
+        # minute would otherwise eventually hit this.
         return [
-            "--hwdec=v4l2m2m",
+            "--hwdec=v4l2m2m-copy",
             "--hwdec-codecs=h264",
         ]
     elif model == "pi5":
@@ -277,6 +282,16 @@ def handle_candidate_stream(passphrase):
         # resolution the stream sends to the TV's actual mode — the same
         # path that already scales Chromium's rendering to 4K correctly
         # — so no --drm-mode/resolution hardcode is needed here at all.
+        #
+        # -confirmed on hardware that gpu-next's
+        # output swapchain leaks a file descriptor per presented frame on
+        # this Mesa/v3d driver stack — a multi-minute test climbed fd
+        # count steadily (watched via /proc/<pid>/fd) and eventually hit
+        # "MESA: error: Export failed" / growing A-V drift as the leak
+        # exhausted the process's fd table, the same failure class as the
+        # v4l2m2m (non-copy) hwdec leak below, but in the *output* path
+        # this time, independent of hwdec choice. gpu-next is mpv's newer
+        # libplacebo-based renderer.
         "--vo=gpu-next",
         "--gpu-context=wayland",
         # PipeWire, not bare ALSA — routes through the same audio graph
