@@ -141,6 +141,7 @@ def validate_stream(passphrase):
     audio, so a bogus/mis-passphrased caller leaves the kiosk completely
     undisturbed. --frames=1 bounds it to a single decoded frame either way.
     """
+    start = time.monotonic()
     proc = subprocess.Popen(
         [
             MPV_BIN, "--no-config", "--vo=null", "--ao=null",
@@ -148,11 +149,13 @@ def validate_stream(passphrase):
         ],
     )
     try:
-        return proc.wait(timeout=PROBE_TIMEOUT_SECONDS) == 0
+        ok = proc.wait(timeout=PROBE_TIMEOUT_SECONDS) == 0
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
-        return False
+        ok = False
+    print(f"[srt-sink] validate_stream took {time.monotonic() - start:.1f}s ok={ok}", flush=True)
+    return ok
 
 
 def handle_candidate_stream(passphrase):
@@ -163,42 +166,59 @@ def handle_candidate_stream(passphrase):
         [DISPLAY_POWER_CLI, "status"], capture_output=True, text=True, check=False
     ).stdout.strip() == "sleeping"
 
+    takeover_start = time.monotonic()
     subprocess.run([DISPLAY_POWER_CLI, "takeover"], check=False)
+    print(f"[srt-sink] takeover took {time.monotonic() - takeover_start:.1f}s", flush=True)
+
+    hwdec_flags = get_hwdec_flags()
+    print(f"[srt-sink] pi model={get_pi_model()} hwdec={hwdec_flags}", flush=True)
 
     # Base low-latency DRM arguments
     mpv_cmd = [
         MPV_BIN,
         "--no-config",
         "--fs",
-        # DRM & Output Overrides
+        # DRM & Output Overrides — matches the incoming stream's own
+        # resolution (confirmed 1920x1080 via journal: "Video --vid=1
+        # (h264 1920x1080)") rather than the TV's native 4K mode. Any
+        # mismatch here forces mpv's DRM vo to scale in software every
+        # frame ("VO: Direct Rendering Manager (software scaling)" in the
+        # journal) even though hwdec decode itself succeeds — that
+        # software scale, not decode, was the real CPU/lag cause. Letting
+        # the TV upscale the 1080p HDMI signal itself is free.
         "--vo=drm",
         "--gpu-context=drm",
         "--drm-mode=1920x1080@60",
-        "--scale=bilinear",
-        # Real-Time Zero-Latency Sync
+        # Real-Time Sync — paced to realtime instead of --untimed/desync.
+        # Letting the decode loop free-run was the likely cause of the
+        # high CPU + growing lag: if decode ever dips below the stream's
+        # real-time rate, mpv should drop frames to keep pace rather than
+        # racing to catch up.
         "--ao=alsa",
-        "--video-sync=desync",
-        "--untimed",
-        "--no-correct-pts",
-        "--cache=no",
-        "--demuxer-max-bytes=150KiB",
-        "--demuxer-max-back-bytes=0",
         "--framedrop=vo",
         "--demuxer-lavf-o=probesize=32000,analyzeduration=0",
         # Execution Controls
         "--loop=no",
         "--keep-open=no",
         "--idle=no",
-        "--really-quiet",
+        # Left verbose (not --really-quiet) so hwdec negotiation and
+        # dropped-frame/decoder stats land in the journal for
+        # troubleshooting — this is the one-shot playback run, not the
+        # frequent validation probe, so the extra journal volume is fine.
+        "--msg-level=all=status,vd=v,cplayer=v",
     ]
 
     # Inject hardware-specific decoder flags
-    mpv_cmd.extend(get_hwdec_flags())
-    
+    mpv_cmd.extend(hwdec_flags)
+
     # Add the target stream URL
     mpv_cmd.append(srt_url(passphrase))
 
-    subprocess.run(mpv_cmd, check=False)
+    print(f"[srt-sink] launching: {' '.join(mpv_cmd)}", flush=True)
+    start = time.monotonic()
+    result = subprocess.run(mpv_cmd, check=False)
+    elapsed = time.monotonic() - start
+    print(f"[srt-sink] mpv exited code={result.returncode} after {elapsed:.1f}s", flush=True)
 
     time.sleep(CLEANUP_DELAY_SECONDS)
     subprocess.run([DISPLAY_POWER_CLI, "sleep" if was_sleeping else "wake"], check=False)
