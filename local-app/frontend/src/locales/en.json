@@ -75,8 +75,8 @@
             "regenerate": "Regenerate",
             "regenerating": "Regenerating…",
             "connectWith": "Connect With:",
-            "copy": "Copy",
-            "copied": "Copied!"
+            "displayQrCode": "Display QR Code",
+            "close": "Close"
         },
         "pairing": {
             "title": "Pairing",

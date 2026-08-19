@@ -75,8 +75,8 @@
             "regenerate": "Regenerar",
             "regenerating": "Regenerando…",
             "connectWith": "Conectar con:",
-            "copy": "Copiar",
-            "copied": "¡Copiado!"
+            "displayQrCode": "Mostrar Código QR",
+            "close": "Cerrar"
         },
         "pairing": {
             "title": "Emparejamiento",

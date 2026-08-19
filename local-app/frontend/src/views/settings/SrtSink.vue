@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import QRCode from 'qrcode'
 import { api } from '../../api.js'
@@ -12,10 +12,11 @@ const effectiveEnabled = ref(false)
 const passphrase = ref('')
 const connectUrl = ref(null)
 const qrDataUrl = ref(null)
+const qrLightboxDataUrl = ref(null)
 const saving = ref(false)
 const regenerating = ref(false)
 const error = ref(null)
-const copied = ref(false)
+const lightboxOpen = ref(false)
 
 function applyStatus(data) {
   localEnabled.value = data.local_enabled
@@ -27,10 +28,28 @@ function applyStatus(data) {
 
 // Generated client-side (no qrencode/system package needed) — the URL is
 // already fully known from the API response, so there's nothing a
-// server-rendered image would add.
+// server-rendered image would add. Two sizes: a small inline preview, and
+// a much larger one for the lightbox — meant to be read by a phone camera
+// from normal TV-viewing distance, not up close at the kiosk screen.
 watch(connectUrl, async (url) => {
   qrDataUrl.value = url ? await QRCode.toDataURL(url, { width: 220, margin: 1 }) : null
+  qrLightboxDataUrl.value = url ? await QRCode.toDataURL(url, { width: 720, margin: 2 }) : null
 }, { immediate: true })
+
+function openLightbox() {
+  if (qrLightboxDataUrl.value) lightboxOpen.value = true
+}
+
+function closeLightbox() {
+  lightboxOpen.value = false
+}
+
+function onKeydown(event) {
+  if (event.key === 'Escape' && lightboxOpen.value) closeLightbox()
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 async function load() {
   try {
@@ -63,13 +82,6 @@ async function regenerate() {
   } finally {
     regenerating.value = false
   }
-}
-
-async function copyConnectUrl() {
-  if (!connectUrl.value) return
-  await navigator.clipboard?.writeText(connectUrl.value)
-  copied.value = true
-  setTimeout(() => { copied.value = false }, 1500)
 }
 
 onMounted(load)
@@ -123,8 +135,8 @@ onMounted(load)
           <span class="label">{{ t('settings.srtSink.connectWith') }}</span>
           <div class="connect-url-row">
             <code class="connect-url">{{ connectUrl }}</code>
-            <button type="button" class="tile action" @click="copyConnectUrl">
-              {{ copied ? t('settings.srtSink.copied') : t('settings.srtSink.copy') }}
+            <button type="button" class="tile action" @click="openLightbox">
+              {{ t('settings.srtSink.displayQrCode') }}
             </button>
           </div>
           <img v-if="qrDataUrl" :src="qrDataUrl" :alt="t('settings.srtSink.connectWith')" class="qr-code" />
@@ -133,6 +145,15 @@ onMounted(load)
 
       <p v-if="error" class="pill warn">{{ error }}</p>
     </section>
+
+    <div v-if="lightboxOpen" class="lightbox" @click="closeLightbox">
+      <div class="lightbox-content" @click.stop>
+        <img :src="qrLightboxDataUrl" :alt="t('settings.srtSink.connectWith')" class="qr-large" />
+        <button type="button" class="tile action lightbox-close" @click="closeLightbox">
+          {{ t('settings.srtSink.close') }}
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -218,5 +239,31 @@ h2 {
   background: #fff;
   padding: 0.6rem;
   border-radius: 0.4rem;
+}
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.lightbox-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+.qr-large {
+  width: min(70vh, 70vw);
+  height: min(70vh, 70vw);
+  background: #fff;
+  padding: 1.5rem;
+  border-radius: 0.8rem;
+}
+.lightbox-close {
+  padding: 0.9rem 2rem;
+  font-size: 1.1rem;
 }
 </style>
