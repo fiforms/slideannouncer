@@ -43,7 +43,16 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   identity check, setup-mode detection, and — every boot, not just the
   first — syncing `slideannouncer.yaml`'s `ssh_authorized_keys` field to
   `slideadmin`'s `~/.ssh/authorized_keys`, which only persists at all
-  because of the home bind mount above).
+  because of the home bind mount above). Every boot also runs
+  `set_hostname()`: a stable per-device hostname
+  (`slideannouncer-######`, a 6-digit number derived from `device_uuid`,
+  or a `hostname` override from `slideannouncer.yaml`), via
+  `hostnamectl set-hostname` plus a matching `/etc/hosts` patch — needed
+  since every device otherwise boots with the identical hostname baked in
+  at image-build time. mDNS (`avahi-daemon`, already
+  `publish-workstation=yes`) then makes `<hostname>.local` resolvable,
+  which is how the SRT sink daemon (below) is addressed from Windows/
+  macOS.
 - `slide-announcer-local-app-seed.service` + `scripts/local-app-seed.py` —
   runs every boot, before the backend/kiosk services: extracts the
   local-app release tarball baked into this image at
@@ -95,11 +104,16 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   mechanism: `sleep` stops `slide-announcer-kiosk.service` then
   `vcgencmd display_power 0`; `wake` is the reverse; `toggle`/`status`
   read/flip a marker file at `/run/slide-announcer/kiosk-sleeping` (tmpfs —
-  always starts awake on boot). Deliberately a standalone CLI, not logic
-  embedded in whatever happens to trigger it, so every trigger (today, the
-  remote's power key; later, a schedule or a web UI menu button) shares
-  one mechanism instead of each re-implementing it. Callable directly,
-  without sudo, as root, `slideannouncer`, or `slideadmin` — the
+  always starts awake on boot). `takeover` stops the kiosk and ensures
+  HDMI is on *without* touching that marker — used by the SRT sink daemon
+  (below) to take the display for external video while leaving whatever
+  sleep state the device was already in untouched, so a later unconditional
+  `wake`/`sleep` call (based on a `status` snapshot from before `takeover`)
+  correctly restores it. Deliberately a standalone CLI, not logic embedded
+  in whatever happens to trigger it, so every trigger (today, the remote's
+  power key, and the SRT sink daemon; later, a schedule or a web UI menu
+  button) shares one mechanism instead of each re-implementing it. Callable
+  directly, without sudo, as root, `slideannouncer`, or `slideadmin` — the
   `systemctl`/`vcgencmd` calls it makes are already permitted for all
   three (see the script's own docstring for exactly why: the existing
   `slide-announcer-*.service` polkit grant, and both accounts' persistent
@@ -127,6 +141,27 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   behavior gets out of the way of `slide-announcer-power-button.service`
   above entirely. Only takes effect once `systemd-logind`
   restarts/reboots.
+- `slide-announcer-srt-sink.service` + `scripts/srt-sink-monitor.py`
+  (installed as `/usr/local/sbin/slide-announcer-srt-sink-monitor`) —
+  on-demand SRT video-sink: polls UDP port 7002 (a plain bound socket —
+  nothing normally listens there, so this daemon has to hold one itself
+  to see any traffic at all), and on any datagram, closes that socket and
+  runs a one-shot mpv probe (`--vo=null --ao=null`) against the
+  configured passphrase from Settings > SRT Sink
+  (`local-app/backend/srt_sink.py`, `/data/status/srt-sink.json`). SRT's
+  own HSv5 handshake is what actually rejects a wrong passphrase — no
+  separate check needed here. Only on a successful probe does it call
+  `slide-announcer-display-power takeover` and launch a real mpv (direct
+  DRM/KMS video, direct ALSA audio — neither PipeWire nor labwc is running
+  by then, kiosk-start.sh only starts those inside the kiosk unit's own
+  cgroup), blocking until the stream ends, then restoring whichever of
+  `wake`/`sleep` matches the state captured before `takeover` ran. Runs as
+  the unprivileged `slideannouncer` user (same `video`/`render`/`audio`
+  supplementary groups as the kiosk unit), independent of
+  `slide-announcer-kiosk.service` — always running; the config file's
+  `enabled` flag (checked every poll) is what actually gates behavior, so
+  toggling it in Settings takes effect within one ~2s poll interval, no
+  unit restart needed.
 - `nginx-slide-announcer.conf` — serves `/data/local-app/current/frontend`
   (the Vue SPA, following the `current` symlink at request time — see
   `../local-app/README.md`) and reverse-proxies `/api/*` to the backend on

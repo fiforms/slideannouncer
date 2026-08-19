@@ -52,6 +52,7 @@ install -m 755 files/system/scripts/power-button-monitor.py "${ROOTFS_DIR}/usr/l
 install -m 755 files/system/scripts/display-power.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-display-power"
 install -m 755 files/system/scripts/apply-audio-output.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-audio-output"
 install -m 755 files/system/scripts/volume-key-monitor.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-volume-key-monitor"
+install -m 755 files/system/scripts/srt-sink-monitor.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-srt-sink-monitor"
 
 # HandlePowerKey=ignore: without it, systemd-logind's own default power-key
 # handling (suspend) races slide-announcer-power-button.service for the
@@ -492,6 +493,7 @@ systemctl enable slide-announcer-kiosk.service
 systemctl enable slide-announcer-power-button-dirs.service
 systemctl enable slide-announcer-power-button.service
 systemctl enable slide-announcer-volume-key.service
+systemctl enable slide-announcer-srt-sink.service
 systemctl enable slide-announcer-tryboot-check.service
 systemctl enable slide-announcer-local-app-updater.timer
 systemctl enable slide-announcer-os-updater.timer

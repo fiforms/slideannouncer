@@ -6,6 +6,7 @@ import NetworkStatus from './views/settings/NetworkStatus.vue'
 import WifiList from './views/settings/WifiList.vue'
 import WifiConnect from './views/settings/WifiConnect.vue'
 import System from './views/settings/System.vue'
+import SrtSink from './views/settings/SrtSink.vue'
 import Pairing from './views/settings/Pairing.vue'
 import DeviceTools from './views/settings/DeviceTools.vue'
 import KeyDebug from './views/settings/KeyDebug.vue'
@@ -33,6 +34,7 @@ const router = createRouter({
         { path: 'network', component: NetworkStatus },
         { path: 'network/wifi', component: WifiList },
         { path: 'network/wifi/:ssid', component: WifiConnect, props: true },
+        { path: 'srt-sink', component: SrtSink },
         // Pairing lives here (not a standalone top-level route) so an
         // unpaired device's pairing form gets the same rail chrome as
         // every other settings screen.

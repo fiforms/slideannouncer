@@ -24,6 +24,7 @@
         "backToSlideshow": "← Back to slideshow",
         "system": "System",
         "network": "Network",
+        "videoReceiver": "Video Receiver",
         "pairing": "Pairing"
     },
     "settings": {
@@ -63,6 +64,19 @@
             "audioOutputHdmi": "HDMI (TV speakers)",
             "audioOutputHeadphones": "Headphone Jack",
             "deviceToolsLink": "Device Restart, Reset & Debugging"
+        },
+        "srtSink": {
+            "title": "SRT Sink",
+            "hint": "Lets a video-switcher on your church network (OBS, vMix, etc.) push a live video feed directly to this device over SRT, taking over the display until the stream ends. Off by default.",
+            "enabled": "Enabled",
+            "disabled": "Disabled",
+            "serverDisabled": "Turned on here, but disabled fleet-wide from the admin dashboard — contact your church's AnnouncementSlides admin.",
+            "passphrase": "Passphrase",
+            "regenerate": "Regenerate",
+            "regenerating": "Regenerating…",
+            "connectWith": "Connect With:",
+            "copy": "Copy",
+            "copied": "Copied!"
         },
         "pairing": {
             "title": "Pairing",

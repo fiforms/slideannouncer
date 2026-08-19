@@ -154,6 +154,72 @@ def update_boot_config_keys(updates: dict) -> None:
         subprocess.run(["slide-announcer-bootfw-remount", "ro"], check=True)
 
 
+HOSTNAME_FILE = Path("/etc/hostname")
+HOSTS_FILE = Path("/etc/hosts")
+
+
+def derive_numeric_hostname(device_uuid: str) -> str:
+    """Stable 6-digit numeric suffix derived from device_uuid — decimal,
+    not hex, per operator preference (easier to read off a label or speak
+    over the phone than a hex string). sha256 rather than Python's own
+    hash() — the latter is salted per-process (PYTHONHASHSEED) and would
+    produce a different suffix every boot.
+    """
+    digest = hashlib.sha256(device_uuid.encode()).hexdigest()
+    return f"slideannouncer-{int(digest, 16) % 1_000_000:06d}"
+
+
+def set_hostname() -> None:
+    """Gives each device a unique, stable, mDNS-resolvable hostname —
+    every device otherwise boots with the identical name baked in at
+    image-build time (image-builder/pi-gen/stage1/02-net-tweaks/00-run.sh).
+    Runs every boot, not just first boot, same as sync_ssh_authorized_keys()
+    below: a `hostname` override in slideannouncer.yaml (for an operator
+    who wants a friendly name instead) takes effect on the very next
+    reboot, no rebuild/reflash. Falls back to a numeric ID derived from
+    device_uuid, which ensure_identity() (above) has already established
+    by the time this runs.
+
+    Avahi is already enabled with publish-workstation=yes (see
+    image-builder/pi-gen/stage2/01-sys-tweaks/01-run.sh) — the only thing
+    needed here for mDNS to pick up the new name is restarting the daemon.
+    """
+    config = load_boot_config()
+    override = config.get("hostname")
+    device_uuid = config.get("device_uuid")
+
+    if override:
+        target = override
+    elif device_uuid:
+        target = derive_numeric_hostname(device_uuid)
+    else:
+        return  # ensure_identity() hasn't produced one yet — nothing to derive from
+
+    current = HOSTNAME_FILE.read_text().strip() if HOSTNAME_FILE.exists() else ""
+    if current == target:
+        return
+
+    subprocess.run(["hostnamectl", "set-hostname", target], check=True)
+
+    # hostnamectl only rewrites /etc/hostname, not /etc/hosts' 127.0.1.1
+    # line (still whatever TARGET_HOSTNAME was baked in at build time) —
+    # patch it too, or anything doing a reverse lookup on this box's own
+    # hostname keeps resolving the stale build-time name.
+    if HOSTS_FILE.exists():
+        text = HOSTS_FILE.read_text()
+        pattern = re.compile(r"^(127\.0\.1\.1\s+).*$", re.MULTILINE)
+        if pattern.search(text):
+            text = pattern.sub(rf"\g<1>{target}", text, count=1)
+        else:
+            if text and not text.endswith("\n"):
+                text += "\n"
+            text += f"127.0.1.1\t{target}\n"
+        HOSTS_FILE.write_text(text)
+
+    subprocess.run(["systemctl", "restart", "avahi-daemon"], check=False)
+    log(f"hostname set to {target}")
+
+
 def compute_check(identity_key: bytes, device_uuid: str, mac: str) -> str:
     return hmac.new(identity_key, (device_uuid + mac).encode(), hashlib.sha256).hexdigest()
 
@@ -379,6 +445,7 @@ def sync_ssh_authorized_keys() -> None:
 def main() -> int:
     run_once_setup()
     ensure_identity()
+    set_hostname()
     detect_setup_mode()
     write_language_boot_hint()
     sync_ssh_authorized_keys()

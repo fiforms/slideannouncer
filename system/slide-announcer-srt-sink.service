@@ -1,0 +1,20 @@
+[Unit]
+Description=Slide Announcer on-demand SRT video-sink listener
+After=slide-announcer-power-button-dirs.service slide-announcer-kiosk.service seatd.service
+Requires=slide-announcer-power-button-dirs.service seatd.service
+
+[Service]
+Type=simple
+User=slideannouncer
+Group=slideannouncer
+# video/render for mpv's direct DRM/KMS output, audio for direct ALSA —
+# same reasoning as slide-announcer-kiosk.service's SupplementaryGroups,
+# since this daemon's real playback runs with neither PipeWire nor labwc
+# up (see srt-sink-monitor.py's module docstring and kiosk-start.sh).
+SupplementaryGroups=video render audio
+ExecStart=/usr/local/sbin/slide-announcer-srt-sink-monitor
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -55,6 +55,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ value }),
     }),
+  srtSinkStatus: () => request('/api/local/srt-sink'),
+  setSrtSink: (enabled) =>
+    request('/api/local/srt-sink', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    }),
+  regenerateSrtSinkPassphrase: () => request('/api/local/srt-sink/regenerate', { method: 'POST' }),
   reboot: () => request('/api/local/system/reboot', { method: 'POST' }),
   sleepDisplay: () => request('/api/local/system/sleep', { method: 'POST' }),
   factoryReset: () => request('/api/local/system/factory-reset', { method: 'POST' }),

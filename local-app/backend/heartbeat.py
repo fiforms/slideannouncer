@@ -18,12 +18,14 @@ section.
 import asyncio
 import json
 import platform
+import socket
 from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
 
 import pairing
+import srt_sink
 import system_control
 
 INTERVAL_SECONDS = 5 * 60
@@ -98,11 +100,22 @@ async def send_once() -> None:
         return
 
     server_url = pairing.read_server_url()
+    # Only ever reported once generated (on this device's first SRT Sink
+    # enable) — the server never sets this, only mirrors it for an admin
+    # to read off the fleet dashboard. See srt_sink.py's own docstring.
+    srt_sink_passphrase = srt_sink.read_config()["passphrase"] or None
     payload = {
         "app_version": read_app_version(),
         "os_version": read_os_version(),
         "architecture": read_architecture(),
         "cpu_temp_c": read_cpu_temp_c(),
+        "srt_sink_passphrase": srt_sink_passphrase,
+        # Reported every heartbeat (cheap, and can change on a
+        # slideannouncer.yaml hostname override + reboot) so the fleet
+        # dashboard can build the same "Connect With" srt:// URL the
+        # device's own Settings > Video Receiver screen shows — see
+        # srt_sink.py's connect_url().
+        "hostname": socket.gethostname(),
     }
 
     try:
@@ -148,6 +161,11 @@ async def send_once() -> None:
     # firstboot.py keeps applying — see pairing.read_effective_language().
     if response.get("language"):
         pairing.write_language(response["language"])
+    # Fleet-wide force-disable switch for SRT Sink (admin dashboard) — an
+    # explicit false always overrides this device's own local Settings
+    # toggle; see srt_sink.py's effective_enabled(). Missing key (older
+    # server) or true both mean "no restriction."
+    srt_sink.set_server_allows(response.get("srt_sink_enabled", True) is not False)
 
     _write_status({
         "last_attempt_at": _now_iso(),

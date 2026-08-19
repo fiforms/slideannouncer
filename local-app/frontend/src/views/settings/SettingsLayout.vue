@@ -12,6 +12,7 @@ const { t } = useI18n()
 const categories = computed(() => [
   { path: '/settings/system', label: t('settingsLayout.system') },
   { path: '/settings/network', label: t('settingsLayout.network') },
+  { path: '/settings/srt-sink', label: t('settingsLayout.videoReceiver') },
   { path: '/settings/pairing', label: t('settingsLayout.pairing') },
 ])
 </script>

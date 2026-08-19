@@ -24,6 +24,7 @@
         "backToSlideshow": "← Volver a la presentación",
         "system": "Sistema",
         "network": "Red",
+        "videoReceiver": "Receptor de Video",
         "pairing": "Emparejamiento"
     },
     "settings": {
@@ -63,6 +64,19 @@
             "audioOutputHdmi": "HDMI (altavoces del televisor)",
             "audioOutputHeadphones": "Conector de Auriculares",
             "deviceToolsLink": "Reiniciar, restablecer y depurar el dispositivo"
+        },
+        "srtSink": {
+            "title": "Receptor SRT",
+            "hint": "Permite que un conmutador de video en la red de su iglesia (OBS, vMix, etc.) envíe una transmisión de video en vivo directamente a este dispositivo mediante SRT, tomando el control de la pantalla hasta que finalice la transmisión. Desactivado de forma predeterminada.",
+            "enabled": "Activado",
+            "disabled": "Desactivado",
+            "serverDisabled": "Activado aquí, pero desactivado para toda la flota desde el panel de administración — contacte al administrador de AnnouncementSlides de su iglesia.",
+            "passphrase": "Frase de contraseña",
+            "regenerate": "Regenerar",
+            "regenerating": "Regenerando…",
+            "connectWith": "Conectar con:",
+            "copy": "Copiar",
+            "copied": "¡Copiado!"
         },
         "pairing": {
             "title": "Emparejamiento",

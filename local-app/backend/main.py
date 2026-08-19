@@ -19,6 +19,7 @@ import heartbeat
 import network
 import pairing
 import pinning
+import srt_sink
 import sync
 import system_control
 
@@ -208,6 +209,36 @@ def audio_volume_status():
     # own comment), and /api/local/status pulls in heavier heartbeat/sync
     # state this doesn't need.
     return {"volume": pairing.read_audio_volume(), "muted": pairing.read_audio_muted()}
+
+
+def _srt_sink_response(config: dict) -> dict:
+    return {
+        **config,
+        "effective_enabled": srt_sink.effective_enabled(config),
+        # Built here, not in the frontend, so the URL format (port,
+        # mode=caller, latency) lives in exactly one place — srt_sink.py.
+        "connect_url": srt_sink.connect_url(socket.gethostname(), config["passphrase"])
+        if config["passphrase"] else None,
+    }
+
+
+@app.get("/api/local/srt-sink")
+def srt_sink_status():
+    return _srt_sink_response(srt_sink.read_config())
+
+
+class SrtSinkEnableRequest(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/local/srt-sink")
+def srt_sink_set(body: SrtSinkEnableRequest):
+    return _srt_sink_response(srt_sink.set_local_enabled(body.enabled))
+
+
+@app.post("/api/local/srt-sink/regenerate")
+def srt_sink_regenerate():
+    return _srt_sink_response(srt_sink.regenerate_passphrase())
 
 
 @app.get("/api/local/system/update-check")
