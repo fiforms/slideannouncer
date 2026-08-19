@@ -46,6 +46,14 @@ fi
 # after backgrounding them) — retry briefly rather than failing on the
 # first check.
 #
+# Each attempt is capped with `timeout` — a half-initialized PipeWire
+# (e.g. the HDMI audio codec not yet registered at early boot) can leave
+# `wpctl status` blocked waiting on an IPC reply that never comes, which
+# would otherwise hang this loop forever and, since kiosk-start.sh calls
+# this script inline before its own `exec labwc`, block labwc/Chromium
+# from ever starting — a black screen that "fixes itself" on reboot only
+# because the boot-time race happens to resolve differently.
+#
 # Restricted to the Audio section's "Sinks:" block specifically — not
 # "Devices:" (a separate ID namespace `wpctl set-default` doesn't accept,
 # and can contain the same substring as its sink), and not Video's own
@@ -63,7 +71,7 @@ fi
 # one to match on other hardware revisions either.
 SINK_ID=""
 for _ in 1 2 3 4 5; do
-	AUDIO_SINKS="$(wpctl status 2>/dev/null \
+	AUDIO_SINKS="$(timeout 3 wpctl status 2>/dev/null \
 		| awk '/^Audio$/{in_audio=1} /^Video$/{in_audio=0} in_audio && /Sinks:/{flag=1; next} in_audio && /(├─|└─)/{flag=0} flag')"
 	if [ "$TARGET" = "headphones" ]; then
 		SINK_ID="$(echo "$AUDIO_SINKS" | grep -i "built-in audio" | grep -vi "hdmi" | grep -oE '[0-9]+' | head -n1)"
