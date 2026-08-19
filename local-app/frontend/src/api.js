@@ -56,6 +56,7 @@ export const api = {
       body: JSON.stringify({ value }),
     }),
   srtSinkStatus: () => request('/api/local/srt-sink'),
+  srtSinkPlaying: () => request('/api/local/srt-sink/playing'),
   setSrtSink: (enabled) =>
     request('/api/local/srt-sink', {
       method: 'POST',

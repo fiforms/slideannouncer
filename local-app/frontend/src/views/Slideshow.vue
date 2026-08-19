@@ -17,6 +17,12 @@ const { t } = useI18n()
 
 const REFRESH_INTERVAL_MS = 60000 // matches sync.py's own poll cadence — no point checking faster
 const STATUS_INTERVAL_MS = 15000
+// Much shorter than STATUS_INTERVAL_MS: a typical external clip
+// (system/scripts/srt-sink-monitor.py) runs for just a handful of
+// seconds, so the 15s status poll would often miss the whole thing
+// entirely. This hits a trivial local file-backed endpoint, not
+// heartbeat/sync, so polling it every second is cheap.
+const EXTERNAL_PLAYBACK_POLL_MS = 1000
 const DEFAULT_INTERVAL_SECONDS = 10
 const VOLUME_INDICATOR_HOLD_MS = 1500
 // Volume/mute is applied by a separate process (volume-key-monitor.py)
@@ -70,6 +76,12 @@ const playlist = computed(() => activeShow()?.slides || [])
 const status = ref(null)
 const currentIndex = ref(0)
 const paused = ref(false)
+// True only while system/scripts/srt-sink-monitor.py's mpv is actually
+// playing an external feed on top of this page (see EXTERNAL_PLAYBACK_POLL_MS).
+// Deliberately separate from `paused` — same reasoning as the menuOpen
+// watch below: it must not clobber (or be clobbered by) whatever the
+// user's own paused/unpaused state was going into the external playback.
+const externalPlaybackActive = ref(false)
 const volume = ref(100)
 const muted = ref(false)
 const showVolumeIndicator = ref(false)
@@ -83,6 +95,7 @@ let lastSeekDirection = 0
 let advanceTimer = null
 let refreshTimer = null
 let statusTimer = null
+let externalPlaybackTimer = null
 let volumeSettleTimer = null
 let volumeHideTimer = null
 let seekHideTimer = null
@@ -125,7 +138,7 @@ function clearPlayThroughFallback() {
 function restartAdvanceTimer() {
   if (advanceTimer) clearInterval(advanceTimer)
   advanceTimer = null
-  if (paused.value || playlist.value.length <= 1) return
+  if (paused.value || externalPlaybackActive.value || playlist.value.length <= 1) return
   // A 'play_through' video advances from its 'ended' event (onVideoEnded)
   // instead of a fixed delay — skip the interval entirely for it.
   const slide = currentSlide.value
@@ -293,6 +306,25 @@ watch(menuOpen, (open) => {
   }
 })
 
+// Stop everything — including any playing slide video's audio, unlike
+// the menuOpen watch above — while an external feed is on screen. Chromium
+// has no way to know mpv's Wayland surface is covering it (see
+// srt-sink-monitor.py's module docstring on why it's left running
+// underneath rather than stopped), so without this it would keep
+// advancing slides and, worse, keep playing a video slide's audio
+// underneath/mixed with the external feed's own sound.
+watch(externalPlaybackActive, (active) => {
+  if (active) {
+    if (advanceTimer) clearInterval(advanceTimer)
+    advanceTimer = null
+    clearPlayThroughFallback()
+    videoEl.value?.pause()
+  } else {
+    restartAdvanceTimer()
+    if (!paused.value) videoEl.value?.play().catch(() => {})
+  }
+})
+
 function onKeydown(event) {
   // The Menu overlay (MenuOverlay.vue) is drawn on top of this view without
   // unmounting it, so this listener would otherwise still see the same
@@ -300,7 +332,7 @@ function onKeydown(event) {
   // rewind slides underneath it — distracting since the kiosk display is
   // still visible behind the scrim. remoteNav.js's global listener handles
   // the overlay's own focus movement separately.
-  if (menuOpen.value) return
+  if (menuOpen.value || externalPlaybackActive.value) return
   if (NEXT_SLIDE_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(currentIndex.value + 1) }
   else if (PREV_SLIDE_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(currentIndex.value - 1) }
   else if (SEEK_FORWARD_KEYS.includes(event.key)) { event.preventDefault(); seekOrGoToIndex(1) }
@@ -329,6 +361,16 @@ async function refreshStatus() {
   }
 }
 
+async function refreshExternalPlayback() {
+  try {
+    const data = await api.srtSinkPlaying()
+    externalPlaybackActive.value = !!data.active
+  } catch {
+    // Leave whatever was last known — a fetch hiccup shouldn't flip a
+    // fullscreen external feed's slideshow-pause state on a guess.
+  }
+}
+
 async function refreshVolume() {
   try {
     const data = await api.audioVolumeStatus()
@@ -353,6 +395,7 @@ onMounted(async () => {
   await refreshVolume()
   refreshTimer = setInterval(refreshPlaylist, REFRESH_INTERVAL_MS)
   statusTimer = setInterval(refreshStatus, STATUS_INTERVAL_MS)
+  externalPlaybackTimer = setInterval(refreshExternalPlayback, EXTERNAL_PLAYBACK_POLL_MS)
   window.addEventListener('keydown', onKeydown)
 })
 
@@ -360,6 +403,7 @@ onUnmounted(() => {
   if (advanceTimer) clearInterval(advanceTimer)
   if (refreshTimer) clearInterval(refreshTimer)
   if (statusTimer) clearInterval(statusTimer)
+  if (externalPlaybackTimer) clearInterval(externalPlaybackTimer)
   if (volumeSettleTimer) clearTimeout(volumeSettleTimer)
   if (volumeHideTimer) clearTimeout(volumeHideTimer)
   if (seekHideTimer) clearTimeout(seekHideTimer)

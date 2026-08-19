@@ -241,6 +241,11 @@ def srt_sink_regenerate():
     return _srt_sink_response(srt_sink.regenerate_passphrase())
 
 
+@app.get("/api/local/srt-sink/playing")
+def srt_sink_playing():
+    return {"active": srt_sink.is_playing()}
+
+
 @app.get("/api/local/system/update-check")
 def system_update_check_status():
     return {"result": system_control.read_update_check_status()}

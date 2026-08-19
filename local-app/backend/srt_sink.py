@@ -26,6 +26,21 @@ A separate module rather than folded into pairing.py: unlike every other
 file under /data/status, this one holds a secret, so it gets its own
 tighter permissions (0o640, group-readable only) instead of the 0o644
 those files use.
+
+is_playing() reads a second, separate file — /data/status/srt-sink-playing.json
+— srt-sink-monitor.py's own runtime status (true only while its mpv
+playback subprocess is actually up), not config. Kept out of
+SRT_SINK_FILE deliberately: that file is secret (0o640) and owned by the
+enable/passphrase read-modify-write cycle above, and this one gets
+written and re-written every single playback (from a different process,
+racing with the config writes) — mixing the two would risk a lost update
+clobbering the passphrase, and there's no secret in "is it playing right
+now" to protect anyway. Frontend/src/views/Slideshow.vue polls this via
+GET /api/local/srt-sink/playing on a much shorter interval than the rest
+of its state (see EXTERNAL_PLAYBACK_POLL_MS there) specifically so it can
+pause its own crossfade timer and any playing slide video for the
+handful of seconds a typical external clip runs — /api/local/status's
+15s interval would often miss the whole clip.
 """
 import json
 import secrets
@@ -34,6 +49,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 SRT_SINK_FILE = Path("/data/status/srt-sink.json")
+PLAYING_FILE = Path("/data/status/srt-sink-playing.json")
 
 # Must match system/scripts/srt-sink-monitor.py's SRT_PORT — kept here too
 # (rather than importing across the venv/system-script boundary) purely so
@@ -122,6 +138,17 @@ def connect_url(hostname: str, passphrase: str) -> str:
         f"srt://{hostname}.local:{SRT_PORT}"
         f"?mode=caller&latency={SRT_LATENCY_MICROSECONDS}&passphrase={quote(passphrase)}"
     )
+
+
+def is_playing() -> bool:
+    """Written by srt-sink-monitor.py itself, not this backend — see this
+    module's docstring for why it's a separate file from SRT_SINK_FILE."""
+    if not PLAYING_FILE.exists():
+        return False
+    try:
+        return bool(json.loads(PLAYING_FILE.read_text()).get("active", False))
+    except json.JSONDecodeError:
+        return False
 
 
 def set_server_allows(allows: bool) -> None:
