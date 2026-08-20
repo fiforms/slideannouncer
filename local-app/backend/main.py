@@ -50,10 +50,20 @@ def local_status():
 
     paired = pairing.is_paired()
 
+    try:
+        server_url = pairing.read_server_url()
+    except pairing.PairingError:
+        # read_server_url() fails closed (missing/blank config) rather than
+        # returning a placeholder — surfaced here as a plain None instead
+        # of a 500, since this is just a display value for the Pairing
+        # screen's "go to {server_url}/slide-announcers" hint.
+        server_url = None
+
     return {
         "status": "paired" if paired else "not_paired",
         "message": "Slide Announcer paired." if paired else "Slide Announcer image booted successfully. Not yet paired.",
         "hostname": socket.gethostname(),
+        "server_url": server_url,
         "image_version": VERSION_FILE.read_text().strip() if VERSION_FILE.exists() else None,
         "app_version": heartbeat.read_app_version(),
         "setup_mode": setup_info.get("setup_mode"),
