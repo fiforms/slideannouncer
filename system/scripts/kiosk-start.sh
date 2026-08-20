@@ -26,20 +26,31 @@ export WLR_SEATD=1
 export XCURSOR_THEME=slide-announcer-blank
 export XCURSOR_SIZE=24
 
-# Audio session — there's no logind/systemd user session here (see this
-# script's own docstring above), so PipeWire/WirePlumber can't start the
-# normal way (systemd --user units activated by a login session). Instead
-# they're plain background processes under the same manually-built
-# XDG_RUNTIME_DIR Chromium itself will use, so pipewire-pulse's socket is
-# where Chromium's PulseAudio-protocol audio backend expects to find it.
-# Backgrounded before the `exec` below, so they stay in this same process's
-# cgroup and systemd tears them down with the rest of the unit on stop,
-# same as everything else this script launches.
-pipewire &
-wireplumber &
-pipewire-pulse &
-sleep 1
+# Audio (PipeWire/WirePlumber) is NOT started here — this unit's
+# PAMName=login (below in slide-announcer-kiosk.service) already gives it
+# a real systemd-logind session, and the OS ships its own default
+# per-user PipeWire/WirePlumber/pipewire-pulse systemd --user units that
+# auto-start for any such session. Confirmed on hardware: hand-rolling a
+# second, separate PipeWire instance (an earlier version of this file,
+# plus a short-lived slide-announcer-audio.service) actively conflicted
+# with that OS-managed one — competing for the same pipewire-pulse
+# socket and the same "org.pulseaudio.Server" D-Bus name — which is what
+# caused a string of confusing audio failures, not a fix for anything.
+#
+# What the OS's own instance actually needs, and never had before, is
+# the same HDMI-sink selection this script always used to do for its own
+# hand-rolled instance — confirmed on hardware that without this call,
+# the OS's default PipeWire is left on whatever its own built-in default
+# output is (not HDMI), which is the real reason Chromium had no sound
+# before any of this instance-juggling started.
 /usr/local/sbin/slide-announcer-apply-audio-output || true
+
+# For SRT sink playback to still have audio while this kiosk unit is
+# stopped (display-power.py's `takeover`), the OS's per-user PipeWire
+# instance above needs to keep running independent of this unit's own
+# session ending — see `loginctl enable-linger slideannouncer`, baked
+# into the image at build time (01-system-files/00-run.sh) rather than
+# something this script can arrange for itself.
 
 CHROMIUM_CMD=(
 	chromium

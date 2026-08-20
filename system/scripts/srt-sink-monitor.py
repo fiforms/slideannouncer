@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Watches UDP port 7002 for an incoming SRT stream, validates it against
-the configured passphrase, and plays it as a fullscreen Wayland client
-inside the kiosk's already-running labwc compositor.
+the configured passphrase, and takes over the display to play it.
 
 Only active when BOTH the device's own Settings > SRT Sink toggle AND the
 admin dashboard's force-disable switch allow it (see
@@ -27,35 +26,74 @@ The one-shot validation probe (mpv, --vo=null --ao=null, output-less) is
 what actually decides whether this was a real, correctly-passphrased SRT
 caller — SRT's own HSv5 crypto handshake does the passphrase check, not
 any comparison here, so a wrong passphrase or a bogus UDP packet fails
-fast without ever touching the kiosk.
+fast without ever touching the kiosk. Only a validated stream reaches
+system/scripts/display-power.py's `takeover` action (stop kiosk / ensure
+HDMI on, without touching the sleep-state marker) and real playback.
 
-Playback used to run mpv directly against DRM/KMS with the kiosk (labwc +
-Chromium + PipeWire) stopped first via display-power.py's `takeover`.
-That worked but had two real problems, both confirmed on hardware: mpv's
-DRM vo has no hardware scaler for a v4l2m2m-copy decode buffer, so any
-mismatch between the stream's resolution and the configured --drm-mode
-fell back to a CPU software blit every frame ("VO: Direct Rendering
-Manager (software scaling)" in the journal) — which also meant the
-resolution had to be hardcoded to match whatever the stream happened to
-send; and audio went out via a bare --ao=alsa, bypassing the PipeWire
-graph slide-announcer-apply-audio-output configures for the kiosk, which
-is the likely cause of "no sound" reports (silently opening the wrong
-ALSA device rather than erroring).
+A Wayland-client approach (mpv running inside the kiosk's own labwc
+compositor instead of stopping it, --gpu-context=wayland) was tried and
+reverted — see the srt-sink-wayland-experiment git branch for that
+history. Two separate, confirmed-on-hardware failures killed it: mpv's
+--vo=gpu-next leaked a file descriptor per presented frame in this
+Mesa/v3d driver stack (a multi-minute clip climbed steadily via
+/proc/<pid>/fd and eventually hit "MESA: error: Export failed"), and
+--vo=gpu (older renderer, same Wayland context) instead deadlocked
+completely after its first frame (playback position frozen while Cache
+grew unbounded — a blocked buffer swap waiting on a compositor event that
+never arrived). Both point at sharing labwc with another already-
+fullscreen client (Chromium) being fundamentally unreliable on this
+driver stack, not just mistuned flags.
 
-Now: the kiosk is left running (only woken if it was asleep — never
-stopped), and mpv connects to labwc's existing Wayland socket as a
-fullscreen client (--gpu-context=wayland), the same way Chromium already
-does for its own 4K scaling, and plays audio via --ao=pipewire through
-the same graph the kiosk already uses. No --drm-mode/resolution hardcode
-needed — the compositor scales whatever resolution the stream sends.
-Not yet hardware-tested for correct fullscreen stacking above Chromium's
-own fullscreen kiosk surface — see rc.xml's own "not yet hardware-tested"
-note for the general pattern this repo uses for that caveat.
+Back to direct DRM/KMS here. A GPU-shader attempt at this same layer
+(--vo=gpu --gpu-context=drm, no compositor, hoping to avoid legacy
+--vo=drm's CPU-side scaling) was also tried and confirmed broken on
+hardware a different way again: decode/demux kept up fine (Cache stayed
+flat, ~1.1s, never overflowing) but presentation couldn't keep pace — A-V
+grew past 14 seconds unbounded, framedrop=vo never kicking in to
+compensate since Dropped stayed flat too. That's three different
+GPU-accelerated renderers (--vo=gpu-next and --vo=gpu under Wayland, now
+--vo=gpu under direct DRM) each failing a different way on this Pi4/
+Mesa/v3d driver stack. mpv's *legacy* --vo=drm is the only configuration
+that's ever held A-V flush at 0.000 through a whole clip in this
+investigation — it costs real CPU (~200-235%, confirmed) doing its
+scaling/color-conversion via libswscale on the CPU instead of GPU shaders
+("VO: Direct Rendering Manager (software scaling)" in the journal), and
+--drm-mode has to be hardcoded to match the stream's own resolution
+(confirmed 1920x1080) since it has no hardware scaler to fall back on —
+but that known, bounded cost beats three separate GPU-path failures.
 
-See system/scripts/display-power.py's own docstring for the sleep/wake
-state-transition reasoning `wake`/`sleep` pair with.
+Audio's problem was separate from the video backend entirely: it went
+out via a bare --ao=alsa, opening whatever ALSA considered its default
+device rather than the HDMI sink slide-announcer-apply-audio-output
+configures — the likely cause of "no sound" reports. --ao=pipewire fixes
+that, but getting PipeWire itself to survive `takeover` stopping the
+kiosk took two wrong turns before landing on the real fix, both confirmed
+on hardware:
+- First tried hand-rolling a second, independent PipeWire instance in
+  its own persistent unit (slide-announcer-audio.service). This actively
+  conflicted with the OS's own default per-user PipeWire/WirePlumber/
+  pipewire-pulse systemd --user units — which auto-start for any real
+  login session, including the one slide-announcer-kiosk.service's
+  PAMName=login already creates — competing for the same pipewire-pulse
+  socket and "org.pulseaudio.Server" D-Bus name. That's a real,
+  already-running PipeWire instance this codebase just never knew about
+  before; retired the hand-rolled one entirely rather than keep two.
+- The OS's own instance normally dies with the kiosk's login session
+  when `takeover` stops it, same problem as before just one layer up.
+  Fixed with `loginctl enable-linger slideannouncer` (baked into the
+  image at build time — see 01-system-files/00-run.sh — since a live
+  `loginctl`/file-drop during testing only touches this device's
+  ephemeral /etc//var overlay and doesn't survive a reboot), which makes
+  systemd-logind keep that session (and its PipeWire) alive independent
+  of any login session's lifecycle.
+- That instance also needed the same HDMI-sink selection
+  slide-announcer-apply-audio-output always provided for the hand-rolled
+  ones — kiosk-start.sh now calls it directly once at kiosk start, since
+  nothing had ever pointed the OS's own default PipeWire at HDMI before.
+
+See system/scripts/display-power.py's own docstring for the full
+sleep/wake state-transition reasoning this pairs with.
 """
-import glob
 import json
 import pwd
 import select
@@ -66,6 +104,18 @@ import os
 import platform
 from pathlib import Path
 from urllib.parse import quote
+
+# This unit (see slide-announcer-srt-sink.service) has no PAMName/login
+# session, so systemd never sets XDG_RUNTIME_DIR for it automatically —
+# mpv's --ao=pipewire needs it to find the OS's own default per-user
+# PipeWire's socket at /run/user/<uid> (kept alive independent of any
+# session by `loginctl enable-linger slideannouncer` — see
+# 01-system-files/00-run.sh), same reason kiosk-start.sh exports this
+# itself rather than relying on it being present. Confirmed on hardware
+# that skipping this makes mpv's PipeWire client fail to connect
+# ("Could not connect to context '(null)': Host is down") and play back
+# with no audio at all, silently — no error surfaced beyond the journal.
+KIOSK_USER = "slideannouncer"
 
 SRT_SINK_CONFIG = Path("/data/status/srt-sink.json")
 # Written by this script only — read by local-app/backend/srt_sink.py's
@@ -80,18 +130,13 @@ SRT_SINK_CONFIG = Path("/data/status/srt-sink.json")
 SRT_SINK_PLAYING = Path("/data/status/srt-sink-playing.json")
 DISPLAY_POWER_CLI = "/usr/local/sbin/slide-announcer-display-power"
 MPV_BIN = "mpv"
-KIOSK_USER = "slideannouncer"
 
 SRT_PORT = 7002
 POLL_INTERVAL_SECONDS = 2.0
 PROBE_TIMEOUT_SECONDS = 5.0
-# How long to wait for labwc's Wayland socket to appear after waking the
-# kiosk from sleep — startup (pipewire/wireplumber + labwc + Chromium) is
-# not instant.
-WAYLAND_WAIT_TIMEOUT_SECONDS = 8.0
-# Pause between mpv exiting and restoring the sleep state — gives any
-# lingering PipeWire teardown from mpv's --ao=pipewire session a moment
-# to finish before deciding whether to put the kiosk back to sleep.
+# Pause between mpv exiting and restoring the kiosk/sleep state — gives
+# any lingering DRM/PipeWire teardown a moment to finish before the kiosk
+# (or nothing, if returning to sleep) tries to claim the display again.
 CLEANUP_DELAY_SECONDS = 1.0
 
 def get_pi_model():
@@ -213,34 +258,6 @@ def set_playing(active):
     SRT_SINK_PLAYING.chmod(0o644)
 
 
-def kiosk_runtime_dir():
-    return f"/run/user/{pwd.getpwnam(KIOSK_USER).pw_uid}"
-
-
-def find_wayland_display(runtime_dir):
-    """labwc's Wayland socket, e.g. /run/user/<uid>/wayland-1 — glob
-    rather than hardcode the number since it's assigned by libwayland-server
-    (normally 0 or 1 depending on what else claims a display first) and
-    isn't something this codebase controls. Skips the accompanying
-    `.lock` file. Returns just the bare `wayland-N` name mpv/libwayland
-    expect in $WAYLAND_DISPLAY, or None if the compositor isn't up yet."""
-    for candidate in sorted(glob.glob(os.path.join(runtime_dir, "wayland-*"))):
-        if not candidate.endswith(".lock"):
-            return os.path.basename(candidate)
-    return None
-
-
-def wait_for_wayland_display(runtime_dir, timeout):
-    deadline = time.monotonic() + timeout
-    while True:
-        display = find_wayland_display(runtime_dir)
-        if display is not None:
-            return display
-        if time.monotonic() >= deadline:
-            return None
-        time.sleep(0.2)
-
-
 def handle_candidate_stream(passphrase):
     if not validate_stream(passphrase):
         return
@@ -249,55 +266,50 @@ def handle_candidate_stream(passphrase):
         [DISPLAY_POWER_CLI, "status"], capture_output=True, text=True, check=False
     ).stdout.strip() == "sleeping"
 
-    if was_sleeping:
-        wake_start = time.monotonic()
-        subprocess.run([DISPLAY_POWER_CLI, "wake"], check=False)
-        print(f"[srt-sink] wake took {time.monotonic() - wake_start:.1f}s", flush=True)
-
-    runtime_dir = kiosk_runtime_dir()
-    wait_start = time.monotonic()
-    wayland_display = wait_for_wayland_display(runtime_dir, WAYLAND_WAIT_TIMEOUT_SECONDS)
-    print(f"[srt-sink] wayland socket wait took {time.monotonic() - wait_start:.1f}s "
-          f"display={wayland_display}", flush=True)
-    if wayland_display is None:
-        print("[srt-sink] no labwc Wayland socket found, aborting playback", flush=True)
-        if was_sleeping:
-            subprocess.run([DISPLAY_POWER_CLI, "sleep"], check=False)
-        return
+    takeover_start = time.monotonic()
+    subprocess.run([DISPLAY_POWER_CLI, "takeover"], check=False)
+    print(f"[srt-sink] takeover took {time.monotonic() - takeover_start:.1f}s", flush=True)
 
     hwdec_flags = get_hwdec_flags()
     print(f"[srt-sink] pi model={get_pi_model()} hwdec={hwdec_flags}", flush=True)
 
     mpv_env = dict(os.environ)
-    mpv_env["XDG_RUNTIME_DIR"] = runtime_dir
-    mpv_env["WAYLAND_DISPLAY"] = wayland_display
+    mpv_env["XDG_RUNTIME_DIR"] = f"/run/user/{pwd.getpwnam(KIOSK_USER).pw_uid}"
 
     mpv_cmd = [
         MPV_BIN,
         "--no-config",
         "--fs",
-        # Play as a Wayland client inside labwc's existing compositor
-        # (same one Chromium's kiosk surface is already in), instead of
-        # taking DRM/KMS master directly. The compositor scales whatever
-        # resolution the stream sends to the TV's actual mode — the same
-        # path that already scales Chromium's rendering to 4K correctly
-        # — so no --drm-mode/resolution hardcode is needed here at all.
-        #
-        # -confirmed on hardware that gpu-next's
-        # output swapchain leaks a file descriptor per presented frame on
-        # this Mesa/v3d driver stack — a multi-minute test climbed fd
-        # count steadily (watched via /proc/<pid>/fd) and eventually hit
-        # "MESA: error: Export failed" / growing A-V drift as the leak
-        # exhausted the process's fd table, the same failure class as the
-        # v4l2m2m (non-copy) hwdec leak below, but in the *output* path
-        # this time, independent of hwdec choice. gpu-next is mpv's newer
-        # libplacebo-based renderer.
-        "--vo=gpu-next",
-        "--gpu-context=wayland",
-        # PipeWire, not bare ALSA — routes through the same audio graph
-        # slide-announcer-apply-audio-output already configured for the
-        # kiosk, rather than opening whatever ALSA considers its default
-        # device (the likely cause of previous no-sound reports).
+        # Legacy, non-GPU DRM output — deliberately not --vo=gpu. Every
+        # GPU-accelerated renderer tried on this Pi4/Mesa/v3d stack has
+        # now failed in hardware testing, each a different way:
+        # --vo=gpu-next (Wayland) leaked a dmabuf fd per frame; --vo=gpu
+        # (Wayland) deadlocked completely after its first frame; --vo=gpu
+        # --gpu-context=drm (this same direct-DRM setup) decoded and
+        # demuxed fine but couldn't present frames fast enough — A-V grew
+        # past 14s unbounded while Cache stayed flat (~1.1s, not
+        # overflowing) and Dropped never climbed to compensate, so it
+        # wasn't a decode bottleneck. --vo=drm costs real CPU (~200-235%,
+        # confirmed) doing its scaling/color-conversion via libswscale on
+        # the CPU instead of GPU shaders, but it's the ONLY combination
+        # that's ever held A-V flush at 0.000 for a whole clip in this
+        # investigation — a known, bounded cost beats three different
+        # GPU-path failures in a row.
+        "--vo=drm",
+        # Matches the incoming stream's own resolution (confirmed
+        # 1920x1080) rather than the TV's native 4K --drm-mode=preferred —
+        # --vo=drm has no hardware scaler at all, so any mismatch here
+        # forces an extra CPU scale on top of the conversion it's already
+        # doing. Hardcoded because there's no cheap GPU-scaled fallback
+        # available for a different resolution the way there would have
+        # been if any --vo=gpu variant had actually worked.
+        "--drm-mode=1920x1080@60",
+        # PipeWire, via the OS's own default per-user instance — kept
+        # alive independent of the kiosk (which is stopped right above)
+        # by `loginctl enable-linger slideannouncer` — not bare ALSA,
+        # which was opening whatever device ALSA considered its default
+        # rather than the configured HDMI sink, the likely cause of
+        # earlier "no sound" reports.
         "--ao=pipewire",
         "--framedrop=vo",
         "--demuxer-lavf-o=probesize=32000,analyzeduration=0",
@@ -329,11 +341,7 @@ def handle_candidate_stream(passphrase):
     print(f"[srt-sink] mpv exited code={result.returncode} after {elapsed:.1f}s", flush=True)
 
     time.sleep(CLEANUP_DELAY_SECONDS)
-    # The kiosk was never stopped (only woken, if it was asleep) — its
-    # Chromium surface has been sitting underneath mpv's fullscreen
-    # surface the whole time, so there's nothing to "wake" back to.
-    if was_sleeping:
-        subprocess.run([DISPLAY_POWER_CLI, "sleep"], check=False)
+    subprocess.run([DISPLAY_POWER_CLI, "sleep" if was_sleeping else "wake"], check=False)
 
 
 def main():

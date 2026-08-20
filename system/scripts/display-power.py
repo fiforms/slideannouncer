@@ -4,11 +4,11 @@ slide-announcer-kiosk.service and blank/unblank the HDMI output.
 
 This is the one place the actual sleep/wake mechanism lives — every
 trigger (the remote's power key via power-button-monitor.py; the SRT
-video-sink daemon, system/scripts/srt-sink-monitor.py, via `wake`/`sleep`
-when it needs the kiosk running to attach mpv to labwc's Wayland socket;
-in future, a systemd timer for a schedule, or a menu button in the local
-web UI backed by a oneshot slide-announcer-*.service the backend starts)
-just calls this CLI rather than each re-implementing the toggle.
+video-sink daemon, system/scripts/srt-sink-monitor.py, via the `takeover`
+action below; in future, a systemd timer for a schedule, or a menu button
+in the local web UI backed by a oneshot slide-announcer-*.service the
+backend starts) just calls this CLI rather than each re-implementing the
+toggle.
 
 Callable directly, without sudo, as root, `slideannouncer`, or
 `slideadmin` — no setuid helper, no new polkit rule needed:
@@ -60,15 +60,33 @@ def toggle():
     wake() if is_sleeping() else sleep()
 
 
+def takeover():
+    """Prepares the display for external video (SRT sink) without
+    touching the sleep-state marker: stops the kiosk if it's running, and
+    makes sure HDMI is actually on, but doesn't flip is_sleeping() either
+    way. Pairs with a later unconditional wake()/sleep() call — based on a
+    was_sleeping flag the caller captures via `status` *before* calling
+    this — to restore the correct end state afterward. That pairing is
+    only correct because both wake() and sleep() are already idempotent:
+    whichever one runs, stopping an already-stopped kiosk unit and
+    blanking an already-blank (or unblanking an already-on) display are
+    both no-ops, so the end state comes out right regardless of which
+    state we started in. See srt-sink-monitor.py, the only caller today.
+    """
+    subprocess.run(["systemctl", "stop", KIOSK_UNIT], check=False)
+    subprocess.run(["vcgencmd", "display_power", "1"], check=False)
+    print("kiosk stopped, HDMI on (sleep-state unchanged) — ready for external video")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["sleep", "wake", "toggle", "status"])
+    parser.add_argument("action", choices=["sleep", "wake", "toggle", "status", "takeover"])
     args = parser.parse_args()
 
     if args.action == "status":
         print("sleeping" if is_sleeping() else "awake")
     else:
-        {"sleep": sleep, "wake": wake, "toggle": toggle}[args.action]()
+        {"sleep": sleep, "wake": wake, "toggle": toggle, "takeover": takeover}[args.action]()
 
 
 if __name__ == "__main__":

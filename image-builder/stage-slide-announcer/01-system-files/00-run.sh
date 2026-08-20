@@ -409,6 +409,20 @@ NMEOF
 useradd --system --create-home --home-dir /var/lib/slide-announcer \
 	--groups video,render,input,dialout,netdev,audio slideannouncer
 
+# Lingering: makes systemd-logind create /run/user/999 (and the OS's own
+# default per-user PipeWire/WirePlumber/pipewire-pulse, which auto-starts
+# for any real login session) at boot and keep it alive independent of
+# any session's lifecycle — confirmed on hardware that without this,
+# that whole per-user instance (and with it, all audio) dies the moment
+# `takeover` (system/scripts/display-power.py) stops
+# slide-announcer-kiosk.service for external SRT playback, since that
+# unit's own PAMName=login session is what had been keeping it alive.
+# `loginctl enable-linger` does exactly this by touching the same marker
+# file — done directly here since loginctl needs a running
+# systemd-logind, not available in this chroot at build time.
+mkdir -p /var/lib/systemd/linger
+touch /var/lib/systemd/linger/slideannouncer
+
 # labwc config dir for the kiosk session (see system/labwc/rc.xml for why
 # this exists and what it blocks) — labwc reads $HOME/.config/labwc/rc.xml
 # by default, and systemd sets HOME from the passwd entry above for

@@ -7,13 +7,16 @@ Requires=slide-announcer-power-button-dirs.service seatd.service
 Type=simple
 User=slideannouncer
 Group=slideannouncer
-# video/render for mpv's V4L2 M2M hwdec + EGL/GPU access (same reasoning
-# as slide-announcer-kiosk.service's SupplementaryGroups) — playback now
-# runs as a Wayland client inside the kiosk's own already-running labwc
-# compositor rather than taking DRM/KMS directly, and audio goes out via
-# --ao=pipewire through that same running PipeWire graph rather than bare
-# ALSA, so `audio` is no longer needed here (see srt-sink-monitor.py's
-# module docstring and kiosk-start.sh).
+# video/render for mpv's V4L2 M2M hwdec + direct DRM/KMS + EGL/GPU access
+# (same reasoning as slide-announcer-kiosk.service's SupplementaryGroups)
+# — playback takes DRM/KMS master directly (the kiosk is stopped first,
+# see display-power.py's `takeover`), same model as
+# slide-announcer-kiosk.service. Audio goes out via --ao=pipewire against
+# the OS's own default per-user PipeWire (kept alive independent of the
+# kiosk's own login session by `loginctl enable-linger slideannouncer` —
+# see 01-system-files/00-run.sh), not a hand-rolled instance of our own —
+# so `audio` (raw ALSA access) isn't needed here either, same as the
+# kiosk not needing it (see srt-sink-monitor.py's module docstring).
 SupplementaryGroups=video render
 ExecStart=/usr/local/sbin/slide-announcer-srt-sink-monitor
 Restart=always
