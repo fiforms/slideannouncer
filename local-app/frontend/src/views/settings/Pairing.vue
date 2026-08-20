@@ -7,12 +7,12 @@ import { api } from '../../api.js'
 const router = useRouter()
 const { t } = useI18n()
 
-// Optional field — a church buying several of these has no reason to name
-// each one before pairing it, and window.location.hostname (the old
-// default) is just "localhost" when this page loads over the local nginx
-// proxy, which is worse than no default at all. A random suffix keeps
-// several freshly-unboxed devices from all defaulting to the exact same
-// name if left untouched.
+// Fallback only — normally status.hostname (below) already holds this
+// device's current effective hostname (device_uuid-derived until it's
+// ever paired, see firstboot.py's set_hostname()), which is a much more
+// useful default than a random one: it's stable and it's what's already
+// printed/spoken about this specific unit. This only kicks in if the
+// status call itself fails.
 function randomDeviceName() {
   const suffix = Math.floor(1000 + Math.random() * 9000)
   return `SlideAnnouncer-${suffix}`
@@ -20,7 +20,7 @@ function randomDeviceName() {
 
 const status = ref(null)
 const code = ref('')
-const deviceName = ref(randomDeviceName())
+const deviceName = ref('')
 
 const nameInput = ref(null)
 const codeInput = ref(null)
@@ -31,8 +31,17 @@ const codeInput = ref(null)
 const state = ref('idle')
 const errorMessage = ref(null)
 
+// Set once, only by pair() succeeding in this session — not derived from
+// status.paired, which stays true across a reboot too and would otherwise
+// show the reboot banner forever. This device's hostname was just
+// (re)derived from the name typed above (see pairing.py's pair()), and
+// won't actually take effect until the next boot — see firstboot.py's
+// set_hostname().
+const justPaired = ref(false)
+
 async function loadStatus() {
   status.value = await api.localStatus().catch(() => null)
+  if (!deviceName.value) deviceName.value = status.value?.hostname || randomDeviceName()
 }
 
 onMounted(loadStatus)
@@ -44,10 +53,28 @@ async function pair() {
   try {
     await api.pair(code.value.trim(), deviceName.value.trim() || randomDeviceName())
     state.value = 'idle'
+    justPaired.value = true
     await loadStatus()
   } catch (err) {
     errorMessage.value = err.message
     state.value = 'error'
+  }
+}
+
+const rebooting = ref(false)
+const rebootError = ref(null)
+
+async function rebootNow() {
+  rebooting.value = true
+  rebootError.value = null
+  try {
+    await api.reboot()
+    // Same TypeError-means-it-actually-rebooted reasoning as unpair()'s
+    // reboot call below.
+  } catch (err) {
+    if (!(err instanceof TypeError)) rebootError.value = err.message
+  } finally {
+    rebooting.value = false
   }
 }
 
@@ -101,6 +128,14 @@ function goToSlideshow() {
     <h1>{{ t('settings.pairing.title') }}</h1>
 
     <template v-if="status?.paired">
+      <section v-if="justPaired" class="block reboot-banner tile">
+        <p class="reboot-message">{{ t('settings.pairing.rebootHint') }}</p>
+        <button class="tile action primary" @click="rebootNow" :disabled="rebooting">
+          {{ rebooting ? t('settings.pairing.rebooting') : t('settings.pairing.rebootButton') }}
+        </button>
+        <p v-if="rebootError" class="pill warn">{{ rebootError }}</p>
+      </section>
+
       <section class="block">
         <div class="result tile">
           <div class="row">
@@ -221,6 +256,19 @@ h2 {
 .action.danger {
   border-color: var(--danger);
   color: var(--danger);
+}
+.action.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.reboot-banner {
+  border-color: var(--accent);
+  padding: 1rem 1.25rem;
+}
+.reboot-message {
+  margin: 0 0 0.85rem;
+  font-weight: 600;
 }
 .status-block { margin-top: 0.5rem; }
 .form {

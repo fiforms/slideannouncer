@@ -52,13 +52,16 @@ vt_lockswitch: locked
 #   ssh-ed25519 AAAA...
 
 
-# Overrides the auto-derived per-device hostname (normally
-# slideannouncer-###### — a stable 6-digit number derived from
-# device_uuid) — e.g. to give a specific device a friendly, memorable
-# name instead. Takes effect on next boot (firstboot.py's set_hostname());
-# advertised via mDNS as <hostname>.local (avahi-daemon, already enabled
-# in this image with publish-workstation=yes), which is what lets an SRT
-# video-sink sender on Windows/macOS address this specific device by name.
+# Overrides this device's hostname. Normally there's no need to set this:
+# by default the hostname is derived automatically from whatever device
+# name is typed at pairing time (e.g. "Front Lobby" -> front_lobby), or
+# from a stable 6-digit device_uuid-derived number before the device has
+# ever been paired — see local-app/backend/pairing.py's slugify_hostname()
+# and firstboot.py's set_hostname(). Set this only to force a specific
+# hostname of your own instead. Takes effect on next boot; advertised via
+# mDNS as <hostname>.local (avahi-daemon, already enabled in this image
+# with publish-workstation=yes), which is what lets an SRT video-sink
+# sender on Windows/macOS address this specific device by name.
 
 # hostname: front-lobby-display
 

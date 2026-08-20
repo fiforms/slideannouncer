@@ -15,6 +15,7 @@ readable rather than owner-only so the interactive `slideadmin` account
 CLI's own docstring.
 """
 import json
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,6 +41,27 @@ LANGUAGE_BOOT_HINT_FILE = Path("/data/status/language-boot-hint.json")
 # user typed, then kept in sync by heartbeat.py from each heartbeat
 # response's device_name field.
 DEVICE_NAME_FILE = Path("/data/status/device-name")
+# The device's actual (mDNS) hostname, derived from device_name at pairing
+# time — see slugify_hostname() and pair() below. Deliberately a separate
+# file from DEVICE_NAME_FILE rather than re-slugifying it on every boot:
+# the slug written here has already been checked against sibling_hostnames
+# (see pair()), and a name that collided once shouldn't silently collide
+# again after some other device's name changes later. firstboot.py's
+# set_hostname() reads this file every boot and applies it (falling back to
+# a device_uuid-derived numeric name pre-pairing) — this module only ever
+# writes it, never applies it directly, since actually renaming the OS host
+# needs root, which this backend deliberately doesn't run as.
+HOSTNAME_FILE = Path("/data/status/hostname")
+# Hostnames only use these characters (RFC1123-ish, plus underscore since
+# that's what an operator naturally expects from converting spaces) —
+# anything else in a typed device name is just dropped rather than mapped
+# to a placeholder, so punctuation-heavy names still collapse to something
+# readable instead of a run of substitute characters.
+_HOSTNAME_ILLEGAL_CHARS = re.compile(r"[^a-z0-9_-]")
+_HOSTNAME_WHITESPACE = re.compile(r"\s+")
+# DNS label length limit (RFC 1035) minus room for ".local" and a possible
+# "-NN" collision suffix.
+_HOSTNAME_MAX_LEN = 40
 # Same local-cache rationale as DEVICE_NAME_FILE, for the entity (church/
 # school) this device is currently paired to — set from the pairing
 # response's entity_name, then kept in sync by heartbeat.py, since a
@@ -80,6 +102,7 @@ DEFAULT_AUDIO_VOLUME = 100
 WIPE_PATHS = [
     DEVICE_TOKEN_FILE,
     DEVICE_NAME_FILE,
+    HOSTNAME_FILE,
     ENTITY_NAME_FILE,
     LANGUAGE_FILE,
     Path("/data/slides"),
@@ -132,6 +155,33 @@ def write_device_name(name: str) -> None:
     DEVICE_NAME_FILE.parent.mkdir(parents=True, exist_ok=True)
     DEVICE_NAME_FILE.write_text(name)
     DEVICE_NAME_FILE.chmod(0o644)
+
+
+def read_hostname() -> str | None:
+    if not HOSTNAME_FILE.exists():
+        return None
+    return HOSTNAME_FILE.read_text().strip() or None
+
+
+def write_hostname(hostname: str) -> None:
+    HOSTNAME_FILE.parent.mkdir(parents=True, exist_ok=True)
+    HOSTNAME_FILE.write_text(hostname)
+    HOSTNAME_FILE.chmod(0o644)
+
+
+def slugify_hostname(name: str) -> str:
+    """"SlideAnnouncer-1234" becomes "slideannouncer-1234"; "My dog is Funny!!!"
+    -> "my_dog_is_funny". Lowercases, collapses whitespace to underscores,
+    drops anything else that isn't a hostname-safe character, then trims
+    stray leading/trailing separators left over from that and caps the
+    length. Can return "" for a name that's nothing but punctuation/emoji —
+    callers fall back to a device_uuid-derived name in that case (see
+    pair() below), same as an entirely blank name would.
+    """
+    slug = _HOSTNAME_WHITESPACE.sub("_", name.strip().lower())
+    slug = _HOSTNAME_ILLEGAL_CHARS.sub("", slug)
+    slug = slug.strip("_-")[:_HOSTNAME_MAX_LEN]
+    return slug.strip("_-")
 
 
 def read_entity_name() -> str | None:
@@ -259,6 +309,24 @@ async def pair(code: str, device_name: str) -> dict:
     write_device_name(device_name)
     if data.get("entity_name"):
         write_entity_name(data["entity_name"])
+
+    # Derive this device's hostname from the name just typed, picking
+    # around any sibling already using that name on this entity — see
+    # slugify_hostname()'s docstring and the pairing endpoint's
+    # sibling_hostnames comment. Takes effect on the next reboot, same as
+    # a hand-set `hostname` in slideannouncer.yaml always has (see
+    # firstboot.py's set_hostname()).
+    device_uuid = identity.get_device_uuid()
+    slug = slugify_hostname(device_name) or (
+        identity.derive_numeric_hostname(device_uuid) if device_uuid else "slideannouncer"
+    )
+    taken = set(data.get("sibling_hostnames") or [])
+    hostname, suffix = slug, 2
+    while hostname in taken:
+        hostname = f"{slug}-{suffix}"
+        suffix += 1
+    write_hostname(hostname)
+
     return data
 
 

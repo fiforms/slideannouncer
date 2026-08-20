@@ -10,6 +10,7 @@ pairing request and the heartbeat both report the identity firstboot.py
 already vouched for on this boot, without re-implementing the HMAC check
 here.
 """
+import hashlib
 import json
 from pathlib import Path
 
@@ -45,3 +46,14 @@ def get_mac_address() -> str | None:
             if mac and mac != "00:00:00:00:00:00":
                 return mac.lower()
     return None
+
+
+def derive_numeric_hostname(device_uuid: str) -> str:
+    """Mirrors firstboot.py's derive_numeric_hostname() — a stable 6-digit
+    numeric suffix derived from device_uuid. pairing.py's only use for this
+    is the rare fallback where a typed device name slugifies to nothing
+    (e.g. it's pure emoji/punctuation); the normal case is a name-derived
+    hostname, not this.
+    """
+    digest = hashlib.sha256(device_uuid.encode()).hexdigest()
+    return f"slideannouncer-{int(digest, 16) % 1_000_000:06d}"

@@ -158,12 +158,17 @@ HOSTNAME_FILE = Path("/etc/hostname")
 HOSTS_FILE = Path("/etc/hosts")
 
 
+HOSTNAME_STATUS_FILE = Path("/data/status/hostname")
+
+
 def derive_numeric_hostname(device_uuid: str) -> str:
     """Stable 6-digit numeric suffix derived from device_uuid — decimal,
     not hex, per operator preference (easier to read off a label or speak
     over the phone than a hex string). sha256 rather than Python's own
     hash() — the latter is salted per-process (PYTHONHASHSEED) and would
-    produce a different suffix every boot.
+    produce a different suffix every boot. Only ever the device's hostname
+    before it's ever been paired (nothing to derive a friendlier name from
+    yet) — see set_hostname()'s precedence below.
     """
     digest = hashlib.sha256(device_uuid.encode()).hexdigest()
     return f"slideannouncer-{int(digest, 16) % 1_000_000:06d}"
@@ -174,11 +179,19 @@ def set_hostname() -> None:
     every device otherwise boots with the identical name baked in at
     image-build time (image-builder/pi-gen/stage1/02-net-tweaks/00-run.sh).
     Runs every boot, not just first boot, same as sync_ssh_authorized_keys()
-    below: a `hostname` override in slideannouncer.yaml (for an operator
-    who wants a friendly name instead) takes effect on the very next
-    reboot, no rebuild/reflash. Falls back to a numeric ID derived from
-    device_uuid, which ensure_identity() (above) has already established
-    by the time this runs.
+    below, so any of the following takes effect on the very next reboot,
+    no rebuild/reflash. In priority order:
+
+      1. A `hostname` scalar hand-set in slideannouncer.yaml — an explicit
+         operator override, e.g. for a naming scheme of their own.
+      2. HOSTNAME_STATUS_FILE — written by local-app/backend/pairing.py's
+         pair() from whatever device name was typed at pairing time (see
+         that module's slugify_hostname()), so the normal case is a
+         hostname that already reads like the device's name.
+      3. A numeric ID derived from device_uuid, which ensure_identity()
+         (above) has already established by the time this runs — the
+         pre-pairing fallback, since there's no device name yet to derive
+         anything friendlier from.
 
     Avahi is already enabled with publish-workstation=yes (see
     image-builder/pi-gen/stage2/01-sys-tweaks/01-run.sh) — the only thing
@@ -187,9 +200,14 @@ def set_hostname() -> None:
     config = load_boot_config()
     override = config.get("hostname")
     device_uuid = config.get("device_uuid")
+    paired_hostname = (
+        HOSTNAME_STATUS_FILE.read_text().strip() if HOSTNAME_STATUS_FILE.exists() else ""
+    )
 
     if override:
         target = override
+    elif paired_hostname:
+        target = paired_hostname
     elif device_uuid:
         target = derive_numeric_hostname(device_uuid)
     else:
