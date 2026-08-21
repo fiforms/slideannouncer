@@ -25,6 +25,7 @@
         "system": "Sistema",
         "network": "Red",
         "videoReceiver": "Receptor de Video",
+        "revelationPeering": "Emparejamiento Revelation",
         "pairing": "Emparejamiento"
     },
     "settings": {
@@ -77,6 +78,34 @@
             "connectWith": "Conectar con:",
             "displayQrCode": "Mostrar Código QR",
             "close": "Cerrar"
+        },
+        "revelation": {
+            "hint": "Empareja este dispositivo como seguidor de Revelation Snapshot Presenter, para que una instancia de Revelation en su red pueda redirigir este kiosco a mostrar una presentación en vivo y devolverlo cuando se cierre.",
+            "displaySettingsTitle": "Configuración de Pantalla",
+            "displaySettingsHint": "Fuerza la variante e idioma propios de este dispositivo en cada presentación que se le envíe, sin importar lo que muestre la pantalla del presentador. Deje en Predeterminado para mostrar exactamente lo que envía Revelation.",
+            "default": "Predeterminado",
+            "variant": "Variante",
+            "variant_normal": "Normal",
+            "variant_notes": "Notas",
+            "variant_confidence": "Monitor de Confianza",
+            "variant_lowerthirds": "Tercios Inferiores",
+            "language": "Idioma",
+            "language_en": "English",
+            "language_es": "Español",
+            "pairedTitle": "Emparejado",
+            "noPeers": "Aún no está emparejado con ninguna instancia de Revelation.",
+            "connected": "Conectado",
+            "notConnected": "No conectado",
+            "unpair": "Desemparejar",
+            "nearbyTitle": "Instancias de Revelation Cercanas",
+            "rescan": "Volver a buscar",
+            "scanning": "Buscando…",
+            "noneFound": "No se encontraron instancias de Revelation en esta red.",
+            "paired": "Emparejado",
+            "pairWith": "Emparejar con {name}",
+            "pin": "PIN de emparejamiento",
+            "pair": "Emparejar",
+            "pairing": "Emparejando…"
         },
         "pairing": {
             "title": "Emparejamiento",

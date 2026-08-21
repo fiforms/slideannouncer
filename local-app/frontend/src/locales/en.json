@@ -25,6 +25,7 @@
         "system": "System",
         "network": "Network",
         "videoReceiver": "Video Receiver",
+        "revelationPeering": "Revelation Peering",
         "pairing": "Pairing"
     },
     "settings": {
@@ -77,6 +78,34 @@
             "connectWith": "Connect With:",
             "displayQrCode": "Display QR Code",
             "close": "Close"
+        },
+        "revelation": {
+            "hint": "Pairs this device as a Revelation Snapshot Presenter follower, so a Revelation instance on your network can redirect this kiosk to mirror a live presentation and hand it back when it closes.",
+            "displaySettingsTitle": "Display Settings",
+            "displaySettingsHint": "Forces this device's own variant and language on every presentation pushed to it, regardless of what the presenter's own screen is showing. Leave on Default to show exactly what Revelation sends.",
+            "default": "Default",
+            "variant": "Variant",
+            "variant_normal": "Normal",
+            "variant_notes": "Notes",
+            "variant_confidence": "Confidence Monitor",
+            "variant_lowerthirds": "Lower Thirds",
+            "language": "Language",
+            "language_en": "English",
+            "language_es": "Español",
+            "pairedTitle": "Paired",
+            "noPeers": "Not paired with any Revelation instance yet.",
+            "connected": "Connected",
+            "notConnected": "Not connected",
+            "unpair": "Unpair",
+            "nearbyTitle": "Nearby Revelation Instances",
+            "rescan": "Rescan",
+            "scanning": "Scanning…",
+            "noneFound": "No Revelation instances found on this network.",
+            "paired": "Paired",
+            "pairWith": "Pair with {name}",
+            "pin": "Pairing PIN",
+            "pair": "Pair",
+            "pairing": "Pairing…"
         },
         "pairing": {
             "title": "Pairing",

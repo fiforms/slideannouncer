@@ -64,6 +64,27 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }),
   regenerateSrtSinkPassphrase: () => request('/api/local/srt-sink/regenerate', { method: 'POST' }),
+  revelationScan: () => request('/api/local/revelation/scan'),
+  revelationStatus: () => request('/api/local/revelation/status'),
+  revelationPair: (host, port, pin) =>
+    request('/api/local/revelation/pair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ host, port, pin }),
+    }),
+  revelationUnpair: (instanceId) =>
+    request('/api/local/revelation/unpair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instance_id: instanceId }),
+    }),
+  revelationDisplaySettings: () => request('/api/local/revelation/display-settings'),
+  setRevelationDisplaySettings: (variant, lang) =>
+    request('/api/local/revelation/display-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ variant, lang }),
+    }),
   reboot: () => request('/api/local/system/reboot', { method: 'POST' }),
   sleepDisplay: () => request('/api/local/system/sleep', { method: 'POST' }),
   factoryReset: () => request('/api/local/system/factory-reset', { method: 'POST' }),

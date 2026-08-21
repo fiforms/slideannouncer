@@ -55,6 +55,18 @@ export XCURSOR_SIZE=24
 CHROMIUM_CMD=(
 	chromium
 	--kiosk
+	# Since Chrome ~136, DevTools/CDP refuses to attach to any target
+	# ("Not allowed", -32000) when Chromium is left to fall back to its
+	# own default profile path — a fix against malware abusing remote
+	# debugging to steal a real user's session cookies. Confirmed on
+	# hardware: revelation-peer-daemon.py's Target.attachToTarget got
+	# exactly that error until this flag was added. Deliberately still
+	# under this user's home (/var/lib/slide-announcer, on the tmpfs
+	# overlay — wiped every boot, same as Chromium's implicit default
+	# would have been) rather than somewhere in /data — the fix is
+	# passing --user-data-dir explicitly at all, not making the profile
+	# persistent.
+	--user-data-dir=/var/lib/slide-announcer/chromium-profile
 	--ozone-platform=wayland
 	--noerrdialogs
 	--disable-infobars
@@ -71,6 +83,20 @@ CHROMIUM_CMD=(
 	# override it — a brief flash that's jarring on a large TV. This switch
 	# changes that pre-paint default so the flash is black instead of white.
 	--default-background-color=000000
+	# Loopback-only (Chromium's default unless --remote-debugging-address
+	# widens it) — lets system/scripts/revelation-peer-daemon.py drive this
+	# already-running kiosk via the Chrome DevTools Protocol (Page.navigate)
+	# to mirror a paired Revelation master's open/close-presentation
+	# commands, without restarting this unit the way display-power.py's
+	# `takeover` does for the SRT sink.
+	--remote-debugging-port=9222
+	# Chromium rejects the DevTools WebSocket handshake with 403 unless the
+	# client's Origin is explicitly allow-listed (added upstream to block
+	# DNS-rebinding attacks against the debug port) — confirmed on hardware
+	# that --remote-debugging-port alone isn't enough. Only loopback can
+	# reach the port at all (no --remote-debugging-address), so widening
+	# this to any origin costs nothing extra.
+	--remote-allow-origins=*
 	--app=http://localhost/kiosk
 )
 

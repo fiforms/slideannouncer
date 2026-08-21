@@ -2,5 +2,5 @@
 	"PasswordManagerEnabled": false,
 	"AutofillAddressEnabled": false,
 	"AutofillCreditCardEnabled": false,
-	"DeveloperToolsAvailability": 2
+	"DeveloperToolsAvailability": 1
 }

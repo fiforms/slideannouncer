@@ -19,6 +19,7 @@ import heartbeat
 import network
 import pairing
 import pinning
+import revelation
 import srt_sink
 import sync
 import system_control
@@ -254,6 +255,60 @@ def srt_sink_regenerate():
 @app.get("/api/local/srt-sink/playing")
 def srt_sink_playing():
     return {"active": srt_sink.is_playing()}
+
+
+@app.get("/api/local/revelation/scan")
+async def revelation_scan():
+    discovered = await asyncio.to_thread(revelation.discover)
+    return {"discovered": discovered}
+
+
+@app.get("/api/local/revelation/status")
+def revelation_status():
+    return revelation.read_status()
+
+
+class RevelationPairRequest(BaseModel):
+    host: str
+    port: int
+    pin: str
+
+
+@app.post("/api/local/revelation/pair")
+async def revelation_pair(body: RevelationPairRequest):
+    try:
+        data = await revelation.pair(body.host, body.port, body.pin)
+    except revelation.RevelationPeerError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"ok": True, **data}
+
+
+class RevelationUnpairRequest(BaseModel):
+    instance_id: str
+
+
+@app.post("/api/local/revelation/unpair")
+def revelation_unpair(body: RevelationUnpairRequest):
+    revelation.unpair(body.instance_id)
+    return {"ok": True}
+
+
+@app.get("/api/local/revelation/display-settings")
+def revelation_display_settings():
+    return revelation.read_display_settings()
+
+
+class RevelationDisplaySettingsRequest(BaseModel):
+    variant: str | None = None
+    lang: str | None = None
+
+
+@app.post("/api/local/revelation/display-settings")
+def revelation_set_display_settings(body: RevelationDisplaySettingsRequest):
+    try:
+        return revelation.write_display_settings(body.variant, body.lang)
+    except revelation.RevelationPeerError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/api/local/system/update-check")

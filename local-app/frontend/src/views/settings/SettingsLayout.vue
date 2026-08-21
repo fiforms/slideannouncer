@@ -13,6 +13,7 @@ const categories = computed(() => [
   { path: '/settings/system', label: t('settingsLayout.system') },
   { path: '/settings/network', label: t('settingsLayout.network') },
   { path: '/settings/srt-sink', label: t('settingsLayout.videoReceiver') },
+  { path: '/settings/revelation', label: t('settingsLayout.revelationPeering') },
   { path: '/settings/pairing', label: t('settingsLayout.pairing') },
 ])
 </script>
