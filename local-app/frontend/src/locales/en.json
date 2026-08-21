@@ -23,6 +23,7 @@
     "settingsLayout": {
         "backToSlideshow": "← Back to slideshow",
         "system": "System",
+        "screens": "Screens",
         "network": "Network",
         "videoReceiver": "Video Receiver",
         "revelationPeering": "Revelation Peering",
@@ -65,6 +66,14 @@
             "audioOutputHdmi": "HDMI (TV speakers)",
             "audioOutputHeadphones": "Headphone Jack",
             "deviceToolsLink": "Device Restart, Reset & Debugging"
+        },
+        "screens": {
+            "title": "Screens",
+            "resolution": "Resolution",
+            "resolution4k": "4K",
+            "resolution1080p": "1080p",
+            "multiMonitor": "Multiple Monitors",
+            "multiMonitorHint": "If a second HDMI display is connected, it mirrors the first automatically — there's no separate setting for it yet."
         },
         "srtSink": {
             "title": "SRT Sink",

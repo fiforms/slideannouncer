@@ -15,6 +15,7 @@ from pathlib import Path
 
 DISPLAY_POWER_CLI = "/usr/local/sbin/slide-announcer-display-power"
 AUDIO_OUTPUT_CLI = "/usr/local/sbin/slide-announcer-apply-audio-output"
+SCREEN_RESOLUTION_CLI = "/usr/local/sbin/slide-announcer-apply-screen-resolution"
 
 UPDATE_CHECK_STATUS_FILE = Path("/data/status/update-check.json")
 # Written by whichever of os-updater.py / local_app_updater.py is currently
@@ -88,6 +89,18 @@ async def apply_audio_output() -> None:
     Settings page, it should just leave the previous output in place.
     """
     proc = await asyncio.create_subprocess_exec(AUDIO_OUTPUT_CLI)
+    await proc.wait()
+
+
+async def apply_screen_resolution() -> None:
+    """Re-runs wlr-randr against whatever pairing.read_screen_resolution()
+    currently says. No polkit rule needed — same reasoning as
+    apply_audio_output() above: labwc/wlr-randr run as this same
+    unprivileged `slideannouncer` user. Failures are logged by the script
+    itself rather than raised — a bad mode shouldn't 500 the Settings
+    page, it should just leave the previous resolution in place.
+    """
+    proc = await asyncio.create_subprocess_exec(SCREEN_RESOLUTION_CLI)
     await proc.wait()
 
 

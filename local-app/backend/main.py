@@ -212,6 +212,24 @@ async def audio_output_set(body: AudioOutputRequest):
     return {"ok": True, "audio_output": body.value}
 
 
+@app.get("/api/local/screen-resolution")
+def screen_resolution_status():
+    return {"screen_resolution": pairing.read_screen_resolution()}
+
+
+class ScreenResolutionRequest(BaseModel):
+    value: str
+
+
+@app.post("/api/local/screen-resolution")
+async def screen_resolution_set(body: ScreenResolutionRequest):
+    if body.value not in ("4k", "1080p"):
+        raise HTTPException(status_code=422, detail="value must be '4k' or '1080p'")
+    pairing.write_screen_resolution(body.value)
+    await system_control.apply_screen_resolution()
+    return {"ok": True, "screen_resolution": body.value}
+
+
 @app.get("/api/local/audio-volume")
 def audio_volume_status():
     # Deliberately its own tiny endpoint rather than folded into

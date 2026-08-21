@@ -6,6 +6,7 @@ import NetworkStatus from './views/settings/NetworkStatus.vue'
 import WifiList from './views/settings/WifiList.vue'
 import WifiConnect from './views/settings/WifiConnect.vue'
 import System from './views/settings/System.vue'
+import Screens from './views/settings/Screens.vue'
 import SrtSink from './views/settings/SrtSink.vue'
 import RevelationPeering from './views/settings/RevelationPeering.vue'
 import Pairing from './views/settings/Pairing.vue'
@@ -32,6 +33,7 @@ const router = createRouter({
       children: [
         { path: '', redirect: '/settings/system' },
         { path: 'system', component: System },
+        { path: 'screens', component: Screens },
         { path: 'network', component: NetworkStatus },
         { path: 'network/wifi', component: WifiList },
         { path: 'network/wifi/:ssid', component: WifiConnect, props: true },

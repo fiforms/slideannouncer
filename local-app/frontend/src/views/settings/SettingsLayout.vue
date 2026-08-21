@@ -11,6 +11,7 @@ const { t } = useI18n()
 // focus rings are enough navigation — no custom spatial-nav system needed.
 const categories = computed(() => [
   { path: '/settings/system', label: t('settingsLayout.system') },
+  { path: '/settings/screens', label: t('settingsLayout.screens') },
   { path: '/settings/network', label: t('settingsLayout.network') },
   { path: '/settings/srt-sink', label: t('settingsLayout.videoReceiver') },
   { path: '/settings/revelation', label: t('settingsLayout.revelationPeering') },

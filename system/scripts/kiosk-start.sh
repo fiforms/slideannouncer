@@ -100,4 +100,14 @@ CHROMIUM_CMD=(
 	--app=http://localhost/kiosk
 )
 
-exec labwc -s "${CHROMIUM_CMD[*]}"
+# wlr-randr (apply-screen-resolution.sh) needs a live compositor to talk
+# to, unlike apply-audio-output.sh above which only needs PipeWire — so
+# unlike that call, this one can't run before `exec labwc`. `-s` is
+# labwc's session/autostart command, run once the compositor itself is up;
+# folding the resolution script into that same command (rather than a
+# separate labwc autostart entry) keeps both apply scripts adjacent here
+# and guarantees ordering: mode is set before Chromium's first frame.
+# `|| true` matches this script's `|| true` on apply-audio-output.sh above
+# — a wlr-randr failure shouldn't block the kiosk from starting.
+SESSION_CMD="/usr/local/sbin/slide-announcer-apply-screen-resolution || true; exec ${CHROMIUM_CMD[*]}"
+exec labwc -s "$SESSION_CMD"

@@ -51,6 +51,7 @@ install -m 755 files/system/scripts/ssh-gate.py "${ROOTFS_DIR}/usr/local/sbin/sl
 install -m 755 files/system/scripts/power-button-monitor.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-power-button-monitor"
 install -m 755 files/system/scripts/display-power.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-display-power"
 install -m 755 files/system/scripts/apply-audio-output.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-audio-output"
+install -m 755 files/system/scripts/apply-screen-resolution.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-screen-resolution"
 install -m 755 files/system/scripts/volume-key-monitor.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-volume-key-monitor"
 install -m 755 files/system/scripts/srt-sink-monitor.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-srt-sink-monitor"
 install -m 755 files/system/scripts/revelation-peer-daemon.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-revelation-peer"

@@ -55,6 +55,13 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ value }),
     }),
+  screenResolutionStatus: () => request('/api/local/screen-resolution'),
+  setScreenResolution: (value) =>
+    request('/api/local/screen-resolution', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value }),
+    }),
   srtSinkStatus: () => request('/api/local/srt-sink'),
   srtSinkPlaying: () => request('/api/local/srt-sink/playing'),
   setSrtSink: (enabled) =>

@@ -3,6 +3,7 @@ adwaita-icon-theme
 labwc
 seatd
 xwayland
+wlr-randr
 pipewire
 pipewire-pulse
 wireplumber

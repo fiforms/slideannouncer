@@ -94,6 +94,14 @@ AUDIO_VOLUME_FILE = Path("/data/status/audio-volume")
 AUDIO_MUTED_FILE = Path("/data/status/audio-muted")
 DEFAULT_AUDIO_VOLUME = 100
 
+# Target display mode — "4k" or "1080p" (see DISPLAY_IMPLEMENTATION.md).
+# Same not-in-WIPE_PATHS reasoning as AUDIO_OUTPUT_FILE: describes how the
+# device is physically wired into the room, not its pairing state.
+# Defaults to 1080p, not 4k — the safer/more broadly-compatible mode across
+# unknown TV/HDMI-cable hardware until a device's screens are configured.
+SCREEN_RESOLUTION_FILE = Path("/data/status/screen-resolution")
+DEFAULT_SCREEN_RESOLUTION = "1080p"
+
 # Wiped together, always — see this module's docstring for the three
 # triggers that share this list (explicit unpair, 401 revocation, and
 # provisioning.py's own identity-mismatch wipe, which duplicates this list
@@ -222,6 +230,20 @@ def read_audio_output() -> str:
 def write_audio_output(value: str) -> None:
     AUDIO_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     AUDIO_OUTPUT_FILE.write_text(value)
+    AUDIO_OUTPUT_FILE.chmod(0o644)
+
+
+def read_screen_resolution() -> str:
+    if not SCREEN_RESOLUTION_FILE.exists():
+        return DEFAULT_SCREEN_RESOLUTION
+    value = SCREEN_RESOLUTION_FILE.read_text().strip()
+    return value if value in ("4k", "1080p") else DEFAULT_SCREEN_RESOLUTION
+
+
+def write_screen_resolution(value: str) -> None:
+    SCREEN_RESOLUTION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SCREEN_RESOLUTION_FILE.write_text(value)
+    SCREEN_RESOLUTION_FILE.chmod(0o644)
     AUDIO_OUTPUT_FILE.chmod(0o644)
 
 
