@@ -40,13 +40,14 @@ existed only to avoid running mpv (CPU/DRM-heavy) continuously, but
 ffmpeg doing pure remux costs nothing while idly waiting for a caller, so
 now it just sits there the whole time, like any normal server socket.
 
-Fragmentation (`-frag_duration`, not just `-movflags frag_keyframe`) is
-deliberately decoupled from the source's keyframe/GOP interval, which
-isn't controllable (varies by sender — OBS, a screen-share encoder, etc.,
-commonly 1-2s): tying fragment emission to keyframes alone would inherit
-a full GOP of latency. FRAG_DURATION_US is a threshold, not a hard cut —
-ffmpeg's muxer flushes at the first frame crossing it, so real
-granularity is bounded by the source's own frame interval regardless of
+Fragmentation (`-frag_duration` alone — deliberately no `frag_keyframe`,
+see _ffmpeg_cmd()'s own comment) is deliberately decoupled from the
+source's keyframe/GOP interval, which isn't controllable (varies by
+sender — OBS, a screen-share encoder, etc., commonly 1-2s): tying
+fragment emission to keyframes would inherit a full GOP of latency.
+FRAG_DURATION_US is a threshold, not a hard cut — ffmpeg's muxer flushes
+at the first frame crossing it, so real granularity is bounded by the
+source's own frame interval regardless of
 how low this is set.
 
 A client that connects mid-stream (e.g. the kiosk page reloading) needs
@@ -65,6 +66,7 @@ can't render those and skips them — a handful of dropped/black frames on
 join, not a fatal error).
 """
 import asyncio
+import time
 from collections import deque
 from urllib.parse import quote
 
@@ -72,19 +74,32 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 import srt_sink
 
-# Threshold, not a hard cut — see module docstring. 50ms starting point;
-# tune on hardware against the source's actual frame interval.
-FRAG_DURATION_US = 50_000
+# How often serve_client() reports its own per-client queue depth back to
+# the browser (see that function's own comment).
+QUEUE_REPORT_INTERVAL_SECONDS = 1.0
+
+# Threshold, not a hard cut — see module docstring. Started at 50ms, but
+# confirmed on hardware that landed on a periodic, ~10-15s stall-then-
+# jump: audio kept playing smoothly through each stall while video froze
+# then snapped forward, the signature of a main/renderer-thread GC pause
+# (Chromium runs audio output on its own thread, largely decoupled from
+# the main thread video compositing needs) rather than anything decode-
+# rate related. At 50ms fragments the client was allocating a new
+# ArrayBuffer ~20 times/sec purely from WebSocket messages — real
+# allocation pressure on a memory-constrained Pi. 200ms cuts that
+# roughly 4x at the cost of a bit more latency, which the client's
+# catch-up logic now has headroom for.
+FRAG_DURATION_US = 200_000
 # How often the manager loop rechecks Settings > SRT Sink's enable
 # toggle/passphrase — both while disabled (to notice it turning back on)
 # and while a listener is already running (to notice it turning off, or
 # the passphrase changing, and restart accordingly). Not a UDP poll
 # interval — see module docstring for why there's no raw socket here.
 CONFIG_POLL_INTERVAL_SECONDS = 2.0
-# ~2s of fragments at FRAG_DURATION_US=50ms — comfortably wider than any
+# ~3s of fragments at FRAG_DURATION_US=200ms — comfortably wider than any
 # realistic source GOP (typically 1-2s), so a joining client's replay
 # almost always spans at least one keyframe. See module docstring.
-MAX_CACHED_FRAGMENTS = 40
+MAX_CACHED_FRAGMENTS = 15
 # Bounded so one stalled client can't make the broadcast loop back up
 # indefinitely; a client that falls this far behind is treated as
 # unrecoverable and dropped rather than blocking everyone else.
@@ -168,9 +183,10 @@ def _feed_boxes(chunk: bytes) -> list[bytes]:
     been receiving every byte since the start, but confirmed on hardware
     to break a client connecting mid-stream: the very next live chunk
     after its cached-fragment replay could land mid-fragment (a fragment
-    only ~50ms long is very likely still in progress when a client joins),
-    handing it a byte range with no moof header at its start. Chromium's
-    demuxer has no tolerance for that ("stream parsing failed"). Routing
+    only a couple hundred ms long is very likely still in progress when a
+    client joins), handing it a byte range with no moof header at its
+    start. Chromium's demuxer has no tolerance for that ("stream parsing
+    failed"). Routing
     every broadcast through this same box-aligned unit list — the exact
     same units a joining client's cached replay uses — means no client,
     old or new, ever receives a partial box."""
@@ -264,7 +280,19 @@ def _ffmpeg_cmd(passphrase: str) -> list[str]:
         "-c:a", "aac",
         # Drops OBS's own injected udta/meta metadata box.
         "-map_metadata", "-1",
-        "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+        # Deliberately no `frag_keyframe`: it forces an *extra* fragment
+        # cut at every keyframe, independent of and in addition to
+        # -frag_duration below — confirmed on hardware that when a
+        # keyframe landed shortly after a duration-triggered cut, the
+        # resulting fragment was short enough to contain zero audio
+        # frames (~21ms each), which Chromium's ChunkDemuxer flagged
+        # constantly ("Media segment did not contain any coded frames
+        # for track 1"). Fragments don't need to start on a keyframe for
+        # this use case — continuous linear playback, no seeking, no
+        # independent fragment access — so there's no reason to pay for
+        # the extra irregular cuts. -frag_duration alone still fragments
+        # just fine without it.
+        "-movflags", "empty_moov+default_base_moof",
         "-frag_duration", str(FRAG_DURATION_US),
         "-f", "mp4", "pipe:1",
     ]
@@ -402,16 +430,6 @@ async def serve_client(websocket: WebSocket) -> None:
     cached_fragments = list(_state.recent_fragments)
     _state.clients.add(queue)
 
-    # TEMPORARY debug instrumentation — dump exactly the bytes this
-    # client is about to receive as its init segment, for direct
-    # box-tree inspection. Remove once resolved.
-    with open("/tmp/srt-debug-init.mp4", "wb") as f:
-        f.write(init_segment)
-    print(
-        f"[srt-stream-bridge] serving client: init_segment={len(init_segment)}B "
-        f"cached_fragments={[len(f) for f in cached_fragments]}",
-        flush=True,
-    )
     try:
         if mime_codec:
             await websocket.send_json({"mimeCodec": mime_codec})
@@ -419,11 +437,30 @@ async def serve_client(websocket: WebSocket) -> None:
         for fragment in cached_fragments:
             await websocket.send_bytes(fragment)
 
+        # Periodically reports this client's own queue depth back over
+        # the same connection — added to check a real blind spot: this
+        # queue sits between ffmpeg's output and the browser, and
+        # `websocket.send_bytes()` applies real backpressure if the
+        # browser is ever slow to read, regardless of whether either
+        # side's CPU shows it. The client-side append queue alone can't
+        # reveal that, since it only sees what's already arrived. Folded
+        # into this same single send loop (not a separate task) since
+        # concurrent sends on one WebSocket aren't safe to interleave.
+        last_report = time.monotonic()
         while True:
-            chunk = await queue.get()
+            remaining = QUEUE_REPORT_INTERVAL_SECONDS - (time.monotonic() - last_report)
+            try:
+                chunk = await asyncio.wait_for(queue.get(), timeout=max(remaining, 0.001))
+            except asyncio.TimeoutError:
+                await websocket.send_json({"queueDepth": queue.qsize()})
+                last_report = time.monotonic()
+                continue
             if chunk is None:
                 break
             await websocket.send_bytes(chunk)
+            if time.monotonic() - last_report >= QUEUE_REPORT_INTERVAL_SECONDS:
+                await websocket.send_json({"queueDepth": queue.qsize()})
+                last_report = time.monotonic()
     except WebSocketDisconnect:
         pass
     finally:

@@ -11,10 +11,12 @@ const serverAllows = ref(true)
 const effectiveEnabled = ref(false)
 const passphrase = ref('')
 const connectUrl = ref(null)
+const debugOverlay = ref(false)
 const qrDataUrl = ref(null)
 const qrLightboxDataUrl = ref(null)
 const saving = ref(false)
 const regenerating = ref(false)
+const savingDebugOverlay = ref(false)
 const error = ref(null)
 const lightboxOpen = ref(false)
 
@@ -24,6 +26,7 @@ function applyStatus(data) {
   effectiveEnabled.value = data.effective_enabled
   passphrase.value = data.passphrase
   connectUrl.value = data.connect_url
+  debugOverlay.value = data.debug_overlay
 }
 
 // Generated client-side (no qrencode/system package needed) — the URL is
@@ -81,6 +84,19 @@ async function regenerate() {
     error.value = err.message
   } finally {
     regenerating.value = false
+  }
+}
+
+async function setDebugOverlaySetting(value) {
+  if (value === debugOverlay.value || savingDebugOverlay.value) return
+  savingDebugOverlay.value = true
+  error.value = null
+  try {
+    applyStatus(await api.setSrtSinkDebugOverlay(value))
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    savingDebugOverlay.value = false
   }
 }
 
@@ -144,6 +160,32 @@ onMounted(load)
       </template>
 
       <p v-if="error" class="pill warn">{{ error }}</p>
+    </section>
+
+    <section class="block">
+      <h2>{{ t('settings.srtSink.debugOverlayTitle') }}</h2>
+      <p class="hint">{{ t('settings.srtSink.debugOverlayHint') }}</p>
+
+      <div class="toggle-row" role="group">
+        <button
+          type="button"
+          class="toggle-button"
+          :class="{ active: !savingDebugOverlay && debugOverlay }"
+          :disabled="savingDebugOverlay"
+          @click="setDebugOverlaySetting(true)"
+        >
+          {{ t('settings.srtSink.debugOverlayEnabled') }}
+        </button>
+        <button
+          type="button"
+          class="toggle-button"
+          :class="{ active: !savingDebugOverlay && !debugOverlay }"
+          :disabled="savingDebugOverlay"
+          @click="setDebugOverlaySetting(false)"
+        >
+          {{ t('settings.srtSink.debugOverlayDisabled') }}
+        </button>
+      </div>
     </section>
 
     <div v-if="lightboxOpen" class="lightbox" @click="closeLightbox">

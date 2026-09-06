@@ -77,7 +77,7 @@
         },
         "srtSink": {
             "title": "SRT Sink",
-            "hint": "Lets a video-switcher on your church network (OBS, vMix, etc.) push a live video feed directly to this device over SRT, taking over the display until the stream ends. Off by default.",
+            "hint": "Lets a video-switcher on your church network (OBS, vMix, etc.) push a live video feed directly to this device over SRT, playing inline on the kiosk display until the stream ends. Off by default.",
             "enabled": "Enabled",
             "disabled": "Disabled",
             "serverDisabled": "Turned on here, but disabled fleet-wide from the admin dashboard — contact your church's AnnouncementSlides admin.",
@@ -86,7 +86,11 @@
             "regenerating": "Regenerating…",
             "connectWith": "Connect With:",
             "displayQrCode": "Display QR Code",
-            "close": "Close"
+            "close": "Close",
+            "debugOverlayTitle": "Debug Overlay",
+            "debugOverlayHint": "Shows live playback metrics (buffer range, latency, dropped/corrupted frames) on top of the video — a tuning aid, not something you'd normally need on.",
+            "debugOverlayEnabled": "On",
+            "debugOverlayDisabled": "Off"
         },
         "revelation": {
             "hint": "Pairs this device as a Revelation Snapshot Presenter follower, so a Revelation instance on your network can redirect this kiosk to mirror a live presentation and hand it back when it closes.",

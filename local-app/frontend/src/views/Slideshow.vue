@@ -5,7 +5,7 @@ import { api } from '../api.js'
 import { setLocale } from '../i18n.js'
 import { settings, refreshShows, activeShow } from '../slideshowState.js'
 import { menuOpen } from '../menuOverlay.js'
-import { startSrtStream, stopSrtStream } from '../srtStreamPlayer.js'
+import { startSrtStream, stopSrtStream, setDebugOverlay } from '../srtStreamPlayer.js'
 
 const { t } = useI18n()
 
@@ -371,6 +371,11 @@ async function refreshExternalPlayback() {
   try {
     const data = await api.srtSinkPlaying()
     externalPlaybackActive.value = !!data.active
+    // Rides along on this same poll (already every second) rather than
+    // its own — see srt_sink.py's set_debug_overlay() — so toggling
+    // Settings > Video Receiver's debug overlay takes effect within a
+    // second, live, without needing to restart the stream.
+    setDebugOverlay(!!data.debug_overlay)
   } catch {
     // Leave whatever was last known — a fetch hiccup shouldn't flip a
     // fullscreen external feed's slideshow-pause state on a guess.

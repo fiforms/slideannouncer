@@ -42,11 +42,22 @@ SRT_SINK_FILE = Path("/data/status/srt-sink.json")
 # srt-sink-monitor.py script needed).
 SRT_PORT = 7002
 
-# SRT's own recommended receive-buffer latency for a caller connecting
-# over a typical home/church LAN — high enough to ride out ordinary wifi
-# jitter without the sender needing to tune anything itself. Microseconds,
-# per SRT's own `latency` URL parameter.
-SRT_LATENCY_MICROSECONDS = 120_000
+# How long SRT holds packets before playout, giving itself room to
+# request/receive a retransmit for anything lost — not primarily an
+# end-to-end latency knob (see srt_stream_bridge.py's own fragment/
+# catch-up tuning for that), it's a loss-recovery budget. 120ms wasn't
+# enough on real hardware: ffmpeg's own stderr showed SRT's TSBPD
+# logging "RCV-DROPPED N packet(s)" — packets that arrived, but too
+# late to make their playout deadline, so SRT gave up and delivered a
+# gap instead. That gap is what showed up client-side as a real decode
+# tear, not anything in this app's own pipeline. Raised to give
+# retransmission more time to land before SRT gives up. Applies to both
+# sides of the connection (this value is shared by connect_url()'s
+# mode=caller URL and srt_stream_bridge.py's mode=listener URL) — SRT
+# negotiates the higher of the two peers' configured values anyway, but
+# there's no reason for them to disagree here. Microseconds, per SRT's
+# own `latency` URL parameter.
+SRT_LATENCY_MICROSECONDS = 300_000
 
 PASSPHRASE_LENGTH = 10
 PASSPHRASE_ALPHABET = string.ascii_letters + string.digits
@@ -73,6 +84,7 @@ def read_config() -> dict:
         "local_enabled": bool(data.get("local_enabled", False)),
         "server_allows": data.get("server_allows", True) is not False,
         "passphrase": data.get("passphrase", ""),
+        "debug_overlay": bool(data.get("debug_overlay", False)),
     }
 
 
@@ -109,6 +121,20 @@ def set_local_enabled(enabled: bool) -> dict:
 def regenerate_passphrase() -> dict:
     config = read_config()
     config["passphrase"] = generate_passphrase()
+    _write_raw(config)
+    return config
+
+
+def set_debug_overlay(enabled: bool) -> dict:
+    """Settings > SRT Sink's on-screen metrics HUD toggle — purely a
+    development/tuning aid (frontend/src/srtStreamPlayer.js), not
+    something an operator would normally need. Read by Slideshow.vue via
+    GET /api/local/srt-sink/playing (folded in alongside `active`, since
+    that's already polled every second — see main.py) rather than a
+    separate endpoint, so a toggle here takes effect on the very next
+    poll instead of only at the next stream start."""
+    config = read_config()
+    config["debug_overlay"] = enabled
     _write_raw(config)
     return config
 

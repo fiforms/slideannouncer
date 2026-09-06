@@ -77,7 +77,7 @@
         },
         "srtSink": {
             "title": "Receptor SRT",
-            "hint": "Permite que un conmutador de video en la red de su iglesia (OBS, vMix, etc.) envíe una transmisión de video en vivo directamente a este dispositivo mediante SRT, tomando el control de la pantalla hasta que finalice la transmisión. Desactivado de forma predeterminada.",
+            "hint": "Permite que un conmutador de video en la red de su iglesia (OBS, vMix, etc.) envíe una transmisión de video en vivo directamente a este dispositivo mediante SRT, reproduciéndose en la pantalla del kiosco hasta que finalice la transmisión. Desactivado de forma predeterminada.",
             "enabled": "Activado",
             "disabled": "Desactivado",
             "serverDisabled": "Activado aquí, pero desactivado para toda la flota desde el panel de administración — contacte al administrador de AnnouncementSlides de su iglesia.",
@@ -86,7 +86,11 @@
             "regenerating": "Regenerando…",
             "connectWith": "Conectar con:",
             "displayQrCode": "Mostrar Código QR",
-            "close": "Cerrar"
+            "close": "Cerrar",
+            "debugOverlayTitle": "Superposición de Depuración",
+            "debugOverlayHint": "Muestra métricas de reproducción en vivo (rango de búfer, latencia, fotogramas perdidos/dañados) sobre el video — una ayuda de ajuste, no algo que normalmente necesitaría activado.",
+            "debugOverlayEnabled": "Activado",
+            "debugOverlayDisabled": "Desactivado"
         },
         "revelation": {
             "hint": "Empareja este dispositivo como seguidor de Revelation Snapshot Presenter, para que una instancia de Revelation en su red pueda redirigir este kiosco a mostrar una presentación en vivo y devolverlo cuando se cierre.",

@@ -273,9 +273,24 @@ def srt_sink_regenerate():
     return _srt_sink_response(srt_sink.regenerate_passphrase())
 
 
+class SrtSinkDebugOverlayRequest(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/local/srt-sink/debug-overlay")
+def srt_sink_set_debug_overlay(body: SrtSinkDebugOverlayRequest):
+    return _srt_sink_response(srt_sink.set_debug_overlay(body.enabled))
+
+
 @app.get("/api/local/srt-sink/playing")
 def srt_sink_playing():
-    return {"active": srt_stream_bridge.is_playing()}
+    # debug_overlay rides along here (already polled every second by
+    # Slideshow.vue) rather than needing its own poll — see
+    # srt_sink.set_debug_overlay()'s own comment.
+    return {
+        "active": srt_stream_bridge.is_playing(),
+        "debug_overlay": srt_sink.read_config()["debug_overlay"],
+    }
 
 
 @app.websocket("/api/local/srt-sink/stream")

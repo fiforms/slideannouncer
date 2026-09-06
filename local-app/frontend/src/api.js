@@ -71,6 +71,12 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }),
   regenerateSrtSinkPassphrase: () => request('/api/local/srt-sink/regenerate', { method: 'POST' }),
+  setSrtSinkDebugOverlay: (enabled) =>
+    request('/api/local/srt-sink/debug-overlay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    }),
   revelationScan: () => request('/api/local/revelation/scan'),
   revelationStatus: () => request('/api/local/revelation/status'),
   revelationPair: (host, port, pin) =>

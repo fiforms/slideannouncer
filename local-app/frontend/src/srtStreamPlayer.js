@@ -33,9 +33,29 @@
 // points — so steady-state playback doesn't spam the backend with an
 // HTTP request every fragment.
 
-const TARGET_LATENCY_SECONDS = 0.3
+// Needs real headroom relative to srt_stream_bridge.py's FRAG_DURATION_US
+// (200ms) — confirmed on hardware that 0.3s here, barely 1.5 fragment-
+// intervals, left so little margin that ordinary arrival jitter (or the
+// catch-up nudge below actively pushing currentTime toward the live
+// edge) could outrun the buffered data entirely. That's a genuine buffer
+// underrun, not a rendering stall — it stalls audio too, since there's
+// really no more data to decode for either track, unlike a GC pause
+// (which only stalls video compositing on the main thread while audio's
+// own thread keeps playing already-buffered audio through it).
+// Diagnostic flag: when true, runCatchup() never touches playbackRate or
+// currentTime (see its own guard) — only trimBuffer() still runs. Used
+// to confirm on hardware whether the catch-up logic itself (the rate
+// nudge or the hard seek) was driving the buffered range to empty, or
+// whether that happened independent of it. Result: disabling it stopped
+// the buffer from emptying, but stalls persisted (and got worse) even
+// without any seeking/rate changes — so catch-up was reacting to (and
+// amplifying the visible symptom of) a real decode/render bottleneck
+// elsewhere, not causing the underlying stall itself. Left here, default
+// off, in case it's useful again while chasing that bottleneck.
+const NO_CATCHUP = false
+const TARGET_LATENCY_SECONDS = 0.6
 const SMALL_DRIFT_SECONDS = 0.05
-const LARGE_DRIFT_SECONDS = 1.0
+const LARGE_DRIFT_SECONDS = 1.3
 // runCatchup() scales the playbackRate nudge linearly between these two
 // as the gap grows from "just over target" to "about to hit
 // LARGE_DRIFT_SECONDS" — a flat, barely-visible rate (the original
@@ -50,13 +70,28 @@ const CATCHUP_INTERVAL_MS = 250
 // comfortably more than TARGET_LATENCY_SECONDS/LARGE_DRIFT_SECONDS ever
 // need, so trimming never competes with the catch-up logic above.
 const BUFFER_TRIM_KEEP_SECONDS = 5
-
 let ws = null
 let mediaSource = null
 let sourceBuffer = null
 let appendQueue = []
 let catchupTimer = null
 let videoEl = null
+let overlayEl = null
+// On-screen metrics HUD, updated every catch-up tick — added while
+// actively tuning latency/stall behavior on real hardware, since reading
+// numbers directly off the TV beats round-tripping through devtools/
+// journalctl for every adjustment. Controlled by Settings > Video
+// Receiver's "Debug overlay" toggle (srt_sink.py's debug_overlay field) —
+// see setDebugOverlay(), called from Slideshow.vue's existing
+// srt-sink/playing poll, so flipping it takes effect within a second
+// without needing to restart the stream.
+let debugOverlayEnabled = false
+// Reported periodically by srt_stream_bridge.py's serve_client() — the
+// depth of ffmpeg-output-to-WebSocket-send queue on the SERVER side,
+// which the client-side appendQueue can't see: it only reflects data
+// that's already arrived. A backlog here means the browser was slow to
+// read from the socket (for any reason), independent of appendQueue.
+let serverQueueDepth = null
 
 function logClient(message) {
   console.log(`[srt-stream-player] ${message}`)
@@ -78,6 +113,19 @@ export function startSrtStream(el) {
   mediaSource.addEventListener('error', () => logClient('MediaSource error event'))
   videoEl.src = URL.createObjectURL(mediaSource)
   mediaSource.addEventListener('sourceopen', onSourceOpen, { once: true })
+  if (debugOverlayEnabled) ensureOverlay()
+}
+
+// Called from Slideshow.vue on every srt-sink/playing poll — cheap and
+// idempotent, so no need to track whether the setting actually changed.
+export function setDebugOverlay(enabled) {
+  debugOverlayEnabled = enabled
+  if (!videoEl) return
+  if (enabled) ensureOverlay()
+  else if (overlayEl) {
+    overlayEl.remove()
+    overlayEl = null
+  }
 }
 
 export function stopSrtStream() {
@@ -88,6 +136,7 @@ export function stopSrtStream() {
   sourceBuffer = null
   mediaSource = null
   appendQueue = []
+  serverQueueDepth = null
   if (videoEl) {
     videoEl.onerror = null
     videoEl.pause()
@@ -95,6 +144,37 @@ export function stopSrtStream() {
     videoEl.load()
   }
   videoEl = null
+  if (overlayEl) {
+    overlayEl.remove()
+    overlayEl = null
+  }
+}
+
+function ensureOverlay() {
+  if (overlayEl) return
+  overlayEl = document.createElement('div')
+  overlayEl.style.cssText = `
+    position: fixed; top: 8px; left: 8px; z-index: 2147483647;
+    background: rgba(0, 0, 0, 0.7); color: #0f0; font: 12px/1.4 monospace;
+    padding: 6px 10px; white-space: pre; pointer-events: none;
+  `
+  document.body.appendChild(overlayEl)
+}
+
+function updateOverlay(buffered) {
+  if (!overlayEl || !videoEl) return
+  const end = buffered.length ? buffered.end(buffered.length - 1) : 0
+  const start = buffered.length ? buffered.start(0) : 0
+  const quality = videoEl.getVideoPlaybackQuality?.()
+  overlayEl.textContent =
+    `ct=${videoEl.currentTime.toFixed(2)} buf=[${start.toFixed(2)},${end.toFixed(2)}] ` +
+    `gap=${(end - videoEl.currentTime).toFixed(2)} rate=${videoEl.playbackRate.toFixed(2)}\n` +
+    `queued=${appendQueue.length} serverQueued=${serverQueueDepth ?? '?'} ` +
+    `readyState=${videoEl.readyState} ws=${ws?.readyState}\n` +
+    (quality
+      ? `frames total=${quality.totalVideoFrames} dropped=${quality.droppedVideoFrames} ` +
+        `corrupted=${quality.corruptedVideoFrames}`
+      : 'frames: unavailable')
 }
 
 function onSourceOpen() {
@@ -107,11 +187,13 @@ function onSourceOpen() {
   ws.onclose = (event) => logClient(`WebSocket closed code=${event.code} reason=${event.reason}`)
   ws.onmessage = (event) => {
     if (typeof event.data === 'string') {
-      // The one text frame, sent once at connect — see
-      // srt_stream_bridge.py's serve_client(). Everything after is binary
-      // MP4 (init segment, then live fragments).
-      const { mimeCodec } = JSON.parse(event.data)
-      if (mimeCodec) initSourceBuffer(mimeCodec)
+      // Text frames — the one-time mimeCodec at connect, and a periodic
+      // queueDepth report after that. Everything else is binary MP4
+      // (init segment, then live fragments) — see srt_stream_bridge.py's
+      // serve_client().
+      const msg = JSON.parse(event.data)
+      if (msg.mimeCodec) initSourceBuffer(msg.mimeCodec)
+      if (typeof msg.queueDepth === 'number') serverQueueDepth = msg.queueDepth
       return
     }
     appendQueue.push(event.data)
@@ -141,7 +223,12 @@ function initSourceBuffer(mimeCodec) {
 
 function flushAppendQueue() {
   if (!sourceBuffer || sourceBuffer.updating || appendQueue.length === 0) return
-  const buf = appendQueue.shift()
+  // Steady state this is almost always exactly one fragment — but if the
+  // client ever falls behind (a GC pause, a slow tick), several can back
+  // up here. Merging them into one appendBuffer() call instead of one
+  // per fragment means fewer objects/calls right when things are
+  // already under memory pressure, the moment that matters most.
+  const buf = appendQueue.length === 1 ? appendQueue.shift() : mergeQueued()
   try {
     sourceBuffer.appendBuffer(buf)
   } catch (err) {
@@ -149,6 +236,19 @@ function flushAppendQueue() {
     return
   }
   maybeWarmUp()
+}
+
+function mergeQueued() {
+  let total = 0
+  for (const buf of appendQueue) total += buf.byteLength
+  const merged = new Uint8Array(total)
+  let offset = 0
+  for (const buf of appendQueue) {
+    merged.set(new Uint8Array(buf), offset)
+    offset += buf.byteLength
+  }
+  appendQueue.length = 0
+  return merged
 }
 
 function bufferedEnd() {
@@ -167,8 +267,18 @@ function maybeWarmUp() {
 }
 
 function runCatchup() {
-  const end = bufferedEnd()
-  if (end === null) return
+  // TimeRanges accessors commonly hand back a fresh object per read in
+  // Chromium — read `.buffered` exactly once per tick and share it with
+  // trimBuffer() below, instead of each independently re-reading it.
+  const buffered = videoEl.buffered
+  if (overlayEl) updateOverlay(buffered)
+  if (!buffered.length) return
+  if (NO_CATCHUP) {
+    videoEl.playbackRate = 1
+    trimBuffer(buffered)
+    return
+  }
+  const end = buffered.end(buffered.length - 1)
   const gap = end - videoEl.currentTime
   if (gap > LARGE_DRIFT_SECONDS) {
     videoEl.currentTime = Math.max(0, end - TARGET_LATENCY_SECONDS)
@@ -183,12 +293,12 @@ function runCatchup() {
   } else {
     videoEl.playbackRate = 1
   }
-  trimBuffer()
+  trimBuffer(buffered)
 }
 
-function trimBuffer() {
-  if (!sourceBuffer || sourceBuffer.updating || !videoEl.buffered.length) return
-  const start = videoEl.buffered.start(0)
+function trimBuffer(buffered) {
+  if (!sourceBuffer || sourceBuffer.updating || !buffered.length) return
+  const start = buffered.start(0)
   const removeEnd = videoEl.currentTime - BUFFER_TRIM_KEEP_SECONDS
   if (removeEnd > start) {
     try {
