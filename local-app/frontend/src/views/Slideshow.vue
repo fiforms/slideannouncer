@@ -5,6 +5,7 @@ import { api } from '../api.js'
 import { setLocale } from '../i18n.js'
 import { settings, refreshShows, activeShow } from '../slideshowState.js'
 import { menuOpen } from '../menuOverlay.js'
+import { startSrtStream, stopSrtStream } from '../srtStreamPlayer.js'
 
 const { t } = useI18n()
 
@@ -76,11 +77,14 @@ const playlist = computed(() => activeShow()?.slides || [])
 const status = ref(null)
 const currentIndex = ref(0)
 const paused = ref(false)
-// True only while system/scripts/srt-sink-monitor.py's mpv is actually
-// playing an external feed on top of this page (see EXTERNAL_PLAYBACK_POLL_MS).
-// Deliberately separate from `paused` — same reasoning as the menuOpen
-// watch below: it must not clobber (or be clobbered by) whatever the
-// user's own paused/unpaused state was going into the external playback.
+// True only while local-app/backend/srt_stream_bridge.py is actively
+// forwarding an external SRT feed (see EXTERNAL_PLAYBACK_POLL_MS). Unlike
+// the old mpv/DRM-takeover sink, the feed plays inline in this same page
+// (see srtStreamPlayer.js) rather than on a surface outside Chromium
+// entirely — but this flag still exists separately from `paused`, same
+// reasoning as the menuOpen watch below: it must not clobber (or be
+// clobbered by) whatever the user's own paused/unpaused state was going
+// into the external playback.
 const externalPlaybackActive = ref(false)
 const volume = ref(100)
 const muted = ref(false)
@@ -89,6 +93,7 @@ const showSeekIndicator = ref(false)
 const seekPositionSeconds = ref(0)
 const seekDurationSeconds = ref(0)
 const videoEl = ref(null)
+const srtVideoEl = ref(null)
 let lastSeekAt = 0
 let lastSeekDirection = 0
 
@@ -307,23 +312,24 @@ watch(menuOpen, (open) => {
 })
 
 // Stop everything — including any playing slide video's audio, unlike
-// the menuOpen watch above — while an external feed is on screen. Chromium
-// has no way to know mpv's Wayland surface is covering it (see
-// srt-sink-monitor.py's module docstring on why it's left running
-// underneath rather than stopped), so without this it would keep
-// advancing slides and, worse, keep playing a video slide's audio
-// underneath/mixed with the external feed's own sound.
+// the menuOpen watch above — while an external feed is on screen, and
+// mount/unmount the SRT player itself (srtStreamPlayer.js) against the
+// dedicated <video ref="srtVideoEl"> below. Otherwise the slideshow would
+// keep advancing underneath the external feed and, worse, keep playing a
+// video slide's audio mixed with the external feed's own sound.
 watch(externalPlaybackActive, (active) => {
   if (active) {
     if (advanceTimer) clearInterval(advanceTimer)
     advanceTimer = null
     clearPlayThroughFallback()
     videoEl.value?.pause()
+    if (srtVideoEl.value) startSrtStream(srtVideoEl.value)
   } else {
+    stopSrtStream()
     restartAdvanceTimer()
     if (!paused.value) videoEl.value?.play().catch(() => {})
   }
-})
+}, { flush: 'post' })
 
 function onKeydown(event) {
   // The Menu overlay (MenuOverlay.vue) is drawn on top of this view without
@@ -409,12 +415,19 @@ onUnmounted(() => {
   if (seekHideTimer) clearTimeout(seekHideTimer)
   clearPlayThroughFallback()
   window.removeEventListener('keydown', onKeydown)
+  if (externalPlaybackActive.value) stopSrtStream()
 })
 </script>
 
 <template>
   <div class="kiosk">
-    <transition name="crossfade" mode="out-in">
+    <video
+      v-if="externalPlaybackActive"
+      ref="srtVideoEl"
+      class="slide-image"
+      playsinline
+    />
+    <transition v-else name="crossfade" mode="out-in">
       <div v-if="currentSlide" :key="currentSlide.id" class="slide-layers">
         <video
           v-if="isVideoSlide(currentSlide)"

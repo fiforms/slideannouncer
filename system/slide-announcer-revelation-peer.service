@@ -2,9 +2,9 @@
 Description=Slide Announcer Revelation peering (mDNS + Socket.IO follower client)
 After=slide-announcer-firstboot.service slide-announcer-kiosk.service
 Requires=slide-announcer-firstboot.service
-# Only needs the kiosk's CDP port up to actually redirect it — doesn't need
-# to be stopped/restarted alongside it the way slide-announcer-srt-sink's
-# `takeover` does, since it only ever navigates an already-running tab.
+# Only needs the kiosk's CDP port up to actually redirect it — never needs
+# to stop/restart the kiosk itself, since it only ever navigates an
+# already-running tab.
 Wants=slide-announcer-kiosk.service
 
 [Service]

@@ -1,10 +1,7 @@
 """On-demand SRT video-sink configuration — enable toggle + passphrase for
-system/scripts/srt-sink-monitor.py, backing Settings > SRT Sink. Persisted
-at /data/status/srt-sink.json, the same flat-file-under-/data/status
-pattern pairing.py uses for audio output/volume — the daemon (its own
-root-owned unit, see system/slide-announcer-srt-sink.service, running as
-the `slideannouncer` user) reads this file directly, no API round-trip
-needed on its side.
+srt_stream_bridge.py, backing Settings > SRT Sink. Persisted at
+/data/status/srt-sink.json, the same flat-file-under-/data/status pattern
+pairing.py uses for audio output/volume.
 
 The passphrase is never operator-typed: it's generated once, on-device,
 the first time SRT Sink is enabled (ensure_passphrase()), and reported up
@@ -12,8 +9,8 @@ to the server on every heartbeat (see heartbeat.py's payload) purely so an
 admin can read it off the fleet dashboard to configure their SRT sender —
 the server never sets it, only mirrors it.
 
-Two independent "should this run" inputs, both must be true for the
-daemon to actually listen — see effective_enabled():
+Two independent "should this run" inputs, both must be true for
+srt_stream_bridge.py to actually listen — see effective_enabled():
 - `local_enabled` — this device's own Settings > SRT Sink toggle.
 - `server_allows` — the admin dashboard's force-disable switch, folded in
   from the heartbeat response (see heartbeat.py) the same way
@@ -27,20 +24,10 @@ file under /data/status, this one holds a secret, so it gets its own
 tighter permissions (0o640, group-readable only) instead of the 0o644
 those files use.
 
-is_playing() reads a second, separate file — /data/status/srt-sink-playing.json
-— srt-sink-monitor.py's own runtime status (true only while its mpv
-playback subprocess is actually up), not config. Kept out of
-SRT_SINK_FILE deliberately: that file is secret (0o640) and owned by the
-enable/passphrase read-modify-write cycle above, and this one gets
-written and re-written every single playback (from a different process,
-racing with the config writes) — mixing the two would risk a lost update
-clobbering the passphrase, and there's no secret in "is it playing right
-now" to protect anyway. Frontend/src/views/Slideshow.vue polls this via
-GET /api/local/srt-sink/playing on a much shorter interval than the rest
-of its state (see EXTERNAL_PLAYBACK_POLL_MS there) specifically so it can
-pause its own crossfade timer and any playing slide video for the
-handful of seconds a typical external clip runs — /api/local/status's
-15s interval would often miss the whole clip.
+Whether a stream is actually playing right now lives in
+srt_stream_bridge.py (in-memory — that module and this one now run in the
+same process, so there's no need for a separate status file the way the
+old external srt-sink-monitor.py daemon required).
 """
 import json
 import secrets
@@ -49,12 +36,10 @@ from pathlib import Path
 from urllib.parse import quote
 
 SRT_SINK_FILE = Path("/data/status/srt-sink.json")
-PLAYING_FILE = Path("/data/status/srt-sink-playing.json")
 
-# Must match system/scripts/srt-sink-monitor.py's SRT_PORT — kept here too
-# (rather than importing across the venv/system-script boundary) purely so
-# main.py can hand the Settings UI a real "Connect With" srt:// URL without
-# hardcoding the port a second time.
+# Read directly by srt_stream_bridge.py (same process, same venv — no
+# more cross-process duplication the way the old standalone
+# srt-sink-monitor.py script needed).
 SRT_PORT = 7002
 
 # SRT's own recommended receive-buffer latency for a caller connecting
@@ -92,8 +77,8 @@ def read_config() -> dict:
 
 
 def effective_enabled(config: dict | None = None) -> bool:
-    """What system/scripts/srt-sink-monitor.py actually acts on — both the
-    local toggle and the server's force-disable switch have to allow it."""
+    """What srt_stream_bridge.py actually acts on — both the local toggle
+    and the server's force-disable switch have to allow it."""
     config = config or read_config()
     return config["local_enabled"] and config["server_allows"] and bool(config["passphrase"])
 
@@ -132,23 +117,12 @@ def connect_url(hostname: str, passphrase: str) -> str:
     """The srt:// URL an external sender (OBS, vMix, ...) pastes into its
     own SRT output config to reach this device — `mode=caller` here is
     from *that* sender's point of view: this device is always the
-    `mode=listener` side (see srt-sink-monitor.py), so whoever connects to
-    it necessarily calls in."""
+    `mode=listener` side (see srt_stream_bridge.py), so whoever connects
+    to it necessarily calls in."""
     return (
         f"srt://{hostname}.local:{SRT_PORT}"
         f"?mode=caller&latency={SRT_LATENCY_MICROSECONDS}&passphrase={quote(passphrase)}"
     )
-
-
-def is_playing() -> bool:
-    """Written by srt-sink-monitor.py itself, not this backend — see this
-    module's docstring for why it's a separate file from SRT_SINK_FILE."""
-    if not PLAYING_FILE.exists():
-        return False
-    try:
-        return bool(json.loads(PLAYING_FILE.read_text()).get("active", False))
-    except json.JSONDecodeError:
-        return False
 
 
 def set_server_allows(allows: bool) -> None:

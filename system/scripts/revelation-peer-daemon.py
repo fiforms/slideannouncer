@@ -9,8 +9,9 @@ infra (installed to /usr/local/sbin, its own always-on systemd unit — see
 slide-announcer-revelation-peer.service), independent of whichever
 local-app release happens to be current, same reasoning as
 local_app_updater.py. It duplicates the small signature-verification helper
-from revelation.py rather than import across that boundary, same pattern
-srt-sink-monitor.py already uses for srt_sink.py's effective_enabled().
+from revelation.py rather than import across that boundary — a standalone
+OS-image script can't import from a module that ships in the versioned
+local-app release.
 
 For each paired master, this maintains a persistent Socket.IO connection
 (one worker thread per master — see peer_worker()) and reacts to
@@ -18,9 +19,8 @@ For each paired master, this maintains a persistent Socket.IO connection
 through its remote-debugging port (see kiosk-start.sh's
 --remote-debugging-port=9222): `open-presentation` navigates the kiosk tab
 to the given URL, `close-presentation` navigates it back to the kiosk's own
-page. The kiosk unit itself is never touched — unlike display-power.py's
-`takeover` for the SRT sink, there's no need to stop it, since CDP can
-retarget an already-running tab in place.
+page. The kiosk unit itself is never touched — there's no need to stop
+it, since CDP can retarget an already-running tab in place.
 
 mDNS discovery here exists only to refresh a paired master's current host/
 port (it may have moved to a different DHCP lease since pairing) and to

@@ -53,7 +53,6 @@ install -m 755 files/system/scripts/display-power.py "${ROOTFS_DIR}/usr/local/sb
 install -m 755 files/system/scripts/apply-audio-output.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-audio-output"
 install -m 755 files/system/scripts/apply-screen-resolution.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-screen-resolution"
 install -m 755 files/system/scripts/volume-key-monitor.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-volume-key-monitor"
-install -m 755 files/system/scripts/srt-sink-monitor.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-srt-sink-monitor"
 install -m 755 files/system/scripts/revelation-peer-daemon.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-revelation-peer"
 
 # HandlePowerKey=ignore: without it, systemd-logind's own default power-key
@@ -83,6 +82,8 @@ install -d "${ROOTFS_DIR}/etc/nginx/sites-available"
 install -m 644 files/system/nginx-slide-announcer.conf "${ROOTFS_DIR}/etc/nginx/sites-available/slide-announcer.conf"
 rm -f "${ROOTFS_DIR}/etc/nginx/sites-enabled/default"
 ln -sf ../sites-available/slide-announcer.conf "${ROOTFS_DIR}/etc/nginx/sites-enabled/slide-announcer.conf"
+install -m 644 files/system/nginx-websocket-upgrade.conf \
+	"${ROOTFS_DIR}/etc/nginx/conf.d/slide-announcer-websocket-upgrade.conf"
 
 install -d "${ROOTFS_DIR}/etc/polkit-1/rules.d"
 install -m 644 files/system/polkit/*.rules "${ROOTFS_DIR}/etc/polkit-1/rules.d/"
@@ -414,14 +415,14 @@ useradd --system --create-home --home-dir /var/lib/slide-announcer \
 # Lingering: makes systemd-logind create /run/user/999 (and the OS's own
 # default per-user PipeWire/WirePlumber/pipewire-pulse, which auto-starts
 # for any real login session) at boot and keep it alive independent of
-# any session's lifecycle — confirmed on hardware that without this,
-# that whole per-user instance (and with it, all audio) dies the moment
-# `takeover` (system/scripts/display-power.py) stops
-# slide-announcer-kiosk.service for external SRT playback, since that
-# unit's own PAMName=login session is what had been keeping it alive.
-# `loginctl enable-linger` does exactly this by touching the same marker
-# file — done directly here since loginctl needs a running
-# systemd-logind, not available in this chroot at build time.
+# any session's lifecycle — confirmed on hardware that without this, that
+# whole per-user instance (and with it, all audio) dies the moment
+# display-power.py's `sleep`/`toggle` stops slide-announcer-kiosk.service
+# (e.g. the remote's power key), since that unit's own PAMName=login
+# session is what had been keeping it alive. `loginctl enable-linger`
+# does exactly this by touching the same marker file — done directly here
+# since loginctl needs a running systemd-logind, not available in this
+# chroot at build time.
 mkdir -p /var/lib/systemd/linger
 touch /var/lib/systemd/linger/slideannouncer
 
@@ -509,7 +510,6 @@ systemctl enable slide-announcer-kiosk.service
 systemctl enable slide-announcer-power-button-dirs.service
 systemctl enable slide-announcer-power-button.service
 systemctl enable slide-announcer-volume-key.service
-systemctl enable slide-announcer-srt-sink.service
 systemctl enable slide-announcer-revelation-peer.service
 systemctl enable slide-announcer-tryboot-check.service
 systemctl enable slide-announcer-local-app-updater.timer

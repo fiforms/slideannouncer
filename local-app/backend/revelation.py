@@ -8,13 +8,14 @@ challenge-response and persists the resulting trust record.
 The live command channel (Socket.IO connection to each paired master,
 listening for `peer-command` events, and driving the kiosk's already-running
 Chromium via its remote-debugging port) is deliberately NOT here — it's
-system/scripts/revelation-peer-daemon.py, a separate always-on systemd unit
-in the same spirit as srt-sink-monitor.py, reading the trust file this
-module writes rather than importing it (this module lives in the versioned
-local-app release; the daemon is fixed OS-image infra — see that script's
-own docstring). That daemon also duplicates the small signature-verification
-helper below rather than import across that boundary, same reasoning as
-srt_sink.py's effective_enabled() being duplicated in srt-sink-monitor.py.
+system/scripts/revelation-peer-daemon.py, a separate always-on systemd
+unit, reading the trust file this module writes rather than importing it
+(this module lives in the versioned local-app release; the daemon is
+fixed OS-image infra — see that script's own docstring). That daemon also
+duplicates the small signature-verification helper below rather than
+import across that boundary, for the same reason — a standalone
+OS-image script can't import from a module that ships in the versioned
+local-app release.
 
 Trust and status are two separate files, same split as srt_sink.py/
 pairing.py already use elsewhere: REVELATION_PEERS_FILE holds the actual

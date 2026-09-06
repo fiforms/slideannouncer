@@ -45,13 +45,6 @@ export XCURSOR_SIZE=24
 # before any of this instance-juggling started.
 /usr/local/sbin/slide-announcer-apply-audio-output || true
 
-# For SRT sink playback to still have audio while this kiosk unit is
-# stopped (display-power.py's `takeover`), the OS's per-user PipeWire
-# instance above needs to keep running independent of this unit's own
-# session ending — see `loginctl enable-linger slideannouncer`, baked
-# into the image at build time (01-system-files/00-run.sh) rather than
-# something this script can arrange for itself.
-
 CHROMIUM_CMD=(
 	chromium
 	--kiosk
@@ -87,8 +80,7 @@ CHROMIUM_CMD=(
 	# widens it) — lets system/scripts/revelation-peer-daemon.py drive this
 	# already-running kiosk via the Chrome DevTools Protocol (Page.navigate)
 	# to mirror a paired Revelation master's open/close-presentation
-	# commands, without restarting this unit the way display-power.py's
-	# `takeover` does for the SRT sink.
+	# commands, without restarting this unit at all.
 	--remote-debugging-port=9222
 	# Chromium rejects the DevTools WebSocket handshake with 403 unless the
 	# client's Origin is explicitly allow-listed (added upstream to block

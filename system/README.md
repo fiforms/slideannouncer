@@ -104,15 +104,14 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   mechanism: `sleep` stops `slide-announcer-kiosk.service` then
   `vcgencmd display_power 0`; `wake` is the reverse; `toggle`/`status`
   read/flip a marker file at `/run/slide-announcer/kiosk-sleeping` (tmpfs —
-  always starts awake on boot). `takeover` stops the kiosk and ensures
-  HDMI is on *without* touching that marker — used by the SRT sink daemon
-  (below) to take the display for external video while leaving whatever
-  sleep state the device was already in untouched, so a later unconditional
-  `wake`/`sleep` call (based on a `status` snapshot from before `takeover`)
-  correctly restores it. Deliberately a standalone CLI, not logic embedded
-  in whatever happens to trigger it, so every trigger (today, the remote's
-  power key, and the SRT sink daemon; later, a schedule or a web UI menu
-  button) shares one mechanism instead of each re-implementing it. Callable
+  always starts awake on boot). Deliberately a standalone CLI, not logic
+  embedded in whatever happens to trigger it, so every trigger (today,
+  just the remote's power key; later, a schedule or a web UI menu button)
+  shares one mechanism instead of each re-implementing it. (An earlier
+  `takeover` action existed for the old mpv-based SRT sink, which stopped
+  the kiosk to take the display for external video — retired along with
+  that daemon; the SRT sink now plays inline in the kiosk page itself, see
+  below, so the kiosk is never stopped for it.) Callable
   directly, without sudo, as root, `slideannouncer`, or `slideadmin` — the
   `systemctl`/`vcgencmd` calls it makes are already permitted for all
   three (see the script's own docstring for exactly why: the existing
@@ -141,31 +140,30 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   behavior gets out of the way of `slide-announcer-power-button.service`
   above entirely. Only takes effect once `systemd-logind`
   restarts/reboots.
-- `slide-announcer-srt-sink.service` + `scripts/srt-sink-monitor.py`
-  (installed as `/usr/local/sbin/slide-announcer-srt-sink-monitor`) —
-  on-demand SRT video-sink: polls UDP port 7002 (a plain bound socket —
-  nothing normally listens there, so this daemon has to hold one itself
-  to see any traffic at all), and on any datagram, closes that socket and
-  runs a one-shot mpv probe (`--vo=null --ao=null`) against the
+- On-demand SRT video-sink: **not** a separate systemd unit — it's
+  `local-app/backend/srt_stream_bridge.py`, an in-process asyncio task
+  started from the backend's own `lifespan()` (same pattern as
+  `heartbeat.py`/`sync.py`), replacing an earlier standalone
+  `slide-announcer-srt-sink.service` + mpv/DRM-takeover daemon. Polls UDP
+  port 7002 (a plain bound socket — nothing normally listens there, so
+  this has to hold one itself to see any traffic at all) using the
   configured passphrase from Settings > SRT Sink
-  (`local-app/backend/srt_sink.py`, `/data/status/srt-sink.json`). SRT's
-  own HSv5 handshake is what actually rejects a wrong passphrase — no
-  separate check needed here. Only on a successful probe does it call
-  `slide-announcer-display-power takeover` and launch a real mpv (direct
-  DRM/KMS video, direct ALSA audio — neither PipeWire nor labwc is running
-  by then, kiosk-start.sh only starts those inside the kiosk unit's own
-  cgroup), blocking until the stream ends, then restoring whichever of
-  `wake`/`sleep` matches the state captured before `takeover` ran. Runs as
-  the unprivileged `slideannouncer` user (same `video`/`render`/`audio`
-  supplementary groups as the kiosk unit), independent of
-  `slide-announcer-kiosk.service` — always running; the config file's
-  `enabled` flag (checked every poll) is what actually gates behavior, so
-  toggling it in Settings takes effect within one ~2s poll interval, no
-  unit restart needed.
+  (`local-app/backend/srt_sink.py`, `/data/status/srt-sink.json`), and on
+  any datagram, hands off to a real ffmpeg listener that remuxes the
+  still-encoded H.264 (`-c copy`, no decode/re-encode) into fragmented MP4
+  and forwards it to the kiosk page over `/api/local/srt-sink/stream`
+  (WebSocket), which plays it inline via MediaSource Extensions. Chromium
+  never stops being the active kiosk process for this, so no display
+  takeover/kiosk restart is involved at all.
 - `nginx-slide-announcer.conf` — serves `/data/local-app/current/frontend`
   (the Vue SPA, following the `current` symlink at request time — see
   `../local-app/README.md`) and reverse-proxies `/api/*` to the backend on
-  loopback only.
+  loopback only (including the WebSocket route above, upgrade-header
+  aware). `nginx-websocket-upgrade.conf` (installed to
+  `/etc/nginx/conf.d/`, http-scope, since `map` isn't valid inside that
+  server block) is the `$connection_upgrade` map this needs so plain
+  REST calls under `/api/` don't have `Connection: upgrade` forced on
+  them too.
 - `polkit/50-networkmanager-slide-announcer.rules` — grants the
   `slideannouncer` service user NetworkManager D-Bus control, used by the
   backend's `network.py` (`nmcli` scan/connect/status calls backing the

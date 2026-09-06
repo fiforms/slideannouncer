@@ -12,7 +12,7 @@ import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket
 from pydantic import BaseModel
 
 import heartbeat
@@ -21,6 +21,7 @@ import pairing
 import pinning
 import revelation
 import srt_sink
+import srt_stream_bridge
 import sync
 import system_control
 
@@ -32,9 +33,11 @@ VERSION_FILE = Path("/opt/slide-announcer/VERSION")
 async def lifespan(app: FastAPI):
     heartbeat_task = asyncio.create_task(heartbeat.run_forever())
     sync_task = asyncio.create_task(sync.run_forever())
+    srt_stream_task = asyncio.create_task(srt_stream_bridge.run_forever())
     yield
     heartbeat_task.cancel()
     sync_task.cancel()
+    srt_stream_task.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -272,7 +275,33 @@ def srt_sink_regenerate():
 
 @app.get("/api/local/srt-sink/playing")
 def srt_sink_playing():
-    return {"active": srt_sink.is_playing()}
+    return {"active": srt_stream_bridge.is_playing()}
+
+
+@app.websocket("/api/local/srt-sink/stream")
+async def srt_sink_stream(websocket: WebSocket):
+    # srt_stream_bridge.serve_client() replays a cached init segment +
+    # recent fragments on connect (see that module's docstring) so a
+    # kiosk page reload mid-stream can rejoin without waiting for the
+    # source's next keyframe, then forwards live fragments until either
+    # side disconnects.
+    await websocket.accept()
+    await srt_stream_bridge.serve_client(websocket)
+
+
+class SrtSinkClientLogRequest(BaseModel):
+    message: str
+
+
+@app.post("/api/local/srt-sink/client-log")
+def srt_sink_client_log(body: SrtSinkClientLogRequest):
+    # Fire-and-forget relay from srtStreamPlayer.js (frontend/src/
+    # srtStreamPlayer.js's logClient()) — a kiosk has no one watching
+    # devtools, so MSE/WebSocket failures on that side would otherwise be
+    # invisible. Lands in the same journal as srt_stream_bridge.py's own
+    # logging (`journalctl -u slide-announcer-backend`).
+    print(f"[srt-stream-bridge] client: {body.message}", flush=True)
+    return {"ok": True}
 
 
 @app.get("/api/local/revelation/scan")
