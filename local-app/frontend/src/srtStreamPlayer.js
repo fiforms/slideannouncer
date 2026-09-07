@@ -176,7 +176,10 @@ export function startSrtStream(el) {
   mediaSource.addEventListener('error', () => logClient('MediaSource error event'))
   videoEl.src = URL.createObjectURL(mediaSource)
   mediaSource.addEventListener('sourceopen', onSourceOpen, { once: true })
-  if (debugOverlayEnabled) ensureOverlay()
+  if (debugOverlayEnabled) {
+    ensureOverlay()
+    startDebugHeartbeat()
+  }
 }
 
 // Called from Slideshow.vue on every srt-sink/playing poll — cheap and
@@ -184,16 +187,56 @@ export function startSrtStream(el) {
 export function setDebugOverlay(enabled) {
   debugOverlayEnabled = enabled
   if (!videoEl) return
-  if (enabled) ensureOverlay()
-  else if (overlayEl) {
-    overlayEl.remove()
-    overlayEl = null
+  if (enabled) {
+    ensureOverlay()
+    startDebugHeartbeat()
+  } else {
+    if (overlayEl) {
+      overlayEl.remove()
+      overlayEl = null
+    }
+    stopDebugHeartbeat()
   }
+}
+
+// Periodic full client-state dump, independent of whether playback ever
+// actually starts — added after a late-join hang produced ZERO further
+// log output past "SourceBuffer created" (no error, no timeout, nothing)
+// despite a real keyframe fragment being broadcast minutes earlier.
+// Root cause: every other piece of client-side diagnostics
+// (recordEvent()/flushDebugEvents()) only ever gets flushed from inside
+// runCatchup()'s stall-check, and runCatchup() only starts once
+// maybeWarmUp() successfully calls videoEl.play() — which itself
+// requires readyState>=2. If playback never starts, that whole
+// diagnostic path never activates, so a *failure to start* was
+// completely invisible. This heartbeat starts as soon as the WebSocket
+// connection attempt begins (not gated on anything succeeding) so a
+// stuck join is always visible in the logs somewhere.
+let debugHeartbeatTimer = null
+const DEBUG_HEARTBEAT_INTERVAL_MS = 3000
+
+function startDebugHeartbeat() {
+  if (debugHeartbeatTimer || !debugOverlayEnabled) return
+  debugHeartbeatTimer = setInterval(() => {
+    const err = videoEl?.error
+    logClient(
+      `heartbeat ws=${ws?.readyState} appendQueueLen=${appendQueue.length} ` +
+      `sourceBuffer=${sourceBuffer ? `updating=${sourceBuffer.updating} buffered=${rangesToString(sourceBuffer.buffered)}` : 'none'} ` +
+      `video paused=${videoEl?.paused} readyState=${videoEl?.readyState} currentTime=${videoEl?.currentTime?.toFixed(2)} ` +
+      `error=${err ? `${err.code}:${err.message}` : 'none'} mediaSourceReadyState=${mediaSource?.readyState}`
+    )
+  }, DEBUG_HEARTBEAT_INTERVAL_MS)
+}
+
+function stopDebugHeartbeat() {
+  if (debugHeartbeatTimer) clearInterval(debugHeartbeatTimer)
+  debugHeartbeatTimer = null
 }
 
 export function stopSrtStream() {
   if (catchupTimer) clearInterval(catchupTimer)
   catchupTimer = null
+  stopDebugHeartbeat()
   if (ws) ws.close()
   ws = null
   sourceBuffer = null
@@ -357,7 +400,25 @@ function bufferedEnd() {
 }
 
 function maybeWarmUp() {
-  if (!videoEl.paused || videoEl.readyState < 2) return
+  // Deliberately does NOT also check videoEl.readyState here (it used
+  // to, `|| videoEl.readyState < 2`) — that was a real deadlock for any
+  // late join. readyState reflects whether there's buffered data AT THE
+  // CURRENT PLAYBACK POSITION, and currentTime defaults to 0; for a
+  // fresh stream start the first buffered fragment also starts near 0,
+  // so they coincide and readyState naturally reaches 2 — but for a
+  // late join the buffered range starts wherever the live stream
+  // actually is (tens of seconds in), nowhere near currentTime=0, so
+  // readyState could never reach 2 on its own. The only code that
+  // repositions currentTime into the buffered range is right here,
+  // below — gating entry to this function on readyState>=2 meant it
+  // could never run for exactly the case it needs to fix. Confirmed on
+  // hardware: a late join's SourceBuffer grew for 40+ seconds
+  // (appendBuffer succeeding the whole time) while currentTime/readyState
+  // sat frozen at 0/1 forever. `!videoEl.paused` alone is sufficient to
+  // still only fire once — per spec, .paused flips to false
+  // synchronously the moment .play() is called below, before its
+  // promise even resolves.
+  if (!videoEl.paused) return
   const end = bufferedEnd()
   if (end === null) return
   videoEl.currentTime = Math.max(0, end - TARGET_LATENCY_SECONDS)

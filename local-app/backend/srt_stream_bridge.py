@@ -46,8 +46,11 @@ now it just sits there the whole time, like any normal server socket.
 Fragmentation (`-frag_duration` alone — deliberately no `frag_keyframe`,
 see _ffmpeg_cmd()'s own comment) is deliberately decoupled from the
 source's keyframe/GOP interval, which isn't controllable (varies by
-sender — OBS, a screen-share encoder, etc., commonly 1-2s): tying
-fragment emission to keyframes would inherit a full GOP of latency.
+sender/encoder settings — confirmed via ffprobe against this operator's
+own OBS recording that "auto" keyframe interval on x264 lands at 8.333s,
+not the couple-seconds-or-less this comment used to assume; see
+MAX_CACHED_FRAGMENTS/LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS's own comments):
+tying fragment emission to keyframes would inherit a full GOP of latency.
 FRAG_DURATION_US is a threshold, not a hard cut — ffmpeg's muxer flushes
 at the first frame crossing it, so real granularity is bounded by the
 source's own frame interval regardless of
@@ -106,23 +109,47 @@ FRAG_DURATION_US = 200_000
 # the passphrase changing, and restart accordingly). Not a UDP poll
 # interval — see module docstring for why there's no raw socket here.
 CONFIG_POLL_INTERVAL_SECONDS = 2.0
-# ~3s of fragments at FRAG_DURATION_US=200ms — comfortably wider than any
-# realistic source GOP (typically 1-2s), bounding memory for the rolling
-# cache. serve_client() now actually locates the real keyframe within
-# this window (see _parse_fragment_keyframe()) rather than assuming one
-# is there, so this only needs to be "usually enough," not "guaranteed."
-MAX_CACHED_FRAGMENTS = 15
+# Bounds memory for the rolling cache. serve_client() locates the real
+# keyframe within this window (see _parse_fragment_keyframe()) rather
+# than assuming one is there, so this only needs to be "usually enough
+# to replay instantly," not "guaranteed" — LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS
+# below is the actual correctness guarantee, this just controls how
+# often a late join has to fall back to waiting for a live one.
+#
+# NOT ~200ms-per-slot for video alone: this deque holds BOTH audio and
+# video fragments interleaved (_feed_boxes() appends every completed
+# top-level moof unit here regardless of track), and audio cuts at
+# roughly the same ~200ms cadence as video (10 AAC frames * ~21ms ~=
+# 213ms/fragment). So in steady state this covers roughly HALF the
+# wall-clock time a same-sized all-video cache would — a first attempt
+# at "100 ~= 10s" actually only spanned ~5s, confirmed too short against
+# the measured 8.333s GOP (see the module docstring's note on this).
+# Sized here (~15s combined, matching the same margin given to
+# LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS below) to cover that measured
+# interval with real margin given the audio/video split; a source with
+# an even longer GOP still falls back to the live-wait path correctly,
+# just less often "instantly."
+MAX_CACHED_FRAGMENTS = 150
 # Bounded so one stalled client can't make the broadcast loop back up
 # indefinitely; a client that falls this far behind is treated as
 # unrecoverable and dropped rather than blocking everyone else.
 CLIENT_QUEUE_MAXSIZE = 200
 # How long serve_client() waits for a live keyframe when a joining
-# client's cache window contains none at all (see its own comment) —
-# comfortably more than a typical 1-2s GOP. Past this, the join is
-# abandoned (WebSocket closed with LATE_JOIN_TIMEOUT_CLOSE_CODE) rather
-# than left hanging indefinitely; srtStreamPlayer.js retries on that
-# specific code.
-LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS = 8.0
+# client's cache window contains none at all (see its own comment).
+# Past this, the join is abandoned (WebSocket closed with
+# LATE_JOIN_TIMEOUT_CLOSE_CODE) rather than left hanging indefinitely;
+# srtStreamPlayer.js retries on that specific code.
+#
+# This was originally 8.0s, based on the same never-actually-validated
+# "commonly 1-2s" GOP assumption — since the real measured GOP here is
+# 8.333s (see MAX_CACHED_FRAGMENTS's own comment), that timeout was
+# almost always shorter than the wait a join needed, so joins nearly
+# always failed. A join can start right after a keyframe and need to
+# wait nearly a full GOP for the next one, so this must safely exceed
+# the real GOP with real margin — sized generously here since the exact
+# GOP is source-dependent (this operator's encoder, not a pipeline
+# constant) and not something this code can measure live.
+LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS = 15.0
 # Application-defined WebSocket close code (the 4000-4999 range is
 # reserved for exactly this) telling srtStreamPlayer.js's ws.onclose
 # "this wasn't a normal disconnect, retry" — see LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS.
