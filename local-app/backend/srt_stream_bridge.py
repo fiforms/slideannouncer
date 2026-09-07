@@ -92,17 +92,29 @@ import srt_sink
 QUEUE_REPORT_INTERVAL_SECONDS = 1.0
 
 # Threshold, not a hard cut — see module docstring. Started at 50ms, but
-# confirmed on hardware that landed on a periodic, ~10-15s stall-then-
-# jump: audio kept playing smoothly through each stall while video froze
-# then snapped forward, the signature of a main/renderer-thread GC pause
-# (Chromium runs audio output on its own thread, largely decoupled from
-# the main thread video compositing needs) rather than anything decode-
-# rate related. At 50ms fragments the client was allocating a new
-# ArrayBuffer ~20 times/sec purely from WebSocket messages — real
-# allocation pressure on a memory-constrained Pi. 200ms cuts that
-# roughly 4x at the cost of a bit more latency, which the client's
-# catch-up logic now has headroom for.
-FRAG_DURATION_US = 200_000
+# confirmed on hardware AT THE TIME that it landed on a periodic,
+# ~10-15s stall-then-jump: audio kept playing smoothly through each
+# stall while video froze then snapped forward, diagnosed then as a
+# main/renderer-thread GC pause from ~20 ArrayBuffer allocations/sec on
+# a memory-constrained Pi — so this was raised to 200ms (roughly 4x
+# fewer allocations/sec) on that theory.
+#
+# In hindsight, that symptom description — audio fine, video freezes
+# then snaps forward, periodic ~10-15s — is identical to a real,
+# unrelated bug found and fixed much later: srtStreamPlayer.js's
+# trimBuffer() wiping its ENTIRE SourceBuffer instead of the requested
+# sliver (see that file's BUFFER_TRIM_KEEP_SECONDS comment). It's
+# plausible the GC-pause diagnosis was actually this same bug
+# misattributed, and raising this value only coincidentally shifted the
+# timing of when it triggered rather than fixing anything. Revisited
+# now that the real root cause has an actual fix (a keyframe-aware
+# remove() clamp): lowered to 66ms (2 frames at 30fps) to chase overall
+# latency down. If that EXACT stall signature reappears (audio AND
+# video BOTH freezing together would instead point to a genuine buffer
+# underrun — see srtStreamPlayer.js's TARGET_LATENCY_SECONDS comment for
+# that separate failure mode), that's real evidence GC pressure was also
+# an independent factor, not just this same bug in disguise.
+FRAG_DURATION_US = 66_000
 # How often the manager loop rechecks Settings > SRT Sink's enable
 # toggle/passphrase — both while disabled (to notice it turning back on)
 # and while a listener is already running (to notice it turning off, or
@@ -116,20 +128,24 @@ CONFIG_POLL_INTERVAL_SECONDS = 2.0
 # below is the actual correctness guarantee, this just controls how
 # often a late join has to fall back to waiting for a live one.
 #
-# NOT ~200ms-per-slot for video alone: this deque holds BOTH audio and
-# video fragments interleaved (_feed_boxes() appends every completed
-# top-level moof unit here regardless of track), and audio cuts at
-# roughly the same ~200ms cadence as video (10 AAC frames * ~21ms ~=
-# 213ms/fragment). So in steady state this covers roughly HALF the
-# wall-clock time a same-sized all-video cache would — a first attempt
-# at "100 ~= 10s" actually only spanned ~5s, confirmed too short against
-# the measured 8.333s GOP (see the module docstring's note on this).
-# Sized here (~15s combined, matching the same margin given to
-# LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS below) to cover that measured
-# interval with real margin given the audio/video split; a source with
-# an even longer GOP still falls back to the live-wait path correctly,
-# just less often "instantly."
-MAX_CACHED_FRAGMENTS = 150
+# Deliberately DERIVED from FRAG_DURATION_US rather than a fixed count —
+# this deque holds roughly one video AND one audio fragment per
+# FRAG_DURATION_US interval (_feed_boxes() appends every completed
+# top-level moof unit here regardless of track, and audio cuts at
+# roughly the same cadence as video), so a fragment-COUNT sized for one
+# particular fragment duration silently covers less wall-clock time the
+# moment that duration changes elsewhere. Confirmed the hard way: a
+# first hardcoded attempt (100, "~10s") actually only covered ~5s once
+# the audio/video split was accounted for — and would have silently
+# dropped to under 2s the moment FRAG_DURATION_US came down from 200ms,
+# quietly reintroducing the exact late-join failure that value was
+# originally sized to fix. _CACHE_COVERAGE_SECONDS is the number that
+# should actually get tuned here — sized to match the same margin given
+# to LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS below over the measured 8.333s
+# GOP; a source with an even longer GOP still falls back to the
+# live-wait path correctly, just less often "instantly."
+_CACHE_COVERAGE_SECONDS = 15
+MAX_CACHED_FRAGMENTS = round(2 * _CACHE_COVERAGE_SECONDS / (FRAG_DURATION_US / 1_000_000))
 # Bounded so one stalled client can't make the broadcast loop back up
 # indefinitely; a client that falls this far behind is treated as
 # unrecoverable and dropped rather than blocking everyone else.

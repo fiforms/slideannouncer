@@ -42,6 +42,13 @@
 // really no more data to decode for either track, unlike a GC pause
 // (which only stalls video compositing on the main thread while audio's
 // own thread keeps playing already-buffered audio through it).
+//
+// Lowered from 0.6 to 0.4 while chasing overall end-to-end latency —
+// still a full 2 fragment-intervals of margin at 200ms, comfortably
+// above the already-proven-bad 0.3s above. If FRAG_DURATION_US ever
+// drops (a separate, not-yet-tried latency lever), this needs revisiting
+// too: the safety margin here is relative to fragment duration, not an
+// absolute constant.
 // Diagnostic flag: when true, runCatchup() never touches playbackRate or
 // currentTime (see its own guard) — only trimBuffer() still runs. Used
 // to confirm on hardware whether the catch-up logic itself (the rate
@@ -53,7 +60,7 @@
 // elsewhere, not causing the underlying stall itself. Left here, default
 // off, in case it's useful again while chasing that bottleneck.
 const NO_CATCHUP = false
-const TARGET_LATENCY_SECONDS = 0.6
+const TARGET_LATENCY_SECONDS = 0.4
 const SMALL_DRIFT_SECONDS = 0.05
 const LARGE_DRIFT_SECONDS = 1.3
 // runCatchup() scales the playbackRate nudge linearly between these two
