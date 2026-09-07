@@ -2,9 +2,12 @@
 video sink: an in-process asyncio task (started from main.py's lifespan,
 same pattern as heartbeat.py/sync.py) that watches for an incoming SRT
 stream and, instead of stopping the kiosk to play it via mpv, remuxes the
-still-encoded H.264 (ffmpeg `-c:v copy` — no decode/re-encode; audio is a
-real, cheap encode instead — see _ffmpeg_cmd()'s own comment for why)
-into fragmented MP4 and forwards it to the kiosk page itself over a WebSocket
+still-encoded video (ffmpeg `-c:v copy` — no decode/re-encode, so this is
+codec-agnostic: H.264 is the only codec actually seen on hardware so far,
+but _mime_codec_from_moov() and friends build a correct codecs= string
+for H.265/AV1 too; audio is a real, cheap encode instead — see
+_ffmpeg_cmd()'s own comment for why) into fragmented MP4 and forwards it
+to the kiosk page itself over a WebSocket
 (/api/local/srt-sink/stream), which plays it inline via MediaSource
 Extensions. Chromium never stops being the active kiosk process, so none
 of display-power.py's `takeover`/sleep-restore dance is needed here
@@ -55,15 +58,22 @@ an init segment (ftyp+moov, emitted once via `empty_moov`) to bootstrap
 its MediaSource, and enough fragments since the last keyframe for
 MSE to actually have something decodable to start from — a fragment
 boundary alone doesn't guarantee a keyframe, since most fragments here
-are far smaller than a full GOP. Rather than parse moof/traf sample
-flags to find true keyframe boundaries, this keeps a small rolling cache
-of the last MAX_CACHED_FRAGMENTS fragments (a couple hundred KB at most)
-and replays all of it to a joining client — statistically guaranteed to
-span at least one keyframe given the cache window is wider than any
-realistic GOP length, at the cost of a joining client occasionally
-decoding from a few frames before the nearest keyframe (Chromium simply
-can't render those and skips them — a handful of dropped/black frames on
-join, not a fatal error).
+are far smaller than a full GOP. This used to just replay the last
+MAX_CACHED_FRAGMENTS fragments unconditionally (a couple hundred KB at
+most) on the theory that a ~3s cache window is "statistically" wider
+than any realistic GOP — confirmed on hardware that this isn't good
+enough: an unlucky join can still land in a window with no keyframe at
+all, and there was no fallback, so the client just never starts playing
+(readyState never reaches HAVE_CURRENT_DATA). Fixed by actually parsing
+each fragment's moof/traf/tfhd/tfdt/trun boxes (see _parse_fragment_keyframe()
+and friends) to know exactly which cached fragment, if any, contains the
+most recent real keyframe — serve_client() replays starting from there,
+and if the whole cache turns out to have none, waits for the next live
+one instead of guessing. The same per-fragment keyframe timestamp is
+also what lets srtStreamPlayer.js's trimBuffer() safely bound its
+SourceBuffer.remove() calls to a real random-access point instead of an
+arbitrary time offset — see that file's own comment for the freeze bug
+this fixes.
 """
 import asyncio
 import time
@@ -97,13 +107,41 @@ FRAG_DURATION_US = 200_000
 # interval — see module docstring for why there's no raw socket here.
 CONFIG_POLL_INTERVAL_SECONDS = 2.0
 # ~3s of fragments at FRAG_DURATION_US=200ms — comfortably wider than any
-# realistic source GOP (typically 1-2s), so a joining client's replay
-# almost always spans at least one keyframe. See module docstring.
+# realistic source GOP (typically 1-2s), bounding memory for the rolling
+# cache. serve_client() now actually locates the real keyframe within
+# this window (see _parse_fragment_keyframe()) rather than assuming one
+# is there, so this only needs to be "usually enough," not "guaranteed."
 MAX_CACHED_FRAGMENTS = 15
 # Bounded so one stalled client can't make the broadcast loop back up
 # indefinitely; a client that falls this far behind is treated as
 # unrecoverable and dropped rather than blocking everyone else.
 CLIENT_QUEUE_MAXSIZE = 200
+# How long serve_client() waits for a live keyframe when a joining
+# client's cache window contains none at all (see its own comment) —
+# comfortably more than a typical 1-2s GOP. Past this, the join is
+# abandoned (WebSocket closed with LATE_JOIN_TIMEOUT_CLOSE_CODE) rather
+# than left hanging indefinitely; srtStreamPlayer.js retries on that
+# specific code.
+LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS = 8.0
+# Application-defined WebSocket close code (the 4000-4999 range is
+# reserved for exactly this) telling srtStreamPlayer.js's ws.onclose
+# "this wasn't a normal disconnect, retry" — see LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS.
+LATE_JOIN_TIMEOUT_CLOSE_CODE = 4000
+
+# Mirrors Settings > SRT Sink's "Debug overlay" toggle (srt_sink.py's
+# debug_overlay field, same one srtStreamPlayer.js's overlay/event-dump
+# logging is gated on) — set from run_forever()'s own config poll. Gates
+# _pump_stdout()'s per-fragment logging below so steady-state operation
+# (5 fragments/sec at FRAG_DURATION_US=200ms) doesn't spam journalctl;
+# only turned on while actively chasing a stall.
+_debug_enabled = False
+# Debug-gated raw capture of ffmpeg's stdout (see _pump_stdout()) for
+# hand-inspecting real tfhd/trun bytes on hardware — which encoding
+# variant ffmpeg's muxer actually uses for sample sync flags was never
+# confirmed before writing _parse_trun() below. Capped so leaving debug
+# mode on doesn't grow this file unbounded.
+DEBUG_CAPTURE_PATH = "/tmp/srt-fragment-capture.mp4"
+DEBUG_CAPTURE_MAX_BYTES = 5_000_000
 
 
 class _StreamState:
@@ -111,8 +149,24 @@ class _StreamState:
         self.active = False
         self.mime_codec: str | None = None
         self.init_segment = b""
-        self.recent_fragments: deque[bytes] = deque(maxlen=MAX_CACHED_FRAGMENTS)
+        # Each entry pairs a fragment's bytes with its own keyframe PTS in
+        # seconds (None if it contains no video keyframe) — see
+        # _parse_fragment_keyframe(). Lets serve_client() find exactly
+        # which cached fragment to start a late join from, rather than
+        # replaying the whole window and hoping.
+        self.recent_fragments: deque[tuple[bytes, float | None]] = deque(maxlen=MAX_CACHED_FRAGMENTS)
         self.clients: set[asyncio.Queue] = set()
+        # Learned once from the init segment's moov — see
+        # _video_track_id_from_moov()/_video_timescale_from_moov(). Needed
+        # to pick the video track's traf out of each moof (a moof commonly
+        # has one per track) and to convert tfdt/trun's timescale-unit
+        # arithmetic into seconds.
+        self.video_track_id: int | None = None
+        self.video_timescale: int | None = None
+        # The most recent keyframe PTS (seconds) seen across all fragments
+        # so far this stream — what's broadcast to clients for
+        # trimBuffer()'s remove() clamp (see srtStreamPlayer.js).
+        self.last_keyframe_pts: float | None = None
         # Incremental MP4 box parser state — see _feed_boxes().
         self._parse_buf = b""
         self._seen_moof = False
@@ -122,6 +176,9 @@ class _StreamState:
         self.mime_codec = None
         self.init_segment = b""
         self.recent_fragments.clear()
+        self.video_track_id = None
+        self.video_timescale = None
+        self.last_keyframe_pts = None
         self._parse_buf = b""
         self._seen_moof = False
         self._current_fragment = bytearray()
@@ -141,20 +198,249 @@ def _listener_url(passphrase: str) -> str:
     )
 
 
-def _mime_codec_from_moov(moov: bytes) -> str | None:
+# --- Generic box-tree helpers / keyframe/sync-sample parsing ----------
+#
+# Added to fix two bugs traced to the same root cause: nothing in this
+# pipeline previously knew where real video keyframes actually were.
+# 1. srtStreamPlayer.js's trimBuffer() periodically called
+#    SourceBuffer.remove() at an arbitrary time offset, which — since our
+#    fragments aren't keyframe-aligned (see _ffmpeg_cmd()'s own comment)
+#    — could land with no clean random-access point for Chromium to
+#    split on; confirmed on hardware this was wiping the ENTIRE buffered
+#    range instead of the requested sliver, causing periodic freezes.
+# 2. A joining client's cached-fragment replay (see serve_client()) used
+#    to just be "statistically" likely to contain a keyframe; when it
+#    didn't, playback silently never started.
+#
+# Below reads exactly enough of moof/traf/tfhd/tfdt/trun (ISO/IEC
+# 14496-12 §8.8) to find each fragment's first real sync sample and its
+# presentation timestamp, both fed back to the two call sites above. The
+# same video-trak lookup this needs (_video_trak_payload()) is also what
+# _mime_codec_from_moov() below uses to build a codec string for
+# whichever of H.264/H.265/AV1 the source actually sent.
+# Every function here is pure (bytes in, value out) and independently
+# testable without ffmpeg/SRT/a browser — see test_srt_stream_bridge_boxes.py.
+
+
+def _iter_child_boxes(data: bytes):
+    """Yields (box_type, box_payload) for each top-level child box in
+    `data`, which must already be a complete, fully-buffered region (a
+    moov/trak/moof/traf's own contents — never a streaming/partial
+    buffer, unlike _feed_boxes()'s own top-level splitting, which reads
+    incrementally off ffmpeg's stdout instead)."""
+    pos = 0
+    n = len(data)
+    while pos + 8 <= n:
+        size = int.from_bytes(data[pos:pos + 4], "big")
+        if size < 8 or pos + size > n:
+            break
+        yield data[pos + 4:pos + 8], data[pos + 8:pos + size]
+        pos += size
+
+
+def _find_child_box(data: bytes, want_type: bytes) -> bytes | None:
+    for box_type, payload in _iter_child_boxes(data):
+        if box_type == want_type:
+            return payload
+    return None
+
+
+def _video_trak_payload(moov_payload: bytes) -> bytes | None:
+    """Locates the `trak` whose handler is video ('vide') — needed so
+    _video_track_id_from_moov()/_video_timescale_from_moov() don't
+    accidentally read the audio track's tkhd/mdhd on a source with more
+    than one trak. `hdlr`'s handler_type sits at a fixed payload offset
+    (version_flags(4)+pre_defined(4) = byte 8, then the 4-byte type code)
+    regardless of version, so a raw byte-search for the tag within each
+    candidate trak's own byte range is safe here — same pragmatic
+    shortcut the codec-string builders below take for avcC/hvcC/av1C."""
+    for box_type, trak_payload in _iter_child_boxes(moov_payload):
+        if box_type != b"trak":
+            continue
+        idx = trak_payload.find(b"hdlr")
+        if idx == -1 or idx + 16 > len(trak_payload):
+            continue
+        if trak_payload[idx + 12:idx + 16] == b"vide":
+            return trak_payload
+    return None
+
+
+def _version_prefixed_field_offset(version_flags_first_byte: int) -> int:
+    """tkhd and mdhd share the same leading layout: version_flags(4),
+    then two time fields (creation_time/modification_time) before the
+    field each caller actually wants (track_ID for tkhd, timescale for
+    mdhd) — 4 bytes each in version 0, 8 bytes each in version 1."""
+    return 4 + (16 if version_flags_first_byte == 1 else 8)
+
+
+def _video_track_id_from_moov(init_segment: bytes) -> int | None:
+    """Reads the video trak's tkhd.track_ID — needed to match each
+    moof's traf boxes (keyed by tfhd.track_id) to the video track
+    specifically, since a moof here commonly has one traf per track and
+    only the video one's samples carry keyframe/sync-sample semantics we
+    care about. Returns None (never raises) if anything doesn't parse as
+    expected — callers must treat that as 'can't determine, be
+    conservative', not 'no video track'."""
+    try:
+        moov_payload = _find_child_box(init_segment, b"moov")
+        trak_payload = _video_trak_payload(moov_payload) if moov_payload else None
+        tkhd = _find_child_box(trak_payload, b"tkhd") if trak_payload else None
+        if not tkhd:
+            return None
+        offset = _version_prefixed_field_offset(tkhd[0])
+        if offset + 4 > len(tkhd):
+            return None
+        return int.from_bytes(tkhd[offset:offset + 4], "big")
+    except Exception:
+        return None
+
+
+def _video_timescale_from_moov(init_segment: bytes) -> int | None:
+    """Reads the video trak's mdhd.timescale — needed to convert
+    tfdt/trun's timescale-unit arithmetic into seconds. Same
+    can't-determine-vs-none-found caveat as _video_track_id_from_moov()."""
+    try:
+        moov_payload = _find_child_box(init_segment, b"moov")
+        trak_payload = _video_trak_payload(moov_payload) if moov_payload else None
+        mdia_payload = _find_child_box(trak_payload, b"mdia") if trak_payload else None
+        mdhd = _find_child_box(mdia_payload, b"mdhd") if mdia_payload else None
+        if not mdhd:
+            return None
+        offset = _version_prefixed_field_offset(mdhd[0])
+        if offset + 4 > len(mdhd):
+            return None
+        return int.from_bytes(mdhd[offset:offset + 4], "big")
+    except Exception:
+        return None
+
+
+def _avc1_codec_string(video_trak_payload: bytes) -> str | None:
+    """"avc1.PPCCLL" straight out of the avcC box's
+    AVCDecoderConfigurationRecord (profile_idc/profile_compatibility/
+    level_idc are bytes 1-3 of its payload). A raw byte-search for the
+    'avcC' tag (rather than walking the full mdia->minf->stbl->stsd->
+    avc1->avcC box tree) is a pragmatic shortcut: avcC is a well-defined
+    leaf box and a spurious collision with its 4-byte tag elsewhere in a
+    well-formed trak isn't a practical concern."""
+    idx = video_trak_payload.find(b"avcC")
+    if idx == -1 or idx + 7 >= len(video_trak_payload):
+        return None
+    profile, compat, level = video_trak_payload[idx + 5], video_trak_payload[idx + 6], video_trak_payload[idx + 7]
+    return f"avc1.{profile:02x}{compat:02x}{level:02x}"
+
+
+def _reverse_bits32(value: int) -> int:
+    """RFC 6381's HEVC codec string represents
+    general_profile_compatibility_flags with each bit read out in
+    reversed order (bit 0 of the wire value is treated as the most
+    significant bit of the number that gets hex-formatted) — an
+    ISO/IEC 14496-15 quirk inherited directly from how HEVC's own spec
+    indexes those flags, not a mistake to "simplify" away."""
+    result = 0
+    for _ in range(32):
+        result = (result << 1) | (value & 1)
+        value >>= 1
+    return result
+
+
+def _hevc_codec_string(video_trak_payload: bytes, sample_entry_tag: str) -> str | None:
+    """Builds an 'hev1.…'/'hvc1.…' codec string per RFC 6381 §3.4 (the
+    HEVC-in-ISOBMFF carriage spec), read out of the hvcC box's
+    HEVCDecoderConfigurationRecord (ISO/IEC 14496-15 §8.3.3.1) — same
+    pragmatic raw-byte-search shortcut as _avc1_codec_string(). Written
+    directly against the spec; this pipeline has never actually carried
+    an HEVC source (ffmpeg's `-c:v copy` in _ffmpeg_cmd() passes through
+    whatever codec the SRT source sends, but only H.264 has been seen on
+    hardware) — see test_srt_stream_bridge_boxes.py for fixtures
+    exercising the bit-layout math, not a real capture.
+
+    `sample_entry_tag` ('hev1' or 'hvc1', whichever the source's stsd
+    actually uses) becomes the codec string's own prefix — it isn't
+    cosmetic: hvc1 vs hev1 changes whether MediaSource expects parameter
+    sets in-band per sample or only out-of-band in hvcC, so reporting
+    the wrong one for what's actually being sent would misdeclare the
+    codec, not just its profile."""
+    idx = video_trak_payload.find(b"hvcC")
+    if idx == -1:
+        return None
+    payload = video_trak_payload[idx + 4:]
+    if len(payload) < 13:
+        return None
+    profile_byte = payload[1]
+    profile_space = (profile_byte >> 6) & 0x3
+    tier_flag = (profile_byte >> 5) & 0x1
+    profile_idc = profile_byte & 0x1F
+    compat_flags = int.from_bytes(payload[2:6], "big")
+    constraint_flags = payload[6:12]
+    level_idc = payload[12]
+
+    space_prefix = {0: "", 1: "A", 2: "B", 3: "C"}[profile_space]
+    compat_hex = format(_reverse_bits32(compat_flags), "x")
+    tier_char = "H" if tier_flag else "L"
+    # Trailing all-zero bytes are dropped (and the whole field omitted
+    # if every byte is zero) per RFC 6381's own formatting rule.
+    constraint_part = constraint_flags.rstrip(b"\x00").hex().upper()
+
+    parts = [sample_entry_tag, f"{space_prefix}{profile_idc}", compat_hex, f"{tier_char}{level_idc}"]
+    if constraint_part:
+        parts.append(constraint_part)
+    return ".".join(parts)
+
+
+def _av1_codec_string(video_trak_payload: bytes) -> str | None:
+    """Builds an 'av01.P.LLT.DD' codec string per the AV1 Codec ISO
+    Media File Format Binding spec's "codecs parameter string" section,
+    read out of the av1C box's AV1CodecConfigurationRecord. Same
+    never-seen-on-real-hardware caveat as _hevc_codec_string() — written
+    directly against the spec, not validated against a real AV1 capture."""
+    idx = video_trak_payload.find(b"av1C")
+    if idx == -1:
+        return None
+    payload = video_trak_payload[idx + 4:]
+    if len(payload) < 4:
+        return None
+    seq_profile = (payload[1] >> 5) & 0x7
+    seq_level_idx_0 = payload[1] & 0x1F
+    seq_tier_0 = (payload[2] >> 7) & 0x1
+    high_bitdepth = (payload[2] >> 6) & 0x1
+    twelve_bit = (payload[2] >> 5) & 0x1
+
+    if not high_bitdepth:
+        bit_depth = 8
+    elif seq_profile == 2 and twelve_bit:
+        bit_depth = 12
+    else:
+        bit_depth = 10
+    tier_char = "H" if seq_tier_0 else "M"
+    return f"av01.{seq_profile}.{seq_level_idx_0:02d}{tier_char}.{bit_depth:02d}"
+
+
+def _video_codec_string(video_trak_payload: bytes) -> str | None:
+    """Dispatches to whichever codec's decoder-config box is actually
+    present in the video track — the config box tag itself (avcC/hvcC/
+    av1C) is the authoritative signal for which codec is in use, not the
+    sample-entry tag (hev1 vs hvc1 both carry an hvcC, for instance)."""
+    if b"hvcC" in video_trak_payload:
+        tag = "hvc1" if b"hvc1" in video_trak_payload else "hev1"
+        return _hevc_codec_string(video_trak_payload, tag)
+    if b"av1C" in video_trak_payload:
+        return _av1_codec_string(video_trak_payload)
+    return _avc1_codec_string(video_trak_payload)
+
+
+def _mime_codec_from_moov(init_segment: bytes) -> str | None:
     """Builds the exact codecs string MediaSource.addSourceBuffer() needs
     — it must list every track present in the segments, or appendBuffer()
     rejects them outright. Hardcoding one video profile/audio codec would
     break for any source that doesn't happen to match it, so both are
     read out of the moov's own box contents rather than assumed:
 
-    - video: profile_idc/profile_compatibility/level_idc straight out of
-      the avcC box's AVCDecoderConfigurationRecord (bytes 1-3 of its
-      payload) build an exact "avc1.PPCCLL". A raw byte-search for the
-      'avcC' tag (rather than walking the full moov->trak->mdia->minf->
-      stbl->stsd->avc1->avcC box tree) is a pragmatic shortcut: avcC is a
-      well-defined leaf box and a spurious collision with its 4-byte tag
-      elsewhere in a well-formed moov isn't a practical concern.
+    - video: whichever codec the source actually used (H.264/H.265/AV1
+      — see _video_codec_string()), scoped to the video trak specifically
+      (reusing _video_trak_payload(), the same lookup
+      _video_track_id_from_moov()/_video_timescale_from_moov() use for
+      the keyframe-parsing work) rather than searching the whole moov,
+      so this can't accidentally pick up an audio-side box.
     - audio: presence of an 'mp4a' box means an AAC track is present (the
       near-universal choice for this kind of source — OBS/screen-share
       encoders default to it), reported as "mp4a.40.2" (AAC-LC) without
@@ -162,17 +448,177 @@ def _mime_codec_from_moov(moov: bytes) -> str | None:
       DecoderSpecificInfo — a source encoding some other AAC profile
       would need that read done properly; not attempted here.
     """
-    idx = moov.find(b"avcC")
-    if idx == -1 or idx + 7 >= len(moov):
+    moov_payload = _find_child_box(init_segment, b"moov")
+    video_trak_payload = _video_trak_payload(moov_payload) if moov_payload else None
+    if video_trak_payload is None:
         return None
-    profile, compat, level = moov[idx + 5], moov[idx + 6], moov[idx + 7]
-    codecs = [f"avc1.{profile:02x}{compat:02x}{level:02x}"]
-    if b"mp4a" in moov:
+    video_codec = _video_codec_string(video_trak_payload)
+    if video_codec is None:
+        return None
+    codecs = [video_codec]
+    if b"mp4a" in init_segment:
         codecs.append("mp4a.40.2")
     return f'video/mp4; codecs="{",".join(codecs)}"'
 
 
-def _feed_boxes(chunk: bytes) -> list[bytes]:
+def _parse_tfhd(payload: bytes) -> dict:
+    """Reads a tfhd box's track_id plus, if present, default_sample_duration/
+    default_sample_flags — the other optional fields (base_data_offset,
+    sample_description_index, default_sample_size) are skipped over by
+    their tf_flags presence bits alone; their values aren't needed here.
+    See ISO/IEC 14496-12 §8.8.7."""
+    tf_flags = int.from_bytes(payload[0:4], "big") & 0x00FFFFFF
+    track_id = int.from_bytes(payload[4:8], "big")
+    pos = 8
+    if tf_flags & 0x000001:  # base_data_offset
+        pos += 8
+    if tf_flags & 0x000002:  # sample_description_index
+        pos += 4
+    default_sample_duration = None
+    if tf_flags & 0x000008:  # default_sample_duration
+        default_sample_duration = int.from_bytes(payload[pos:pos + 4], "big")
+        pos += 4
+    if tf_flags & 0x000010:  # default_sample_size
+        pos += 4
+    default_sample_flags = None
+    if tf_flags & 0x000020:  # default_sample_flags
+        default_sample_flags = int.from_bytes(payload[pos:pos + 4], "big")
+    return {
+        "track_id": track_id,
+        "default_sample_duration": default_sample_duration,
+        "default_sample_flags": default_sample_flags,
+    }
+
+
+def _parse_tfdt(payload: bytes) -> int:
+    """base_media_decode_time — 32-bit in version 0, 64-bit in version 1
+    (version byte at payload offset 0). See ISO/IEC 14496-12 §8.8.12."""
+    if payload[0] == 1:
+        return int.from_bytes(payload[4:12], "big")
+    return int.from_bytes(payload[4:8], "big")
+
+
+# sample_is_non_sync_sample bit within a resolved 32-bit sample_flags
+# value (ISO/IEC 14496-12 §8.8.3.1) — 0 means the sample IS a sync
+# sample (a real keyframe).
+_SAMPLE_IS_NON_SYNC_SAMPLE_BIT = 0x00010000
+
+
+def _parse_trun(
+    payload: bytes, default_sample_flags: int | None, default_sample_duration: int | None
+) -> tuple[int | None, list[int]]:
+    """Walks one trun box's sample table. Returns (index of the first
+    sync sample found, or None; each sample's resolved duration, so a
+    caller can sum durations up to that index to get its presentation
+    time offset within the fragment).
+
+    Resolves each sample's sync-sample-ness with this priority, matching
+    every way ffmpeg's fmp4 muxer can legally encode it (ISO/IEC
+    14496-12 §8.8.8.2) — nobody has confirmed on real hardware which of
+    these this specific muxer actually uses, so all three are
+    implemented rather than assumed:
+      1. first_sample_flags (trun flag 0x000004) — applies ONLY to
+         sample 0, overriding both of the below for it.
+      2. this sample's own per-sample sample_flags (trun flag 0x000400).
+      3. tfhd's default_sample_flags (same value for every sample).
+    If none apply to a given sample, its sync-ness can't be determined —
+    treated as non-sync, the conservative direction (see module note:
+    missing a real keyframe is safe, claiming a fake one isn't)."""
+    trun_flags = int.from_bytes(payload[0:4], "big") & 0x00FFFFFF
+    sample_count = int.from_bytes(payload[4:8], "big")
+    pos = 8
+    if trun_flags & 0x000001:  # data_offset
+        pos += 4
+    first_sample_flags = None
+    if trun_flags & 0x000004:  # first_sample_flags
+        first_sample_flags = int.from_bytes(payload[pos:pos + 4], "big")
+        pos += 4
+    has_duration = bool(trun_flags & 0x000100)
+    has_size = bool(trun_flags & 0x000200)
+    has_flags = bool(trun_flags & 0x000400)
+    has_cto = bool(trun_flags & 0x000800)
+
+    durations: list[int] = []
+    keyframe_index: int | None = None
+    for i in range(sample_count):
+        if has_duration:
+            if pos + 4 > len(payload):
+                break
+            duration = int.from_bytes(payload[pos:pos + 4], "big")
+            pos += 4
+        else:
+            duration = default_sample_duration
+        if has_size:
+            pos += 4
+        per_sample_flags = None
+        if has_flags:
+            if pos + 4 > len(payload):
+                break
+            per_sample_flags = int.from_bytes(payload[pos:pos + 4], "big")
+            pos += 4
+        if has_cto:
+            pos += 4
+
+        if i == 0 and first_sample_flags is not None:
+            sample_flags = first_sample_flags
+        elif per_sample_flags is not None:
+            sample_flags = per_sample_flags
+        else:
+            sample_flags = default_sample_flags
+
+        durations.append(duration if duration is not None else 0)
+        if (
+            keyframe_index is None
+            and sample_flags is not None
+            and not (sample_flags & _SAMPLE_IS_NON_SYNC_SAMPLE_BIT)
+        ):
+            keyframe_index = i
+    return keyframe_index, durations
+
+
+def _parse_fragment_keyframe(
+    fragment: bytes, video_track_id: int | None, video_timescale: int | None
+) -> float | None:
+    """Given one completed moof+mdat fragment (as produced by
+    _feed_boxes()), returns the presentation timestamp in seconds of its
+    first real video keyframe, or None if it doesn't contain one — or if
+    anything here couldn't be determined (unexpected box layout, missing
+    video track info, etc.). Never raises: `None` always means "no new
+    information," which every caller must treat conservatively (don't
+    assume "no keyframe," just "don't know")."""
+    if video_track_id is None or video_timescale is None:
+        return None
+    try:
+        moof_payload = _find_child_box(fragment, b"moof")
+        if moof_payload is None:
+            return None
+        for box_type, traf_payload in _iter_child_boxes(moof_payload):
+            if box_type != b"traf":
+                continue
+            tfhd_payload = _find_child_box(traf_payload, b"tfhd")
+            if tfhd_payload is None:
+                continue
+            tfhd = _parse_tfhd(tfhd_payload)
+            if tfhd["track_id"] != video_track_id:
+                continue
+            tfdt_payload = _find_child_box(traf_payload, b"tfdt")
+            trun_payload = _find_child_box(traf_payload, b"trun")
+            if tfdt_payload is None or trun_payload is None:
+                return None
+            base_decode_time = _parse_tfdt(tfdt_payload)
+            keyframe_index, durations = _parse_trun(
+                trun_payload, tfhd["default_sample_flags"], tfhd["default_sample_duration"]
+            )
+            if keyframe_index is None:
+                return None
+            offset_units = sum(durations[:keyframe_index])
+            return (base_decode_time + offset_units) / video_timescale
+        return None
+    except Exception:
+        return None
+
+
+def _feed_boxes(chunk: bytes) -> list[tuple[bytes, float | None]]:
     """Incrementally splits ffmpeg's raw stdout byte stream into top-level
     MP4 boxes, and returns the box-aligned units (the init segment, once;
     each subsequent completed fragment, moof+mdat) newly completed by this
@@ -189,8 +635,14 @@ def _feed_boxes(chunk: bytes) -> list[bytes]:
     failed"). Routing
     every broadcast through this same box-aligned unit list — the exact
     same units a joining client's cached replay uses — means no client,
-    old or new, ever receives a partial box."""
-    ready: list[bytes] = []
+    old or new, ever receives a partial box.
+
+    Each returned unit is paired with its keyframe PTS (seconds), or
+    None — the init segment and any fragment without a determinable
+    video keyframe both get None (see _parse_fragment_keyframe()); this
+    is what serve_client() uses to find a correct late-join replay start
+    and what feeds _state.last_keyframe_pts for trimBuffer()'s clamp."""
+    ready: list[tuple[bytes, float | None]] = []
     _state._parse_buf += chunk
     while True:
         buf = _state._parse_buf
@@ -213,16 +665,23 @@ def _feed_boxes(chunk: bytes) -> list[bytes]:
                 _state._current_fragment = bytearray(box)
                 # Everything before this first moof — ftyp+moov — is now
                 # a complete, self-contained init segment.
-                ready.append(bytes(_state.init_segment))
+                ready.append((bytes(_state.init_segment), None))
             else:
                 _state.init_segment += box
                 if box_type == b"moov":
                     _state.mime_codec = _mime_codec_from_moov(_state.init_segment)
+                    _state.video_track_id = _video_track_id_from_moov(_state.init_segment)
+                    _state.video_timescale = _video_timescale_from_moov(_state.init_segment)
         else:
             if box_type == b"moof":
                 fragment = bytes(_state._current_fragment)
-                _state.recent_fragments.append(fragment)
-                ready.append(fragment)
+                keyframe_pts = _parse_fragment_keyframe(
+                    fragment, _state.video_track_id, _state.video_timescale
+                )
+                if keyframe_pts is not None:
+                    _state.last_keyframe_pts = keyframe_pts
+                _state.recent_fragments.append((fragment, keyframe_pts))
+                ready.append((fragment, keyframe_pts))
                 _state._current_fragment = bytearray(box)
             else:
                 _state._current_fragment += box
@@ -244,11 +703,16 @@ def _end_client(queue: asyncio.Queue) -> None:
     queue.put_nowait(None)
 
 
-def _broadcast(chunk: bytes) -> None:
+def _broadcast(item: tuple[bytes, float | None]) -> None:
+    """`item` is a (fragment_bytes, keyframe_pts) pair, same shape as
+    _feed_boxes()'s own return list — passed through to each client's
+    queue as-is so serve_client() can tell, while draining it, whether a
+    given fragment is safe to start a late join from (see its own
+    comment)."""
     stale = []
     for queue in _state.clients:
         try:
-            queue.put_nowait(chunk)
+            queue.put_nowait(item)
         except asyncio.QueueFull:
             stale.append(queue)
     for queue in stale:
@@ -323,8 +787,23 @@ async def _pump_stdout(proc, stderr_tail: deque) -> None:
     normal server socket; see module docstring for why an earlier version
     tried to time-box this and why that didn't work."""
     validated = False
+    # Wall-clock (not monotonic) so lines here line up by eye with
+    # journalctl's own per-line timestamps and with the wall-clock stamps
+    # srtStreamPlayer.js's debug event dump carries — the two logs are
+    # meant to be read side by side while chasing a stall.
+    last_read_started_at = None
+    last_fragment_at = None
+    # Debug-gated raw capture of ffmpeg's stdout, for hand-inspecting
+    # real tfhd/trun bytes on hardware — see DEBUG_CAPTURE_PATH's own
+    # comment. Opened lazily the first time debug mode is on, closed
+    # (and reopened fresh next time) the moment it's turned back off, so
+    # a capture is always one contiguous, recent session rather than an
+    # accumulation across unrelated debugging sessions.
+    debug_capture_file = None
+    debug_capture_written = 0
     try:
         while True:
+            read_started_at = time.time()
             chunk = await proc.stdout.read(65536)
             if not chunk:
                 break
@@ -332,9 +811,56 @@ async def _pump_stdout(proc, stderr_tail: deque) -> None:
                 validated = True
                 _state.active = True
                 print("[srt-stream-bridge] validated — stream is live", flush=True)
-            for unit in _feed_boxes(chunk):
+            if _debug_enabled:
+                # How long this read() blocked waiting on ffmpeg's stdout —
+                # a spike here (ffmpeg had nothing to hand back) points
+                # upstream of this process entirely (SRT/network jitter,
+                # the encoder itself), as opposed to a stall introduced
+                # afterwards in broadcast/append/render.
+                stall_ms = (read_started_at - last_read_started_at) * 1000 if last_read_started_at else None
+                wait_str = f"{stall_ms:.1f}" if stall_ms is not None else "n/a"
+                print(
+                    f"[srt-stream-bridge] debug read bytes={len(chunk)} stdout_wait_ms={wait_str}",
+                    flush=True,
+                )
+                if debug_capture_file is None:
+                    try:
+                        debug_capture_file = open(DEBUG_CAPTURE_PATH, "wb")
+                        debug_capture_written = 0
+                        print(f"[srt-stream-bridge] debug capturing raw stream to {DEBUG_CAPTURE_PATH}", flush=True)
+                    except OSError as err:
+                        print(f"[srt-stream-bridge] debug capture failed to open: {err}", flush=True)
+                if debug_capture_file is not None and debug_capture_written < DEBUG_CAPTURE_MAX_BYTES:
+                    debug_capture_file.write(chunk)
+                    debug_capture_written += len(chunk)
+                    if debug_capture_written >= DEBUG_CAPTURE_MAX_BYTES:
+                        print(
+                            f"[srt-stream-bridge] debug capture reached {DEBUG_CAPTURE_MAX_BYTES} bytes, stopping",
+                            flush=True,
+                        )
+            elif debug_capture_file is not None:
+                debug_capture_file.close()
+                debug_capture_file = None
+            last_read_started_at = read_started_at
+            units = _feed_boxes(chunk)
+            if _debug_enabled:
+                now = time.time()
+                for fragment, keyframe_pts in units:
+                    gap_ms = (now - last_fragment_at) * 1000 if last_fragment_at else None
+                    depths = [q.qsize() for q in _state.clients]
+                    gap_str = f"{gap_ms:.1f}" if gap_ms is not None else "n/a"
+                    kf_str = f"{keyframe_pts:.3f}" if keyframe_pts is not None else "none"
+                    print(
+                        f"[srt-stream-bridge] debug fragment bytes={len(fragment)} "
+                        f"since_prev_fragment_ms={gap_str} keyframe_pts={kf_str} client_queue_depths={depths}",
+                        flush=True,
+                    )
+                    last_fragment_at = now
+            for unit in units:
                 _broadcast(unit)
     finally:
+        if debug_capture_file is not None:
+            debug_capture_file.close()
         _state.active = False
         for queue in list(_state.clients):
             _end_client(queue)
@@ -374,6 +900,8 @@ async def run_forever():
             if enabled != was_enabled:
                 print(f"[srt-stream-bridge] effective_enabled={enabled}", flush=True)
                 was_enabled = enabled
+            global _debug_enabled
+            _debug_enabled = config["debug_overlay"]
             passphrase = config["passphrase"] if enabled else None
 
             if proc is not None and (not enabled or passphrase != active_passphrase):
@@ -427,39 +955,78 @@ async def serve_client(websocket: WebSocket) -> None:
     queue: asyncio.Queue = asyncio.Queue(maxsize=CLIENT_QUEUE_MAXSIZE)
     mime_codec = _state.mime_codec
     init_segment = _state.init_segment
-    cached_fragments = list(_state.recent_fragments)
+    cached = list(_state.recent_fragments)
     _state.clients.add(queue)
+
+    # Find the most recent cached fragment that actually contains a real
+    # video keyframe — replay starts there, discarding older cached
+    # fragments the decoder couldn't have used as a starting point
+    # anyway. This used to just replay the whole cache and hope one of
+    # them had a keyframe (see module docstring); if none of them do
+    # (an unlucky join, or the stream just started), replay nothing and
+    # fall into "waiting for a live one" below instead of guessing.
+    replay_start = next(
+        (i for i in range(len(cached) - 1, -1, -1) if cached[i][1] is not None), None
+    )
+    replay_fragments = [f for f, _ in cached[replay_start:]] if replay_start is not None else []
+    waiting_for_keyframe = replay_start is None
 
     try:
         if mime_codec:
             await websocket.send_json({"mimeCodec": mime_codec})
         await websocket.send_bytes(init_segment)
-        for fragment in cached_fragments:
+        for fragment in replay_fragments:
             await websocket.send_bytes(fragment)
 
-        # Periodically reports this client's own queue depth back over
-        # the same connection — added to check a real blind spot: this
-        # queue sits between ffmpeg's output and the browser, and
-        # `websocket.send_bytes()` applies real backpressure if the
-        # browser is ever slow to read, regardless of whether either
-        # side's CPU shows it. The client-side append queue alone can't
-        # reveal that, since it only sees what's already arrived. Folded
-        # into this same single send loop (not a separate task) since
-        # concurrent sends on one WebSocket aren't safe to interleave.
+        # Periodically reports this client's own queue depth (and the
+        # latest confirmed keyframe timestamp, for srtStreamPlayer.js's
+        # trimBuffer() clamp) back over the same connection — added to
+        # check a real blind spot: this queue sits between ffmpeg's
+        # output and the browser, and `websocket.send_bytes()` applies
+        # real backpressure if the browser is ever slow to read,
+        # regardless of whether either side's CPU shows it. The
+        # client-side append queue alone can't reveal that, since it
+        # only sees what's already arrived. Folded into this same single
+        # send loop (not a separate task) since concurrent sends on one
+        # WebSocket aren't safe to interleave.
         last_report = time.monotonic()
+        # Only set while waiting_for_keyframe — bounds how long a client
+        # with no keyframe in its cache window sits with nothing to show
+        # before giving up, rather than hanging on a stuck join forever.
+        # See LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS's own comment.
+        join_deadline = time.monotonic() + LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS if waiting_for_keyframe else None
         while True:
             remaining = QUEUE_REPORT_INTERVAL_SECONDS - (time.monotonic() - last_report)
+            if join_deadline is not None:
+                remaining = min(remaining, join_deadline - time.monotonic())
             try:
-                chunk = await asyncio.wait_for(queue.get(), timeout=max(remaining, 0.001))
+                item = await asyncio.wait_for(queue.get(), timeout=max(remaining, 0.001))
             except asyncio.TimeoutError:
-                await websocket.send_json({"queueDepth": queue.qsize()})
+                if join_deadline is not None and time.monotonic() >= join_deadline:
+                    print(
+                        "[srt-stream-bridge] client gave up waiting for a keyframe after "
+                        f"{LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS:.0f}s, closing",
+                        flush=True,
+                    )
+                    await websocket.close(code=LATE_JOIN_TIMEOUT_CLOSE_CODE, reason="no keyframe")
+                    return
+                await websocket.send_json({"queueDepth": queue.qsize(), "keyframeTime": _state.last_keyframe_pts})
                 last_report = time.monotonic()
                 continue
-            if chunk is None:
+            if item is None:
                 break
-            await websocket.send_bytes(chunk)
+            fragment, keyframe_pts = item
+            if waiting_for_keyframe:
+                if keyframe_pts is None:
+                    # Not independently decodable — drop it and keep
+                    # waiting rather than hand the client something it
+                    # can't start MediaSource from.
+                    continue
+                waiting_for_keyframe = False
+                join_deadline = None
+            await websocket.send_bytes(fragment)
             if time.monotonic() - last_report >= QUEUE_REPORT_INTERVAL_SECONDS:
-                await websocket.send_json({"queueDepth": queue.qsize()})
+                await websocket.send_json({"queueDepth": queue.qsize(), "keyframeTime": _state.last_keyframe_pts})
                 last_report = time.monotonic()
     except WebSocketDisconnect:
         pass

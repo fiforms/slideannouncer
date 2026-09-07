@@ -69,6 +69,19 @@ const CATCHUP_INTERVAL_MS = 250
 // How much trailing buffer to keep behind currentTime when trimming —
 // comfortably more than TARGET_LATENCY_SECONDS/LARGE_DRIFT_SECONDS ever
 // need, so trimming never competes with the catch-up logic above.
+//
+// A diagnostic test with this pushed sky-high (3600) confirmed
+// trimBuffer()'s sourceBuffer.remove() call as the actual cause of the
+// ~15s freezes: debug logging showed the buffered range going fully
+// empty in the same tick removeEnd first passed the buffer's start — our
+// fragments aren't keyframe-aligned (see _ffmpeg_cmd()'s deliberate
+// no-frag_keyframe choice), so Chromium's remove() had no clean
+// random-access point to split on and evicted the whole range instead
+// of the requested sliver. Fixed properly now: trimBuffer() clamps its
+// removal end to lastConfirmedKeyframeTime (see its own comment and
+// srt_stream_bridge.py's _parse_fragment_keyframe()), a real
+// random-access point remove() can always split on cleanly — safe to
+// restore this to its original value.
 const BUFFER_TRIM_KEEP_SECONDS = 5
 let ws = null
 let mediaSource = null
@@ -92,6 +105,52 @@ let debugOverlayEnabled = false
 // that's already arrived. A backlog here means the browser was slow to
 // read from the socket (for any reason), independent of appendQueue.
 let serverQueueDepth = null
+// The most recent confirmed video keyframe timestamp (seconds, same
+// timeline as videoEl.currentTime/buffered — this file never sets
+// sourceBuffer.timestampOffset, so no correction is needed), reported
+// alongside serverQueueDepth by srt_stream_bridge.py's serve_client().
+// trimBuffer() never removes past this point — see its own comment.
+let lastConfirmedKeyframeTime = null
+// Bumped each reconnect attempt after the server closes with
+// LATE_JOIN_TIMEOUT_CLOSE_CODE (see onSourceOpen's ws.onclose) — capped
+// so a stream stuck with no keyframes at all doesn't retry forever.
+let lateJoinRetryCount = 0
+const LATE_JOIN_TIMEOUT_CLOSE_CODE = 4000
+const LATE_JOIN_MAX_RETRIES = 3
+const LATE_JOIN_RETRY_DELAY_MS = 1000
+
+// Rolling history of fragment-arrival/append/buffered-range events, only
+// kept while the debug overlay is on (Settings > SRT Sink's toggle — see
+// setDebugOverlay()). A kiosk has no devtools timeline to scrub back
+// through after a freeze, so this is that timeline: bounded to the last
+// DEBUG_LOG_MAX_EVENTS so normal playback doesn't grow it unbounded, and
+// flushed to the server log (via logClient(), landing alongside
+// srt_stream_bridge.py's own per-fragment debug logging in the same
+// journalctl stream) the moment runCatchup() notices the buffered range
+// has actually gone empty — the buf=[0.00,0.00]/negative-gap symptom —
+// rather than on every tick, so the dump captures exactly the seconds
+// leading into a stall instead of spamming one every 250ms.
+const DEBUG_LOG_MAX_EVENTS = 80
+let debugEvents = []
+let lastBufferedEnd = 0
+let stallFlushed = false
+
+function recordEvent(type, detail) {
+  if (!debugOverlayEnabled) return
+  debugEvents.push({ atIso: new Date().toISOString(), type, detail })
+  if (debugEvents.length > DEBUG_LOG_MAX_EVENTS) debugEvents.shift()
+}
+
+function flushDebugEvents(reason) {
+  const dump = debugEvents.map((e) => `${e.atIso} ${e.type} ${JSON.stringify(e.detail)}`).join(' | ')
+  logClient(`debug dump (${reason}): ${dump}`)
+}
+
+function rangesToString(ranges) {
+  const parts = []
+  for (let i = 0; i < ranges.length; i++) parts.push(`${ranges.start(i).toFixed(2)}-${ranges.end(i).toFixed(2)}`)
+  return parts.join(',') || 'empty'
+}
 
 function logClient(message) {
   console.log(`[srt-stream-player] ${message}`)
@@ -104,6 +163,10 @@ function logClient(message) {
 
 export function startSrtStream(el) {
   stopSrtStream()
+  debugEvents = []
+  lastBufferedEnd = 0
+  stallFlushed = false
+  lateJoinRetryCount = 0
   videoEl = el
   videoEl.onerror = () => {
     const err = videoEl.error
@@ -137,6 +200,7 @@ export function stopSrtStream() {
   mediaSource = null
   appendQueue = []
   serverQueueDepth = null
+  lastConfirmedKeyframeTime = null
   if (videoEl) {
     videoEl.onerror = null
     videoEl.pause()
@@ -184,7 +248,26 @@ function onSourceOpen() {
   ws.binaryType = 'arraybuffer'
   ws.onopen = () => logClient('WebSocket connected')
   ws.onerror = (event) => logClient(`WebSocket error: ${event.message || event}`)
-  ws.onclose = (event) => logClient(`WebSocket closed code=${event.code} reason=${event.reason}`)
+  ws.onclose = (event) => {
+    logClient(`WebSocket closed code=${event.code} reason=${event.reason}`)
+    // The server gave up waiting for a real keyframe to start this join
+    // from (see srt_stream_bridge.py's LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS)
+    // rather than leaving the connection hanging forever — retry a few
+    // times with a short delay (a keyframe should show up within the
+    // next GOP or two) before giving up and just logging, consistent
+    // with this file's existing pattern of no visible kiosk error UI.
+    // Reuses the existing mediaSource/sourceBuffer rather than tearing
+    // the whole pipeline down — see initSourceBuffer()'s own reuse guard.
+    if (event.code === LATE_JOIN_TIMEOUT_CLOSE_CODE && lateJoinRetryCount < LATE_JOIN_MAX_RETRIES) {
+      lateJoinRetryCount += 1
+      logClient(`retrying after no-keyframe timeout (attempt ${lateJoinRetryCount}/${LATE_JOIN_MAX_RETRIES})`)
+      setTimeout(() => {
+        if (mediaSource) onSourceOpen()
+      }, LATE_JOIN_RETRY_DELAY_MS)
+    } else if (event.code === LATE_JOIN_TIMEOUT_CLOSE_CODE) {
+      logClient(`giving up after ${LATE_JOIN_MAX_RETRIES} no-keyframe retries`)
+    }
+  }
   ws.onmessage = (event) => {
     if (typeof event.data === 'string') {
       // Text frames — the one-time mimeCodec at connect, and a periodic
@@ -193,9 +276,14 @@ function onSourceOpen() {
       // serve_client().
       const msg = JSON.parse(event.data)
       if (msg.mimeCodec) initSourceBuffer(msg.mimeCodec)
-      if (typeof msg.queueDepth === 'number') serverQueueDepth = msg.queueDepth
+      if (typeof msg.queueDepth === 'number') {
+        serverQueueDepth = msg.queueDepth
+        recordEvent('server-queue-depth', { depth: msg.queueDepth })
+      }
+      if (typeof msg.keyframeTime === 'number') lastConfirmedKeyframeTime = msg.keyframeTime
       return
     }
+    recordEvent('ws-fragment-arrived', { bytes: event.data.byteLength, queuedAhead: appendQueue.length })
     appendQueue.push(event.data)
     flushAppendQueue()
   }
@@ -206,6 +294,15 @@ function onSourceOpen() {
 }
 
 function initSourceBuffer(mimeCodec) {
+  if (sourceBuffer) {
+    // A no-keyframe-timeout reconnect (see onSourceOpen's ws.onclose)
+    // resends mimeCodec/the init segment on the new connection — same
+    // SourceBuffer as before, so just flush the resent init segment
+    // into it rather than calling addSourceBuffer() again (which would
+    // throw or create an unwanted duplicate track).
+    flushAppendQueue()
+    return
+  }
   const supported = typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported(mimeCodec)
   logClient(`mimeCodec="${mimeCodec}" isTypeSupported=${supported}`)
   if (!mediaSource || !supported) return
@@ -216,6 +313,8 @@ function initSourceBuffer(mimeCodec) {
     return
   }
   sourceBuffer.addEventListener('updateend', flushAppendQueue)
+  sourceBuffer.addEventListener('updateend', () =>
+    recordEvent('append-updateend', { buffered: rangesToString(videoEl.buffered) }))
   sourceBuffer.addEventListener('error', () => logClient('SourceBuffer error event'))
   logClient('SourceBuffer created — appending queued data')
   flushAppendQueue()
@@ -229,9 +328,11 @@ function flushAppendQueue() {
   // per fragment means fewer objects/calls right when things are
   // already under memory pressure, the moment that matters most.
   const buf = appendQueue.length === 1 ? appendQueue.shift() : mergeQueued()
+  recordEvent('append-start', { bytes: buf.byteLength, bufferedBefore: rangesToString(videoEl.buffered) })
   try {
     sourceBuffer.appendBuffer(buf)
   } catch (err) {
+    recordEvent('append-threw', { error: String(err) })
     logClient(`appendBuffer threw: ${err}`)
     return
   }
@@ -272,14 +373,38 @@ function runCatchup() {
   // trimBuffer() below, instead of each independently re-reading it.
   const buffered = videoEl.buffered
   if (overlayEl) updateOverlay(buffered)
+  const currentEnd = buffered.length ? buffered.end(buffered.length - 1) : 0
+  const gap = currentEnd - videoEl.currentTime
+  recordEvent('catchup-tick', {
+    currentTime: videoEl.currentTime,
+    buffered: rangesToString(buffered),
+    gap,
+    playbackRate: videoEl.playbackRate,
+  })
+  // The buf=[0.00,0.00]/negative-gap symptom: the buffered range has
+  // gone fully empty (or ends behind currentTime) even though fragments
+  // are still arriving over the WebSocket — i.e. something is removing
+  // data that was already appended, rather than data simply not arriving
+  // in time. Dump the event history once per stall (not every tick while
+  // it persists) so the flush lands right as it starts, and re-arm once
+  // the gap recovers so the next stall gets its own dump.
+  if (debugOverlayEnabled) {
+    if (gap < 0 && !stallFlushed) {
+      stallFlushed = true
+      recordEvent('stall-detected', { previousBufferedEnd: lastBufferedEnd, currentTime: videoEl.currentTime })
+      flushDebugEvents('buffered range emptied/behind currentTime')
+    } else if (gap >= 0 && stallFlushed) {
+      stallFlushed = false
+    }
+    lastBufferedEnd = currentEnd
+  }
   if (!buffered.length) return
   if (NO_CATCHUP) {
     videoEl.playbackRate = 1
     trimBuffer(buffered)
     return
   }
-  const end = buffered.end(buffered.length - 1)
-  const gap = end - videoEl.currentTime
+  const end = currentEnd
   if (gap > LARGE_DRIFT_SECONDS) {
     videoEl.currentTime = Math.max(0, end - TARGET_LATENCY_SECONDS)
     videoEl.playbackRate = 1
@@ -299,7 +424,16 @@ function runCatchup() {
 function trimBuffer(buffered) {
   if (!sourceBuffer || sourceBuffer.updating || !buffered.length) return
   const start = buffered.start(0)
-  const removeEnd = videoEl.currentTime - BUFFER_TRIM_KEEP_SECONDS
+  let removeEnd = videoEl.currentTime - BUFFER_TRIM_KEEP_SECONDS
+  // Never remove past the last confirmed keyframe — sourceBuffer.remove()
+  // needs a clean random-access point within/at the edge of its range to
+  // split on, and our fragments aren't keyframe-aligned (see
+  // _ffmpeg_cmd()'s own comment), so an arbitrary time cutoff isn't
+  // guaranteed to land on one. See BUFFER_TRIM_KEEP_SECONDS's own
+  // comment for the freeze this fixes. If no keyframe has been reported
+  // yet (early in a connection), fall back to time-only trimming — a
+  // short-lived startup condition, not steady state.
+  if (lastConfirmedKeyframeTime !== null) removeEnd = Math.min(removeEnd, lastConfirmedKeyframeTime)
   if (removeEnd > start) {
     try {
       sourceBuffer.remove(start, removeEnd)
