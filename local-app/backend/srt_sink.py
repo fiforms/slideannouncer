@@ -46,18 +46,29 @@ SRT_PORT = 7002
 # request/receive a retransmit for anything lost — not primarily an
 # end-to-end latency knob (see srt_stream_bridge.py's own fragment/
 # catch-up tuning for that), it's a loss-recovery budget. 120ms wasn't
-# enough on real hardware: ffmpeg's own stderr showed SRT's TSBPD
-# logging "RCV-DROPPED N packet(s)" — packets that arrived, but too
-# late to make their playout deadline, so SRT gave up and delivered a
-# gap instead. That gap is what showed up client-side as a real decode
-# tear, not anything in this app's own pipeline. Raised to give
-# retransmission more time to land before SRT gives up. Applies to both
+# enough on the network first tested against: ffmpeg's own stderr
+# showed SRT's TSBPD logging "RCV-DROPPED N packet(s)" — packets that
+# arrived, but too late to make their playout deadline, so SRT gave up
+# and delivered a gap instead. That gap is what showed up client-side
+# as a real decode tear, not anything in this app's own pipeline.
+# Whether that headroom is actually needed is entirely a function of
+# the specific network between sender and this device (wifi vs. wired,
+# how congested, how far), which varies by deployment — so this is a
+# per-device Settings > SRT Sink slider (see set_srt_latency_ms()) with
+# 120ms as a sane starting point for a decent network, not a global
+# constant anymore. A choppier network should raise it; a clean wired
+# LAN can often lower it for less end-to-end latency. Applies to both
 # sides of the connection (this value is shared by connect_url()'s
 # mode=caller URL and srt_stream_bridge.py's mode=listener URL) — SRT
 # negotiates the higher of the two peers' configured values anyway, but
-# there's no reason for them to disagree here. Microseconds, per SRT's
-# own `latency` URL parameter.
-SRT_LATENCY_MICROSECONDS = 300_000
+# there's no reason for them to disagree here.
+DEFAULT_SRT_LATENCY_MS = 120
+# Sanity bounds on the Settings slider's value — wide enough to cover
+# any realistic network condition without letting a typo/bad API call
+# configure something SRT itself would reject or that's clearly useless
+# (e.g. 0ms defeats the entire retransmit mechanism).
+MIN_SRT_LATENCY_MS = 20
+MAX_SRT_LATENCY_MS = 2000
 
 PASSPHRASE_LENGTH = 10
 PASSPHRASE_ALPHABET = string.ascii_letters + string.digits
@@ -85,7 +96,16 @@ def read_config() -> dict:
         "server_allows": data.get("server_allows", True) is not False,
         "passphrase": data.get("passphrase", ""),
         "debug_overlay": bool(data.get("debug_overlay", False)),
+        "srt_latency_ms": _clamp_latency_ms(data.get("srt_latency_ms", DEFAULT_SRT_LATENCY_MS)),
     }
+
+
+def _clamp_latency_ms(value) -> int:
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_SRT_LATENCY_MS
+    return max(MIN_SRT_LATENCY_MS, min(MAX_SRT_LATENCY_MS, value))
 
 
 def effective_enabled(config: dict | None = None) -> bool:
@@ -125,6 +145,20 @@ def regenerate_passphrase() -> dict:
     return config
 
 
+def set_srt_latency_ms(latency_ms: int) -> dict:
+    """Settings > SRT Sink's latency slider — see DEFAULT_SRT_LATENCY_MS's
+    own comment for why this moved from a hardcoded constant to a
+    per-device setting. Read by srt_stream_bridge.py's run_forever() on
+    its existing config poll, which already restarts the ffmpeg listener
+    on a passphrase change — an SRT latency value can't change on a live
+    connection either, so a change here triggers the same kind of
+    restart (a few seconds' interruption), not a live adjustment."""
+    config = read_config()
+    config["srt_latency_ms"] = _clamp_latency_ms(latency_ms)
+    _write_raw(config)
+    return config
+
+
 def set_debug_overlay(enabled: bool) -> dict:
     """Settings > SRT Sink's on-screen metrics HUD toggle — purely a
     development/tuning aid (frontend/src/srtStreamPlayer.js), not
@@ -139,15 +173,19 @@ def set_debug_overlay(enabled: bool) -> dict:
     return config
 
 
-def connect_url(hostname: str, passphrase: str) -> str:
+def connect_url(hostname: str, passphrase: str, latency_ms: int) -> str:
     """The srt:// URL an external sender (OBS, vMix, ...) pastes into its
     own SRT output config to reach this device — `mode=caller` here is
     from *that* sender's point of view: this device is always the
     `mode=listener` side (see srt_stream_bridge.py), so whoever connects
-    to it necessarily calls in."""
+    to it necessarily calls in. `latency_ms` should be this device's own
+    configured value (read_config()["srt_latency_ms"]) — SRT negotiates
+    the higher of the two peers' values anyway, but there's no reason
+    for the sender's pasted URL to disagree with what this device itself
+    is actually using."""
     return (
         f"srt://{hostname}.local:{SRT_PORT}"
-        f"?mode=caller&latency={SRT_LATENCY_MICROSECONDS}&passphrase={quote(passphrase)}"
+        f"?mode=caller&latency={latency_ms * 1000}&passphrase={quote(passphrase)}"
     )
 
 

@@ -87,6 +87,8 @@
             "connectWith": "Connect With:",
             "displayQrCode": "Display QR Code",
             "close": "Close",
+            "latencyTitle": "SRT Latency",
+            "latencyHint": "How long SRT holds packets before playout, giving itself room to recover from lost/late ones — a loss-recovery budget, not a direct video-latency setting. Lower it for less overall delay on a clean, low-loss network (e.g. wired LAN); raise it if the picture stutters or tears on a congested or wireless network.",
             "debugOverlayTitle": "Debug Overlay",
             "debugOverlayHint": "Shows live playback metrics (buffer range, latency, dropped/corrupted frames) on top of the video — a tuning aid, not something you'd normally need on.",
             "debugOverlayEnabled": "On",

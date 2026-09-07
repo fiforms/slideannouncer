@@ -20,6 +20,31 @@ const savingDebugOverlay = ref(false)
 const error = ref(null)
 const lightboxOpen = ref(false)
 
+// Accelerating stops rather than a linear range — small, precise steps
+// where operators actually need them (a clean network can shave off
+// increments of 60ms), coarser ones at the high end where the exact
+// value matters far less than "enough headroom for a rough network."
+// A native <input type="range"> can't do non-uniform steps directly,
+// so the slider itself moves over these stops' INDEX (0-6) and this
+// array is the lookup table back to a real ms value — see
+// srtLatencyIndex/srtLatencyMs below.
+const SRT_LATENCY_STOPS_MS = [60, 120, 180, 240, 300, 450, 600]
+const srtLatencyIndex = ref(closestStopIndex(120))
+const savingLatency = ref(false)
+
+function closestStopIndex(ms) {
+  let best = 0
+  let bestDiff = Infinity
+  SRT_LATENCY_STOPS_MS.forEach((stop, i) => {
+    const diff = Math.abs(stop - ms)
+    if (diff < bestDiff) {
+      bestDiff = diff
+      best = i
+    }
+  })
+  return best
+}
+
 function applyStatus(data) {
   localEnabled.value = data.local_enabled
   serverAllows.value = data.server_allows
@@ -27,6 +52,10 @@ function applyStatus(data) {
   passphrase.value = data.passphrase
   connectUrl.value = data.connect_url
   debugOverlay.value = data.debug_overlay
+  // Backend allows a wider range than these 7 stops (e.g. legacy data,
+  // or a value set some other way) — snap the slider to whichever stop
+  // is closest rather than failing to represent it at all.
+  srtLatencyIndex.value = closestStopIndex(data.srt_latency_ms)
 }
 
 // Generated client-side (no qrencode/system package needed) — the URL is
@@ -84,6 +113,24 @@ async function regenerate() {
     error.value = err.message
   } finally {
     regenerating.value = false
+  }
+}
+
+async function setSrtLatency(index) {
+  if (index === srtLatencyIndex.value || savingLatency.value) return
+  const previousIndex = srtLatencyIndex.value
+  // Optimistic: move the slider immediately (it's the input the user
+  // just interacted with) and roll back only if the save fails.
+  srtLatencyIndex.value = index
+  savingLatency.value = true
+  error.value = null
+  try {
+    applyStatus(await api.setSrtSinkLatency(SRT_LATENCY_STOPS_MS[index]))
+  } catch (err) {
+    srtLatencyIndex.value = previousIndex
+    error.value = err.message
+  } finally {
+    savingLatency.value = false
   }
 }
 
@@ -160,6 +207,25 @@ onMounted(load)
       </template>
 
       <p v-if="error" class="pill warn">{{ error }}</p>
+    </section>
+
+    <section v-if="localEnabled" class="block">
+      <h2>{{ t('settings.srtSink.latencyTitle') }}</h2>
+      <p class="hint">{{ t('settings.srtSink.latencyHint') }}</p>
+
+      <div class="latency-row">
+        <input
+          type="range"
+          min="0"
+          :max="SRT_LATENCY_STOPS_MS.length - 1"
+          step="1"
+          :value="srtLatencyIndex"
+          :disabled="savingLatency"
+          class="latency-slider"
+          @change="setSrtLatency(Number($event.target.value))"
+        />
+        <span class="latency-value">{{ SRT_LATENCY_STOPS_MS[srtLatencyIndex] }} ms</span>
+      </div>
     </section>
 
     <section class="block">
@@ -281,6 +347,24 @@ h2 {
   background: #fff;
   padding: 0.6rem;
   border-radius: 0.4rem;
+}
+.latency-row {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+.latency-slider {
+  flex: 1;
+  height: 2.5rem;
+}
+.latency-value {
+  flex-shrink: 0;
+  min-width: 5rem;
+  text-align: right;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--accent, #6c8cff);
 }
 .lightbox {
   position: fixed;

@@ -249,7 +249,7 @@ def _srt_sink_response(config: dict) -> dict:
         "effective_enabled": srt_sink.effective_enabled(config),
         # Built here, not in the frontend, so the URL format (port,
         # mode=caller, latency) lives in exactly one place — srt_sink.py.
-        "connect_url": srt_sink.connect_url(socket.gethostname(), config["passphrase"])
+        "connect_url": srt_sink.connect_url(socket.gethostname(), config["passphrase"], config["srt_latency_ms"])
         if config["passphrase"] else None,
     }
 
@@ -271,6 +271,15 @@ def srt_sink_set(body: SrtSinkEnableRequest):
 @app.post("/api/local/srt-sink/regenerate")
 def srt_sink_regenerate():
     return _srt_sink_response(srt_sink.regenerate_passphrase())
+
+
+class SrtSinkLatencyRequest(BaseModel):
+    latency_ms: int
+
+
+@app.post("/api/local/srt-sink/latency")
+def srt_sink_set_latency(body: SrtSinkLatencyRequest):
+    return _srt_sink_response(srt_sink.set_srt_latency_ms(body.latency_ms))
 
 
 class SrtSinkDebugOverlayRequest(BaseModel):

@@ -87,6 +87,8 @@
             "connectWith": "Conectar con:",
             "displayQrCode": "Mostrar Código QR",
             "close": "Cerrar",
+            "latencyTitle": "Latencia SRT",
+            "latencyHint": "Cuánto tiempo retiene SRT los paquetes antes de reproducirlos, dándose margen para recuperarse de paquetes perdidos o tardíos — un margen de recuperación de pérdidas, no un ajuste directo de latencia de video. Redúzcalo para menos demora general en una red limpia y de baja pérdida (p. ej., LAN cableada); auméntelo si la imagen se traba o se distorsiona en una red congestionada o inalámbrica.",
             "debugOverlayTitle": "Superposición de Depuración",
             "debugOverlayHint": "Muestra métricas de reproducción en vivo (rango de búfer, latencia, fotogramas perdidos/dañados) sobre el video — una ayuda de ajuste, no algo que normalmente necesitaría activado.",
             "debugOverlayEnabled": "Activado",

@@ -218,10 +218,10 @@ def is_playing() -> bool:
     return _state.active
 
 
-def _listener_url(passphrase: str) -> str:
+def _listener_url(passphrase: str, latency_ms: int) -> str:
     return (
         f"srt://0.0.0.0:{srt_sink.SRT_PORT}"
-        f"?mode=listener&passphrase={quote(passphrase)}&latency={srt_sink.SRT_LATENCY_MICROSECONDS}"
+        f"?mode=listener&passphrase={quote(passphrase)}&latency={latency_ms * 1000}"
     )
 
 
@@ -747,13 +747,13 @@ def _broadcast(item: tuple[bytes, float | None]) -> None:
         _end_client(queue)
 
 
-def _ffmpeg_cmd(passphrase: str) -> list[str]:
+def _ffmpeg_cmd(passphrase: str, latency_ms: int) -> list[str]:
     return [
         "ffmpeg",
         "-loglevel", "warning", "-nostats",
         "-fflags", "nobuffer",
         "-flags", "low_delay",
-        "-i", _listener_url(passphrase),
+        "-i", _listener_url(passphrase, latency_ms),
         "-c:v", "copy",
         # Video stays a pure stream copy — no decode/re-encode, the whole
         # point of this design. Audio is a real encode, not a copy: confirmed
@@ -902,14 +902,17 @@ async def run_forever():
     """Keeps exactly one ffmpeg SRT listener running for as long as
     Settings > SRT Sink is enabled, (re)launching it whenever it isn't
     running yet, and restarting it whenever it exits on its own or the
-    enable toggle/passphrase changes underneath it."""
+    enable toggle/passphrase/latency changes underneath it — an SRT
+    connection's latency, like its passphrase, can't be adjusted on a
+    live listener, only renegotiated on a fresh one."""
     proc = None
     pump_task = None
     stderr_task = None
     active_passphrase = None
+    active_latency_ms = None
 
     async def _teardown():
-        nonlocal proc, pump_task, stderr_task, active_passphrase
+        nonlocal proc, pump_task, stderr_task, active_passphrase, active_latency_ms
         if proc is not None and proc.returncode is None:
             proc.kill()
         if pump_task is not None:
@@ -918,6 +921,7 @@ async def run_forever():
             stderr_task.cancel()
         proc = pump_task = stderr_task = None
         active_passphrase = None
+        active_latency_ms = None
 
     was_enabled = None
     try:
@@ -930,8 +934,11 @@ async def run_forever():
             global _debug_enabled
             _debug_enabled = config["debug_overlay"]
             passphrase = config["passphrase"] if enabled else None
+            latency_ms = config["srt_latency_ms"]
 
-            if proc is not None and (not enabled or passphrase != active_passphrase):
+            if proc is not None and (
+                not enabled or passphrase != active_passphrase or latency_ms != active_latency_ms
+            ):
                 print("[srt-stream-bridge] config changed, restarting listener", flush=True)
                 await _teardown()
 
@@ -941,7 +948,7 @@ async def run_forever():
 
             if proc is None:
                 _state.reset()
-                cmd = _ffmpeg_cmd(passphrase)
+                cmd = _ffmpeg_cmd(passphrase, latency_ms)
                 print(f"[srt-stream-bridge] starting listener: {' '.join(cmd)}", flush=True)
                 proc = await asyncio.create_subprocess_exec(
                     *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
@@ -950,6 +957,7 @@ async def run_forever():
                 stderr_task = asyncio.create_task(_drain_stderr(proc, stderr_tail))
                 pump_task = asyncio.create_task(_pump_stdout(proc, stderr_tail))
                 active_passphrase = passphrase
+                active_latency_ms = latency_ms
 
             done, _ = await asyncio.wait({pump_task}, timeout=CONFIG_POLL_INTERVAL_SECONDS)
             if pump_task in done:

@@ -71,6 +71,12 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }),
   regenerateSrtSinkPassphrase: () => request('/api/local/srt-sink/regenerate', { method: 'POST' }),
+  setSrtSinkLatency: (latencyMs) =>
+    request('/api/local/srt-sink/latency', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ latency_ms: latencyMs }),
+    }),
   setSrtSinkDebugOverlay: (enabled) =>
     request('/api/local/srt-sink/debug-overlay', {
       method: 'POST',
