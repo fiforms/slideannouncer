@@ -25,58 +25,39 @@ Unlike the old daemon, this doesn't poll for a candidate before handing
 off to a real listener — it just runs ffmpeg as the SRT listener
 continuously, for as long as Settings > SRT Sink is enabled, restarting
 it whenever it exits (a finished clip, a dropped connection, the
-passphrase changing). An earlier version here used a throwaway raw-UDP
-"peek" socket first (the old daemon's poll-then-launch trick, still
-described in its own retired docstring), on the theory that avoiding a
-continuously-running ffmpeg was worth the extra step, the way it was
-worth it for mpv. Confirmed on hardware that this doesn't actually work:
-the peek socket isn't SRT-aware, so it can't complete a handshake — it
-just silently swallows whichever UDP packet happens to land on it
-(typically the sender's induction packet) and hands off to a
-*time-limited* real listener a moment later. A real sender, having had
-that first packet vanish into something that never replies, falls back
-to its own reconnect cycle — which doesn't necessarily land inside our
-validation window — so the two kept missing each other: forever
-"reconnecting" from the sender's side, forever timing out with zero
-output on ours. The whole optimization was unnecessary anyway: it
-existed only to avoid running mpv (CPU/DRM-heavy) continuously, but
-ffmpeg doing pure remux costs nothing while idly waiting for a caller, so
-now it just sits there the whole time, like any normal server socket.
+passphrase changing). A throwaway raw-UDP "peek" socket approach (the old
+daemon's poll-then-launch trick) doesn't work here: it isn't SRT-aware,
+so it can't complete a handshake, and swallowing the sender's induction
+packet just makes the sender fall back to its own reconnect cycle instead
+— the two end up perpetually missing each other. Running ffmpeg
+continuously avoids all of that; unlike mpv it costs nothing while idly
+waiting for a caller, so there's no reason to avoid it the way the old
+daemon avoided running mpv continuously.
 
 Fragmentation (`-frag_duration` alone — deliberately no `frag_keyframe`,
 see _ffmpeg_cmd()'s own comment) is deliberately decoupled from the
-source's keyframe/GOP interval, which isn't controllable (varies by
-sender/encoder settings — confirmed via ffprobe against this operator's
-own OBS recording that "auto" keyframe interval on x264 lands at 8.333s,
-not the couple-seconds-or-less this comment used to assume; see
-MAX_CACHED_FRAGMENTS/LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS's own comments):
+source's keyframe/GOP interval, which isn't controllable and varies by
+sender/encoder settings (this operator's OBS setup measures 8.333s via
+ffprobe — see MAX_CACHED_FRAGMENTS/LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS):
 tying fragment emission to keyframes would inherit a full GOP of latency.
 FRAG_DURATION_US is a threshold, not a hard cut — ffmpeg's muxer flushes
 at the first frame crossing it, so real granularity is bounded by the
-source's own frame interval regardless of
-how low this is set.
+source's own frame interval regardless of how low this is set.
 
 A client that connects mid-stream (e.g. the kiosk page reloading) needs
 an init segment (ftyp+moov, emitted once via `empty_moov`) to bootstrap
-its MediaSource, and enough fragments since the last keyframe for
-MSE to actually have something decodable to start from — a fragment
-boundary alone doesn't guarantee a keyframe, since most fragments here
-are far smaller than a full GOP. This used to just replay the last
-MAX_CACHED_FRAGMENTS fragments unconditionally (a couple hundred KB at
-most) on the theory that a ~3s cache window is "statistically" wider
-than any realistic GOP — confirmed on hardware that this isn't good
-enough: an unlucky join can still land in a window with no keyframe at
-all, and there was no fallback, so the client just never starts playing
-(readyState never reaches HAVE_CURRENT_DATA). Fixed by actually parsing
-each fragment's moof/traf/tfhd/tfdt/trun boxes (see _parse_fragment_keyframe()
+its MediaSource, and enough fragments since the last keyframe for MSE to
+actually have something decodable to start from — a fragment boundary
+alone doesn't guarantee a keyframe, since most fragments here are far
+smaller than a full GOP. This is handled by actually parsing each
+fragment's moof/traf/tfhd/tfdt/trun boxes (see _parse_fragment_keyframe()
 and friends) to know exactly which cached fragment, if any, contains the
 most recent real keyframe — serve_client() replays starting from there,
 and if the whole cache turns out to have none, waits for the next live
 one instead of guessing. The same per-fragment keyframe timestamp is
 also what lets srtStreamPlayer.js's trimBuffer() safely bound its
 SourceBuffer.remove() calls to a real random-access point instead of an
-arbitrary time offset — see that file's own comment for the freeze bug
-this fixes.
+arbitrary time offset.
 """
 import asyncio
 import time
@@ -91,29 +72,15 @@ import srt_sink
 # the browser (see that function's own comment).
 QUEUE_REPORT_INTERVAL_SECONDS = 1.0
 
-# Threshold, not a hard cut — see module docstring. Started at 50ms, but
-# confirmed on hardware AT THE TIME that it landed on a periodic,
-# ~10-15s stall-then-jump: audio kept playing smoothly through each
-# stall while video froze then snapped forward, diagnosed then as a
-# main/renderer-thread GC pause from ~20 ArrayBuffer allocations/sec on
-# a memory-constrained Pi — so this was raised to 200ms (roughly 4x
-# fewer allocations/sec) on that theory.
-#
-# In hindsight, that symptom description — audio fine, video freezes
-# then snaps forward, periodic ~10-15s — is identical to a real,
-# unrelated bug found and fixed much later: srtStreamPlayer.js's
-# trimBuffer() wiping its ENTIRE SourceBuffer instead of the requested
-# sliver (see that file's BUFFER_TRIM_KEEP_SECONDS comment). It's
-# plausible the GC-pause diagnosis was actually this same bug
-# misattributed, and raising this value only coincidentally shifted the
-# timing of when it triggered rather than fixing anything. Revisited
-# now that the real root cause has an actual fix (a keyframe-aware
-# remove() clamp): lowered to 100ms (3 frames at 30fps) to chase overall
-# latency down. If that EXACT stall signature reappears (audio AND
-# video BOTH freezing together would instead point to a genuine buffer
-# underrun — see srtStreamPlayer.js's TARGET_LATENCY_SECONDS comment for
-# that separate failure mode), that's real evidence GC pressure was also
-# an independent factor, not just this same bug in disguise.
+# Threshold, not a hard cut — see module docstring. Lower values reduce
+# end-to-end latency at the cost of more frequent, smaller MSE appends on
+# the client. If a periodic stall-then-jump reappears (audio playing
+# smoothly while video freezes then snaps forward), check
+# srtStreamPlayer.js's trimBuffer() first — its keyframe-aware remove()
+# clamp is what actually fixes that failure mode. A genuine buffer
+# underrun (audio AND video both freezing together — see
+# srtStreamPlayer.js's TARGET_LATENCY_SECONDS) is a separate problem this
+# value doesn't address.
 FRAG_DURATION_US = 100_000
 # How often the manager loop rechecks Settings > SRT Sink's enable
 # toggle/passphrase — both while disabled (to notice it turning back on)
@@ -128,21 +95,12 @@ CONFIG_POLL_INTERVAL_SECONDS = 2.0
 # below is the actual correctness guarantee, this just controls how
 # often a late join has to fall back to waiting for a live one.
 #
-# Deliberately DERIVED from FRAG_DURATION_US rather than a fixed count —
-# this deque holds roughly one video AND one audio fragment per
-# FRAG_DURATION_US interval (_feed_boxes() appends every completed
-# top-level moof unit here regardless of track, and audio cuts at
-# roughly the same cadence as video), so a fragment-COUNT sized for one
-# particular fragment duration silently covers less wall-clock time the
-# moment that duration changes elsewhere. Confirmed the hard way: a
-# first hardcoded attempt (100, "~10s") actually only covered ~5s once
-# the audio/video split was accounted for — and would have silently
-# dropped to under 2s the moment FRAG_DURATION_US came down from 200ms,
-# quietly reintroducing the exact late-join failure that value was
-# originally sized to fix. _CACHE_COVERAGE_SECONDS is the number that
-# should actually get tuned here — sized to match the same margin given
-# to LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS below over the measured 8.333s
-# GOP; a source with an even longer GOP still falls back to the
+# Tune _CACHE_COVERAGE_SECONDS, not MAX_CACHED_FRAGMENTS directly: the
+# deque holds roughly one video AND one audio fragment per
+# FRAG_DURATION_US interval, so a fixed fragment count silently covers
+# less wall-clock time if that duration ever changes. Sized to match the
+# margin given to LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS below over the
+# measured 8.333s GOP; a source with a longer GOP still falls back to the
 # live-wait path correctly, just less often "instantly."
 _CACHE_COVERAGE_SECONDS = 15
 MAX_CACHED_FRAGMENTS = round(2 * _CACHE_COVERAGE_SECONDS / (FRAG_DURATION_US / 1_000_000))
@@ -151,20 +109,15 @@ MAX_CACHED_FRAGMENTS = round(2 * _CACHE_COVERAGE_SECONDS / (FRAG_DURATION_US / 1
 # unrecoverable and dropped rather than blocking everyone else.
 CLIENT_QUEUE_MAXSIZE = 200
 # How long serve_client() waits for a live keyframe when a joining
-# client's cache window contains none at all (see its own comment).
-# Past this, the join is abandoned (WebSocket closed with
+# client's cache window contains none at all (see its own comment). Past
+# this, the join is abandoned (WebSocket closed with
 # LATE_JOIN_TIMEOUT_CLOSE_CODE) rather than left hanging indefinitely;
-# srtStreamPlayer.js retries on that specific code.
-#
-# This was originally 8.0s, based on the same never-actually-validated
-# "commonly 1-2s" GOP assumption — since the real measured GOP here is
-# 8.333s (see MAX_CACHED_FRAGMENTS's own comment), that timeout was
-# almost always shorter than the wait a join needed, so joins nearly
-# always failed. A join can start right after a keyframe and need to
-# wait nearly a full GOP for the next one, so this must safely exceed
-# the real GOP with real margin — sized generously here since the exact
-# GOP is source-dependent (this operator's encoder, not a pipeline
-# constant) and not something this code can measure live.
+# srtStreamPlayer.js retries on that specific code. Must safely exceed a
+# full GOP with margin — a join can start right after a keyframe and need
+# to wait nearly the whole interval for the next one. GOP length is
+# source/encoder-dependent (measured at 8.333s for this operator's OBS
+# setup) and not something this code can measure live, so this is sized
+# generously rather than tightly.
 LATE_JOIN_KEYFRAME_TIMEOUT_SECONDS = 15.0
 # Application-defined WebSocket close code (the 4000-4999 range is
 # reserved for exactly this) telling srtStreamPlayer.js's ws.onclose
@@ -175,8 +128,7 @@ LATE_JOIN_TIMEOUT_CLOSE_CODE = 4000
 # debug_overlay field, same one srtStreamPlayer.js's overlay/event-dump
 # logging is gated on) — set from run_forever()'s own config poll. Gates
 # _pump_stdout()'s per-fragment logging below so steady-state operation
-# (5 fragments/sec at FRAG_DURATION_US=200ms) doesn't spam journalctl;
-# only turned on while actively chasing a stall.
+# doesn't spam journalctl; only turned on while actively chasing a stall.
 _debug_enabled = False
 # Debug-gated raw capture of ffmpeg's stdout (see _pump_stdout()) for
 # hand-inspecting real tfhd/trun bytes on hardware — which encoding
@@ -667,18 +619,16 @@ def _feed_boxes(chunk: bytes) -> list[tuple[bytes, float | None]]:
     each subsequent completed fragment, moof+mdat) newly completed by this
     call, ready to broadcast.
 
-    Live broadcast used to just forward whatever raw, arbitrarily-sized
-    slice came back from proc.stdout.read() — fine for a client that's
-    been receiving every byte since the start, but confirmed on hardware
-    to break a client connecting mid-stream: the very next live chunk
-    after its cached-fragment replay could land mid-fragment (a fragment
-    only a couple hundred ms long is very likely still in progress when a
-    client joins), handing it a byte range with no moof header at its
-    start. Chromium's demuxer has no tolerance for that ("stream parsing
-    failed"). Routing
-    every broadcast through this same box-aligned unit list — the exact
-    same units a joining client's cached replay uses — means no client,
-    old or new, ever receives a partial box.
+    Forwarding whatever raw, arbitrarily-sized slice comes back from
+    proc.stdout.read() would break a client connecting mid-stream: the
+    very next live chunk after its cached-fragment replay could land
+    mid-fragment (a fragment only a couple hundred ms long is very likely
+    still in progress when a client joins), handing it a byte range with
+    no moof header at its start — Chromium's demuxer has no tolerance for
+    that ("stream parsing failed"). Routing every broadcast through this
+    same box-aligned unit list — the exact same units a joining client's
+    cached replay uses — means no client, old or new, ever receives a
+    partial box.
 
     Each returned unit is paired with its keyframe PTS (seconds), or
     None — the init segment and any fragment without a determinable

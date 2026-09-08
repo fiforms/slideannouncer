@@ -33,97 +33,54 @@
 // points — so steady-state playback doesn't spam the backend with an
 // HTTP request every fragment.
 
-// Needs real headroom relative to srt_stream_bridge.py's FRAG_DURATION_US
-// (200ms) — confirmed on hardware that 0.3s here, barely 1.5 fragment-
-// intervals, left so little margin that ordinary arrival jitter (or the
-// catch-up nudge below actively pushing currentTime toward the live
-// edge) could outrun the buffered data entirely. That's a genuine buffer
-// underrun, not a rendering stall — it stalls audio too, since there's
-// really no more data to decode for either track, unlike a GC pause
-// (which only stalls video compositing on the main thread while audio's
-// own thread keeps playing already-buffered audio through it).
-//
-// Lowered from 0.6 to 0.4 while chasing overall end-to-end latency —
-// still a full 2 fragment-intervals of margin at 200ms, comfortably
-// above the already-proven-bad 0.3s above. If FRAG_DURATION_US ever
-// drops (a separate, not-yet-tried latency lever), this needs revisiting
-// too: the safety margin here is relative to fragment duration, not an
-// absolute constant.
-// Diagnostic flag: when true, runCatchup() never touches playbackRate or
-// currentTime (see its own guard) — only trimBuffer() still runs. Used
-// to confirm on hardware whether the catch-up logic itself (the rate
-// nudge or the hard seek) was driving the buffered range to empty, or
-// whether that happened independent of it. Result: disabling it stopped
-// the buffer from emptying, but stalls persisted (and got worse) even
-// without any seeking/rate changes — so catch-up was reacting to (and
-// amplifying the visible symptom of) a real decode/render bottleneck
-// elsewhere, not causing the underlying stall itself. Left here, default
-// off, in case it's useful again while chasing that bottleneck.
+// Diagnostic flag: when true, runCatchup() only trims the buffer and
+// never touches playbackRate/currentTime — useful for isolating whether
+// the catch-up logic itself is driving a given stall, versus reacting to
+// one already happening upstream (decode/render).
 const NO_CATCHUP = false
+// Needs real headroom above srt_stream_bridge.py's FRAG_DURATION_US: too
+// little margin lets ordinary arrival jitter (or the catch-up nudge
+// itself pulling currentTime toward the live edge) outrun buffered data —
+// a genuine underrun, which stalls audio too, unlike a GC pause (which
+// only stalls video compositing while audio's own thread keeps playing
+// what's already buffered).
 const TARGET_LATENCY_SECONDS = 0.45
-// Dead-band around TARGET_LATENCY_SECONDS for engaging/disengaging the
-// catch-up nudge — see the `catchingUp` state and its use in
-// runCatchup(). A single shared threshold (the original approach) has no
-// dead-band at all: once the nudge pulls the gap back down across that
-// same line, it immediately disengages, the gap drifts back up past it
-// again, and so on — a chattering rate right at the boundary, which is
-// itself audible independent of the pitch-preservation/step-size fixes
-// elsewhere in this file. Engaging only above CATCHUP_ENGAGE_SECONDS but
-// disengaging only once back below the lower CATCHUP_DISENGAGE_SECONDS
-// means ordinary jitter has to cross a real gap in both directions
-// before the rate changes again.
+// Dead-band around TARGET_LATENCY_SECONDS: engage the catch-up nudge only
+// above CATCHUP_ENGAGE_SECONDS, and disengage only once back below the
+// lower CATCHUP_DISENGAGE_SECONDS (see the `catchingUp` state below). A
+// single shared threshold has no dead-band at all — ordinary jitter
+// crossing back and forth over one line chatters the rate every tick,
+// which is audible on its own.
 const CATCHUP_ENGAGE_SECONDS = TARGET_LATENCY_SECONDS
 const CATCHUP_DISENGAGE_SECONDS = 0.3
 const LARGE_DRIFT_SECONDS = 1.3
-// The playbackRate nudge target once gap exceeds TARGET_LATENCY_SECONDS.
-// Used to scale up to 1.2 the further over target the gap was (see this
-// file's git history for that approach), on the theory that a bigger
-// nudge closes real-world drift faster. Capped down to a flat 1.02
-// instead: with preservesPitch left at its default, Chromium time-
-// stretches audio to hold pitch steady across any rate != 1, and that
-// stretcher is an audible source of pops/clicks on its own, worse the
-// further off 1.0 the rate sits or the more often it changes — the
-// higher end of the old range wasn't worth the extra catch-up speed.
-// (audio pitch preservation is turned off below anyway — see
-// startSrtStream() — but keeping the rate itself close to 1 still
-// matters: RAMP_STEP_PER_TICK below only bounds how fast rate CHANGES,
-// not how large a steady-state deviation from 1.0 sounds like.)
+// Playback-rate nudge target once the gap crosses the dead-band. Kept
+// close to 1 rather than scaling higher for a bigger gap: any rate != 1
+// makes Chromium time-stretch audio to preserve pitch (see preservesPitch
+// below) unless disabled, and even with it disabled a rate further from 1
+// is a more noticeable speed change.
 const CATCHUP_RATE = 1.02
-// Bounds how much videoEl.playbackRate can move in a single
-// CATCHUP_INTERVAL_MS tick, so a gap crossing the nudge threshold ramps
-// toward CATCHUP_RATE/back toward 1 instead of jumping there in one
-// step — see rampRate(). A rate jump is itself audible (a discrete
-// pitch/speed step), independent of the pitch-preservation stretch
-// artifact preservesPitch=false already addresses.
+// Bounds how much playbackRate can move per CATCHUP_INTERVAL_MS tick (see
+// rampRate()), so it ramps toward CATCHUP_RATE/back to 1 instead of
+// jumping — a rate jump is itself audible, independent of the
+// pitch-preservation fix.
 const RATE_STEP_PER_TICK = 0.005
 const CATCHUP_INTERVAL_MS = 250
-// How much trailing buffer to keep behind currentTime when trimming —
-// comfortably more than TARGET_LATENCY_SECONDS/LARGE_DRIFT_SECONDS ever
-// need, so trimming never competes with the catch-up logic above.
-//
-// A diagnostic test with this pushed sky-high (3600) confirmed
-// trimBuffer()'s sourceBuffer.remove() call as the actual cause of the
-// ~15s freezes: debug logging showed the buffered range going fully
-// empty in the same tick removeEnd first passed the buffer's start — our
-// fragments aren't keyframe-aligned (see _ffmpeg_cmd()'s deliberate
-// no-frag_keyframe choice), so Chromium's remove() had no clean
-// random-access point to split on and evicted the whole range instead
-// of the requested sliver. Fixed properly now: trimBuffer() clamps its
-// removal end to lastConfirmedKeyframeTime (see its own comment and
-// srt_stream_bridge.py's _parse_fragment_keyframe()), a real
-// random-access point remove() can always split on cleanly — safe to
-// restore this to its original value.
+// How much trailing buffer to keep behind currentTime when trimming.
+// trimBuffer() clamps its removal end to the last confirmed keyframe — a
+// real random-access point sourceBuffer.remove() can cleanly split on,
+// since fragments aren't keyframe-aligned (see _ffmpeg_cmd()'s own
+// comment) — rather than an arbitrary time cutoff, which could otherwise
+// evict the whole buffered range instead of the requested sliver.
 const BUFFER_TRIM_KEEP_SECONDS = 5
 let ws = null
 let mediaSource = null
 let sourceBuffer = null
 let appendQueue = []
 let catchupTimer = null
-// Hysteresis state for the catch-up nudge's dead-band — see
-// CATCHUP_ENGAGE_SECONDS/CATCHUP_DISENGAGE_SECONDS's own comment. Must
-// persist across runCatchup() ticks (it's not derivable from the gap
-// alone, that's the whole point of a dead-band), so it lives here rather
-// than as a local.
+// Hysteresis state for the catch-up dead-band (see CATCHUP_ENGAGE_SECONDS/
+// CATCHUP_DISENGAGE_SECONDS) — persists across ticks since it isn't
+// derivable from the gap alone.
 let catchingUp = false
 let videoEl = null
 let overlayEl = null
@@ -156,17 +113,15 @@ const LATE_JOIN_TIMEOUT_CLOSE_CODE = 4000
 const LATE_JOIN_MAX_RETRIES = 3
 const LATE_JOIN_RETRY_DELAY_MS = 1000
 
-// Rolling history of fragment-arrival/append/buffered-range events, only
-// kept while the debug overlay is on (Settings > SRT Sink's toggle — see
+// Rolling history of fragment-arrival/append/buffered-range events, kept
+// only while the debug overlay is on (Settings > SRT Sink's toggle — see
 // setDebugOverlay()). A kiosk has no devtools timeline to scrub back
-// through after a freeze, so this is that timeline: bounded to the last
-// DEBUG_LOG_MAX_EVENTS so normal playback doesn't grow it unbounded, and
-// flushed to the server log (via logClient(), landing alongside
-// srt_stream_bridge.py's own per-fragment debug logging in the same
-// journalctl stream) the moment runCatchup() notices the buffered range
-// has actually gone empty — the buf=[0.00,0.00]/negative-gap symptom —
-// rather than on every tick, so the dump captures exactly the seconds
-// leading into a stall instead of spamming one every 250ms.
+// through after a freeze, so this is that timeline: bounded to
+// DEBUG_LOG_MAX_EVENTS, and flushed to the server log (via logClient(),
+// landing alongside srt_stream_bridge.py's own per-fragment debug logging
+// in the same journalctl stream) the moment runCatchup() notices the
+// buffered range has actually gone empty, so the dump captures the
+// seconds leading into a stall rather than spamming one every tick.
 const DEBUG_LOG_MAX_EVENTS = 80
 let debugEvents = []
 let lastBufferedEnd = 0
@@ -206,14 +161,12 @@ export function startSrtStream(el) {
   lateJoinRetryCount = 0
   catchingUp = false
   videoEl = el
-  // Chromium defaults preservesPitch to true, which means any playbackRate
-  // != 1 (see runCatchup()'s catch-up nudge) gets time-stretched to hold
-  // pitch constant — confirmed on hardware that stretcher is itself a
-  // source of audible pops/clicks, on top of/instead of whatever gap the
-  // nudge is trying to correct. Turned off (all three vendor-prefixed
-  // spellings, since support for the unprefixed property is newer) so a
-  // rate change just plays faster/slower, the same tradeoff every other
-  // low-latency player (dash.js/hls.js) makes for this exact reason.
+  // Chromium defaults preservesPitch to true, so any playbackRate != 1
+  // (see runCatchup()'s catch-up nudge) gets time-stretched to hold pitch
+  // constant — an audible source of pops/clicks on its own. Turned off
+  // (all vendor-prefixed spellings) so a rate change just plays
+  // faster/slower, the same tradeoff dash.js/hls.js make for low-latency
+  // playback.
   videoEl.preservesPitch = false
   videoEl.mozPreservesPitch = false
   videoEl.webkitPreservesPitch = false
@@ -249,18 +202,11 @@ export function setDebugOverlay(enabled) {
 }
 
 // Periodic full client-state dump, independent of whether playback ever
-// actually starts — added after a late-join hang produced ZERO further
-// log output past "SourceBuffer created" (no error, no timeout, nothing)
-// despite a real keyframe fragment being broadcast minutes earlier.
-// Root cause: every other piece of client-side diagnostics
-// (recordEvent()/flushDebugEvents()) only ever gets flushed from inside
-// runCatchup()'s stall-check, and runCatchup() only starts once
-// maybeWarmUp() successfully calls videoEl.play() — which itself
-// requires readyState>=2. If playback never starts, that whole
-// diagnostic path never activates, so a *failure to start* was
-// completely invisible. This heartbeat starts as soon as the WebSocket
-// connection attempt begins (not gated on anything succeeding) so a
-// stuck join is always visible in the logs somewhere.
+// actually starts — this file's other diagnostics (recordEvent()/
+// flushDebugEvents()) only run once runCatchup() is ticking, which
+// itself requires videoEl.play() to have succeeded, so a failure to ever
+// start playing would otherwise be invisible. Starts as soon as the
+// WebSocket connection attempt begins, not gated on anything succeeding.
 let debugHeartbeatTimer = null
 const DEBUG_HEARTBEAT_INTERVAL_MS = 3000
 
@@ -449,24 +395,15 @@ function bufferedEnd() {
 }
 
 function maybeWarmUp() {
-  // Deliberately does NOT also check videoEl.readyState here (it used
-  // to, `|| videoEl.readyState < 2`) — that was a real deadlock for any
-  // late join. readyState reflects whether there's buffered data AT THE
-  // CURRENT PLAYBACK POSITION, and currentTime defaults to 0; for a
-  // fresh stream start the first buffered fragment also starts near 0,
-  // so they coincide and readyState naturally reaches 2 — but for a
-  // late join the buffered range starts wherever the live stream
-  // actually is (tens of seconds in), nowhere near currentTime=0, so
-  // readyState could never reach 2 on its own. The only code that
-  // repositions currentTime into the buffered range is right here,
-  // below — gating entry to this function on readyState>=2 meant it
-  // could never run for exactly the case it needs to fix. Confirmed on
-  // hardware: a late join's SourceBuffer grew for 40+ seconds
-  // (appendBuffer succeeding the whole time) while currentTime/readyState
-  // sat frozen at 0/1 forever. `!videoEl.paused` alone is sufficient to
-  // still only fire once — per spec, .paused flips to false
-  // synchronously the moment .play() is called below, before its
-  // promise even resolves.
+  // Deliberately does not also gate on videoEl.readyState — readyState
+  // reflects whether there's buffered data AT THE CURRENT PLAYBACK
+  // POSITION, and for a late join the buffered range starts far from
+  // currentTime=0, so readyState could never reach 2 until this function
+  // repositions currentTime itself; gating on it would deadlock exactly
+  // the case this needs to fix. `!videoEl.paused` alone is enough to
+  // still only fire once — per spec, .paused flips to false synchronously
+  // the moment .play() is called below, before its promise even
+  // resolves.
   if (!videoEl.paused) return
   const end = bufferedEnd()
   if (end === null) return
