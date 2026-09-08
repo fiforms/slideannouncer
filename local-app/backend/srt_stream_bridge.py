@@ -108,13 +108,13 @@ QUEUE_REPORT_INTERVAL_SECONDS = 1.0
 # misattributed, and raising this value only coincidentally shifted the
 # timing of when it triggered rather than fixing anything. Revisited
 # now that the real root cause has an actual fix (a keyframe-aware
-# remove() clamp): lowered to 66ms (2 frames at 30fps) to chase overall
+# remove() clamp): lowered to 100ms (3 frames at 30fps) to chase overall
 # latency down. If that EXACT stall signature reappears (audio AND
 # video BOTH freezing together would instead point to a genuine buffer
 # underrun — see srtStreamPlayer.js's TARGET_LATENCY_SECONDS comment for
 # that separate failure mode), that's real evidence GC pressure was also
 # an independent factor, not just this same bug in disguise.
-FRAG_DURATION_US = 66_000
+FRAG_DURATION_US = 100_000
 # How often the manager loop rechecks Settings > SRT Sink's enable
 # toggle/passphrase — both while disabled (to notice it turning back on)
 # and while a listener is already running (to notice it turning off, or

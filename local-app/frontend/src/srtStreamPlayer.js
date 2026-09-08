@@ -60,18 +60,42 @@
 // elsewhere, not causing the underlying stall itself. Left here, default
 // off, in case it's useful again while chasing that bottleneck.
 const NO_CATCHUP = false
-const TARGET_LATENCY_SECONDS = 0.4
-const SMALL_DRIFT_SECONDS = 0.05
+const TARGET_LATENCY_SECONDS = 0.45
+// Dead-band around TARGET_LATENCY_SECONDS for engaging/disengaging the
+// catch-up nudge — see the `catchingUp` state and its use in
+// runCatchup(). A single shared threshold (the original approach) has no
+// dead-band at all: once the nudge pulls the gap back down across that
+// same line, it immediately disengages, the gap drifts back up past it
+// again, and so on — a chattering rate right at the boundary, which is
+// itself audible independent of the pitch-preservation/step-size fixes
+// elsewhere in this file. Engaging only above CATCHUP_ENGAGE_SECONDS but
+// disengaging only once back below the lower CATCHUP_DISENGAGE_SECONDS
+// means ordinary jitter has to cross a real gap in both directions
+// before the rate changes again.
+const CATCHUP_ENGAGE_SECONDS = TARGET_LATENCY_SECONDS
+const CATCHUP_DISENGAGE_SECONDS = 0.3
 const LARGE_DRIFT_SECONDS = 1.3
-// runCatchup() scales the playbackRate nudge linearly between these two
-// as the gap grows from "just over target" to "about to hit
-// LARGE_DRIFT_SECONDS" — a flat, barely-visible rate (the original
-// approach) recovers only a few ms per interval, far slower than typical
-// real-world drift accumulates, so the gap just grew until it kept
-// hitting the hard-seek threshold. Scaling means a gap that's actually
-// closing in on a seek gets pulled back hard enough to usually avoid one.
-const CATCHUP_RATE_MIN = 1.02
-const CATCHUP_RATE_MAX = 1.2
+// The playbackRate nudge target once gap exceeds TARGET_LATENCY_SECONDS.
+// Used to scale up to 1.2 the further over target the gap was (see this
+// file's git history for that approach), on the theory that a bigger
+// nudge closes real-world drift faster. Capped down to a flat 1.02
+// instead: with preservesPitch left at its default, Chromium time-
+// stretches audio to hold pitch steady across any rate != 1, and that
+// stretcher is an audible source of pops/clicks on its own, worse the
+// further off 1.0 the rate sits or the more often it changes — the
+// higher end of the old range wasn't worth the extra catch-up speed.
+// (audio pitch preservation is turned off below anyway — see
+// startSrtStream() — but keeping the rate itself close to 1 still
+// matters: RAMP_STEP_PER_TICK below only bounds how fast rate CHANGES,
+// not how large a steady-state deviation from 1.0 sounds like.)
+const CATCHUP_RATE = 1.02
+// Bounds how much videoEl.playbackRate can move in a single
+// CATCHUP_INTERVAL_MS tick, so a gap crossing the nudge threshold ramps
+// toward CATCHUP_RATE/back toward 1 instead of jumping there in one
+// step — see rampRate(). A rate jump is itself audible (a discrete
+// pitch/speed step), independent of the pitch-preservation stretch
+// artifact preservesPitch=false already addresses.
+const RATE_STEP_PER_TICK = 0.005
 const CATCHUP_INTERVAL_MS = 250
 // How much trailing buffer to keep behind currentTime when trimming —
 // comfortably more than TARGET_LATENCY_SECONDS/LARGE_DRIFT_SECONDS ever
@@ -95,6 +119,12 @@ let mediaSource = null
 let sourceBuffer = null
 let appendQueue = []
 let catchupTimer = null
+// Hysteresis state for the catch-up nudge's dead-band — see
+// CATCHUP_ENGAGE_SECONDS/CATCHUP_DISENGAGE_SECONDS's own comment. Must
+// persist across runCatchup() ticks (it's not derivable from the gap
+// alone, that's the whole point of a dead-band), so it lives here rather
+// than as a local.
+let catchingUp = false
 let videoEl = null
 let overlayEl = null
 // On-screen metrics HUD, updated every catch-up tick — added while
@@ -174,7 +204,19 @@ export function startSrtStream(el) {
   lastBufferedEnd = 0
   stallFlushed = false
   lateJoinRetryCount = 0
+  catchingUp = false
   videoEl = el
+  // Chromium defaults preservesPitch to true, which means any playbackRate
+  // != 1 (see runCatchup()'s catch-up nudge) gets time-stretched to hold
+  // pitch constant — confirmed on hardware that stretcher is itself a
+  // source of audible pops/clicks, on top of/instead of whatever gap the
+  // nudge is trying to correct. Turned off (all three vendor-prefixed
+  // spellings, since support for the unprefixed property is newer) so a
+  // rate change just plays faster/slower, the same tradeoff every other
+  // low-latency player (dash.js/hls.js) makes for this exact reason.
+  videoEl.preservesPitch = false
+  videoEl.mozPreservesPitch = false
+  videoEl.webkitPreservesPitch = false
   videoEl.onerror = () => {
     const err = videoEl.error
     logClient(`<video> error code=${err?.code} message=${err?.message}`)
@@ -474,19 +516,37 @@ function runCatchup() {
   }
   const end = currentEnd
   if (gap > LARGE_DRIFT_SECONDS) {
+    // A hard seek is already a discontinuity — no reason to also ramp
+    // the rate back to 1 across several ticks afterward.
     videoEl.currentTime = Math.max(0, end - TARGET_LATENCY_SECONDS)
     videoEl.playbackRate = 1
-  } else if (gap > TARGET_LATENCY_SECONDS + SMALL_DRIFT_SECONDS) {
-    // Linearly scale the nudge with how close the gap is to the
-    // hard-seek threshold — see CATCHUP_RATE_MIN/MAX's own comment.
-    const overshoot = gap - TARGET_LATENCY_SECONDS
-    const span = LARGE_DRIFT_SECONDS - TARGET_LATENCY_SECONDS
-    const proportion = Math.min(overshoot / span, 1)
-    videoEl.playbackRate = CATCHUP_RATE_MIN + proportion * (CATCHUP_RATE_MAX - CATCHUP_RATE_MIN)
+    catchingUp = false
   } else {
-    videoEl.playbackRate = 1
+    // Dead-band: only flips `catchingUp` on a crossing of the threshold
+    // *for the direction it's not currently on* — see
+    // CATCHUP_ENGAGE_SECONDS/CATCHUP_DISENGAGE_SECONDS's own comment.
+    // Anywhere between the two thresholds, whichever state we were
+    // already in just holds.
+    if (catchingUp) {
+      if (gap < CATCHUP_DISENGAGE_SECONDS) catchingUp = false
+    } else {
+      if (gap > CATCHUP_ENGAGE_SECONDS) catchingUp = true
+    }
+    const targetRate = catchingUp ? CATCHUP_RATE : 1
+    videoEl.playbackRate = rampRate(videoEl.playbackRate, targetRate)
   }
   trimBuffer(buffered)
+}
+
+// Moves playbackRate toward `target` by at most RATE_STEP_PER_TICK this
+// tick, rather than snapping straight there — see that constant's own
+// comment for why an abrupt rate change is audible on its own. Applies
+// equally to nudging up toward CATCHUP_RATE and easing back down to 1,
+// so re-entering steady-state playback is just as gradual as leaving it.
+function rampRate(current, target) {
+  const delta = target - current
+  if (Math.abs(delta) <= RATE_STEP_PER_TICK) return target
+  return current + Math.sign(delta) * RATE_STEP_PER_TICK
 }
 
 function trimBuffer(buffered) {
