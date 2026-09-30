@@ -19,13 +19,16 @@ local-app release.
 
 Trust and status are two separate files, same split as srt_sink.py/
 pairing.py already use elsewhere: REVELATION_PEERS_FILE holds the actual
-trust records (paired master's pinned public key + pairing PIN — a secret,
-hence 0o640) and is only ever written by this module's pair()/unpair();
+trust records (paired master's pinned public key — no PIN, it is used once
+at enrollment and never stored) and is only ever written by this module's
+pair()/unpair(); this device's own peer RSA private key lives beside it in
+PEER_PRIVATE_KEY_FILE (a secret, hence 0o640);
 REVELATION_STATUS_FILE holds the daemon's own live connection state
 (connected/last-command per paired master) and is only ever written by the
 daemon, polled by /api/local/revelation/status for the Settings UI.
 """
 import base64
+import hashlib
 import json
 import secrets
 import socket as socket_module
@@ -35,7 +38,7 @@ from pathlib import Path
 import httpx
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 
 # The doc's "Service type: revelation" is bonjour-service/mdns shorthand —
@@ -47,6 +50,12 @@ DISCOVERY_TIMEOUT_SECONDS = 4.0
 INSTANCE_ID_FILE = Path("/data/status/revelation-instance-id")
 REVELATION_PEERS_FILE = Path("/data/status/revelation-peers.json")
 REVELATION_STATUS_FILE = Path("/data/status/revelation-peer-status.json")
+# This follower's own peer RSA key pair (protocol 2: identity is
+# cryptographic in both directions, so every request after pairing is signed
+# with this key). Generated once, on first pairing; read by the daemon.
+PEER_PRIVATE_KEY_FILE = Path("/data/status/revelation-peer-key.pem")
+PEER_PUBLIC_KEY_FILE = Path("/data/status/revelation-peer-key.pub.pem")
+PEER_PROTOCOL = 2
 # Device-global (not per-master) — how this follower should present
 # whatever Revelation pushes it, independent of which master sent it. Read
 # by revelation-peer-daemon.py on every open-presentation command (see that
@@ -58,7 +67,9 @@ REVELATION_DISPLAY_SETTINGS_FILE = Path("/data/status/revelation-display-setting
 # peering UI) — anything else is rejected rather than silently forwarded,
 # since a typo'd variant would otherwise only surface as a confusing
 # no-visible-effect URL param on the kiosk.
-VALID_VARIANTS = {"normal", "notes", "confidence", "lowerthirds"}
+VALID_VARIANTS = {
+    "normal", "lowerthirds", "confidence", "notes", "remotepreview", "notesteleprompter",
+}
 
 
 class RevelationPeerError(RuntimeError):
@@ -68,9 +79,8 @@ class RevelationPeerError(RuntimeError):
 def get_own_instance_id() -> str:
     """This device's own stable instanceId, in the same 16-hex-char/8-random-
     byte shape the protocol doc uses for Revelation's own instanceId — sent
-    as the `instanceId` query param on /peer/socket-info and in the
-    Socket.IO auth payload so a master can tell this follower apart from any
-    other paired follower."""
+    as `followerInstanceId` on every signed request so a master can tell this
+    follower apart from any other paired follower."""
     if INSTANCE_ID_FILE.exists():
         return INSTANCE_ID_FILE.read_text().strip()
     instance_id = secrets.token_hex(8)
@@ -95,7 +105,7 @@ class _DiscoveryListener(ServiceListener):
         self.found[name] = {
             "name": name,
             "host": socket_module.inet_ntoa(info.addresses[0]),
-            "port": info.port,
+            "port": int(txt.get("pairingPort") or info.port),
             "instanceId": txt.get("instanceId"),
             "mode": txt.get("mode"),
             "version": txt.get("version"),
@@ -141,6 +151,46 @@ def verify_signature(public_key_pem: str, message: bytes, signature_b64: str) ->
         return False
 
 
+def get_or_create_keypair() -> tuple[str, str]:
+    """(private PEM, public PEM) of this follower's own peer key. RSA-2048 —
+    the protocol's minimum."""
+    if PEER_PRIVATE_KEY_FILE.exists() and PEER_PUBLIC_KEY_FILE.exists():
+        return PEER_PRIVATE_KEY_FILE.read_text(), PEER_PUBLIC_KEY_FILE.read_text()
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+    public_pem = key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    PEER_PRIVATE_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PEER_PRIVATE_KEY_FILE.write_text(private_pem)
+    PEER_PRIVATE_KEY_FILE.chmod(0o640)
+    PEER_PUBLIC_KEY_FILE.write_text(public_pem)
+    PEER_PUBLIC_KEY_FILE.chmod(0o644)
+    return private_pem, public_pem
+
+
+def challenge_message(challenge: str) -> bytes:
+    """What a master signs to prove itself: domain prefix + sha256 hex of the
+    challenge (the base64 string itself, UTF-8 encoded)."""
+    digest = hashlib.sha256(challenge.encode()).hexdigest()
+    return f"revelation-peer-challenge:v1:{digest}".encode()
+
+
+def follower_auth_message(purpose: str, master_id: str, follower_id: str, nonce: str, extra: str = "") -> bytes:
+    digest = hashlib.sha256(f"{purpose}\n{master_id}\n{follower_id}\n{nonce}\n{extra}".encode()).hexdigest()
+    return f"revelation-peer-follower-auth:v2:{digest}".encode()
+
+
+def sign_message(private_key_pem: str, message: bytes) -> str:
+    private_key = serialization.load_pem_private_key(private_key_pem.encode(), password=None)
+    return base64.b64encode(private_key.sign(message, padding.PKCS1v15(), hashes.SHA256())).decode()
+
+
 def _read_raw_peers() -> list[dict]:
     if not REVELATION_PEERS_FILE.exists():
         return []
@@ -157,15 +207,24 @@ def _write_raw_peers(peers: list[dict]) -> None:
 
 
 def read_peers() -> list[dict]:
-    """Trust records with `pairingPin` stripped — safe to hand straight to
-    the Settings UI, which never needs to see a PIN it already typed once."""
-    return [{k: v for k, v in peer.items() if k != "pairingPin"} for peer in _read_raw_peers()]
+    """Trust records for the Settings UI. A record from before protocol 2
+    (no `peerProtocol`, and carrying a stored PIN) can't authenticate any
+    more, so it is surfaced as `needsRepair` rather than hidden."""
+    peers = []
+    for peer in _read_raw_peers():
+        peer = {k: v for k, v in peer.items() if k != "pairingPin"}
+        if peer.get("peerProtocol") != PEER_PROTOCOL:
+            peer["needsRepair"] = True
+        peers.append(peer)
+    return peers
 
 
 def read_status() -> dict:
     """Live connection state, if the daemon has written any yet — merged
     onto the trust list for the Settings screen. Missing/unreadable status
-    file just means "daemon hasn't reported in yet", not an error."""
+    file just means "daemon hasn't reported in yet", not an error. The
+    daemon also flags `needsRepair` there when a master says it no longer
+    knows this follower."""
     connections = {}
     if REVELATION_STATUS_FILE.exists():
         try:
@@ -175,54 +234,83 @@ def read_status() -> dict:
     peers = read_peers()
     for peer in peers:
         peer["connection"] = connections.get(peer["instanceId"])
+        if (peer["connection"] or {}).get("needsRepair"):
+            peer["needsRepair"] = True
     return {"peers": peers}
 
 
+def _error_code(resp: httpx.Response) -> str | None:
+    try:
+        return resp.json().get("code")
+    except (ValueError, AttributeError):
+        return None
+
+
 async def pair(host: str, port: int, pin: str) -> dict:
-    """Runs the full PEERING.md pairing flow against a candidate master and,
-    on success, pins its public key into the trust store. Raises
+    """Runs the full PEERING.md (protocol 2) pairing flow against a candidate
+    master and, on success, pins its public key into the trust store. The
+    PIN is sent to /peer/pair only and never persisted. Raises
     RevelationPeerError with a message safe to show as-is."""
+    base = f"http://{host}:{port}"
+    _, public_pem = get_or_create_keypair()
     async with httpx.AsyncClient(timeout=10) as client:
         try:
-            identity_resp = await client.get(f"http://{host}:{port}/peer/public-key")
+            identity_resp = await client.get(f"{base}/peer/public-key")
         except httpx.RequestError as exc:
             raise RevelationPeerError(f"Could not reach {host}:{port}: {exc}") from exc
         if identity_resp.status_code >= 400:
             raise RevelationPeerError(f"{host}:{port} rejected the identity request (HTTP {identity_resp.status_code}).")
         identity = identity_resp.json()
+        if identity.get("peerProtocol") != PEER_PROTOCOL:
+            raise RevelationPeerError(
+                f"{host}:{port} speaks an incompatible peering protocol — update Revelation Snapshot Presenter there."
+            )
 
-        challenge_bytes = secrets.token_bytes(32)
-        challenge_b64 = base64.b64encode(challenge_bytes).decode()
+        own_id = get_own_instance_id()
+        challenge_b64 = base64.b64encode(secrets.token_bytes(32)).decode()
         try:
-            challenge_resp = await client.post(
-                f"http://{host}:{port}/peer/challenge",
-                json={"challenge": challenge_b64, "pin": pin},
+            pair_resp = await client.post(
+                f"{base}/peer/pair",
+                json={
+                    "pin": pin,
+                    "challenge": challenge_b64,
+                    "followerInstanceId": own_id,
+                    "followerName": socket_module.gethostname(),
+                    "followerPublicKey": public_pem,
+                },
             )
         except httpx.RequestError as exc:
             raise RevelationPeerError(f"Could not reach {host}:{port}: {exc}") from exc
 
-    if challenge_resp.status_code == 403:
-        raise RevelationPeerError("Incorrect pairing PIN.")
-    if challenge_resp.status_code >= 400:
-        raise RevelationPeerError(f"Pairing failed (master said HTTP {challenge_resp.status_code}).")
+    if pair_resp.status_code >= 400:
+        code = _error_code(pair_resp)
+        if code == "invalid-pin":
+            raise RevelationPeerError("Incorrect pairing PIN.")
+        if code == "pin-lockout":
+            retry = pair_resp.json().get("retryAfterSec")
+            raise RevelationPeerError(
+                f"Too many wrong PINs — try again in {retry} seconds." if retry else "Too many wrong PINs — try again shortly."
+            )
+        if code == "pairing-unavailable":
+            raise RevelationPeerError("That Revelation instance has no pairing PIN configured.")
+        raise RevelationPeerError(f"Pairing failed (master said HTTP {pair_resp.status_code}).")
 
-    signature = challenge_resp.json().get("signature", "")
-    # Signed over the exact `challenge` field value (the base64 string
-    # itself, UTF-8 encoded) — matches the doc's later socket-info payload,
-    # which is also a signed string tuple rather than raw decoded bytes.
-    if not verify_signature(identity["publicKey"], challenge_b64.encode(), signature):
+    # Prefer an already-pinned key for this master over the freshly fetched one.
+    pinned = next((p for p in _read_raw_peers() if p["instanceId"] == identity["instanceId"]), None)
+    verify_key = (pinned or {}).get("publicKey") or identity["publicKey"]
+    signature = pair_resp.json().get("signature", "")
+    if not verify_signature(verify_key, challenge_message(challenge_b64), signature):
         raise RevelationPeerError(f"{host}:{port} failed to prove its identity — refusing to pair.")
 
-    peers = _read_raw_peers()
-    peers = [peer for peer in peers if peer["instanceId"] != identity["instanceId"]]
+    peers = [peer for peer in _read_raw_peers() if peer["instanceId"] != identity["instanceId"]]
     peers.append({
         "instanceId": identity["instanceId"],
         "name": identity.get("instanceName") or identity.get("hostname") or identity["instanceId"],
-        "publicKey": identity["publicKey"],
+        "peerPublicKey": verify_key,
+        "peerProtocol": PEER_PROTOCOL,
         "pairedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "hostHint": host,
         "pairingPortHint": port,
-        "pairingPin": pin,
     })
     _write_raw_peers(peers)
 

@@ -20,7 +20,7 @@ const pairDialog = ref(null) // <dialog> ref — see startPairing()/onDialogClos
 
 // Device-global — applies to whatever any paired master pushes, not
 // per-peer. null means "leave Revelation's own ?variant=/?lang= alone".
-const VARIANTS = ['normal', 'notes', 'confidence', 'lowerthirds']
+const VARIANTS = ['normal', 'lowerthirds', 'confidence', 'notes', 'remotepreview', 'notesteleprompter']
 const LANGUAGES = ['en', 'es']
 const displayVariant = ref(null)
 const displayLang = ref(null)
@@ -222,7 +222,10 @@ onUnmounted(() => clearInterval(statusInterval))
         <li v-for="peer in peers" :key="peer.instanceId" class="list-item">
           <span class="peer-name">{{ peer.name }}</span>
           <span class="meta">
-            <span class="pill" :class="peer.connection?.connected ? 'ok' : 'warn'">
+            <span v-if="peer.needsRepair" class="pill warn">
+              {{ t('settings.revelation.needsRepair') }}
+            </span>
+            <span v-else class="pill" :class="peer.connection?.connected ? 'ok' : 'warn'">
               {{ peer.connection?.connected ? t('settings.revelation.connected') : t('settings.revelation.notConnected') }}
             </span>
             <button type="button" class="tile action" @click="unpair(peer.instanceId)">
