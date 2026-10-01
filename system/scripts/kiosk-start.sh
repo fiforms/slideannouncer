@@ -43,7 +43,11 @@ export XCURSOR_SIZE=24
 # the OS's default PipeWire is left on whatever its own built-in default
 # output is (not HDMI), which is the real reason Chromium had no sound
 # before any of this instance-juggling started.
-/usr/local/sbin/slide-announcer-apply-audio-output || true
+# Skipped in --session mode (see the bottom of this file): that's this same
+# script re-run by labwc, after this call already happened once.
+if [ "${1:-}" != "--session" ]; then
+	/usr/local/sbin/slide-announcer-apply-audio-output || true
+fi
 
 CHROMIUM_CMD=(
 	chromium
@@ -94,12 +98,23 @@ CHROMIUM_CMD=(
 
 # wlr-randr (apply-screen-resolution.sh) needs a live compositor to talk
 # to, unlike apply-audio-output.sh above which only needs PipeWire — so
-# unlike that call, this one can't run before `exec labwc`. `-s` is
-# labwc's session/autostart command, run once the compositor itself is up;
-# folding the resolution script into that same command (rather than a
-# separate labwc autostart entry) keeps both apply scripts adjacent here
-# and guarantees ordering: mode is set before Chromium's first frame.
-# `|| true` matches this script's `|| true` on apply-audio-output.sh above
-# — a wlr-randr failure shouldn't block the kiosk from starting.
-SESSION_CMD="/usr/local/sbin/slide-announcer-apply-screen-resolution || true; exec ${CHROMIUM_CMD[*]}"
-exec labwc -s "$SESSION_CMD"
+# unlike that call, this one can't run before `exec labwc`. labwc runs
+# this same script again with --session once the compositor is up, which
+# sets the mode and then execs Chromium — guaranteeing the mode is set
+# before Chromium's first frame. `|| true` matches the one on
+# apply-audio-output.sh above — a wlr-randr failure shouldn't block the
+# kiosk from starting.
+if [ "${1:-}" = "--session" ]; then
+	/usr/local/sbin/slide-announcer-apply-screen-resolution || true
+	exec "${CHROMIUM_CMD[@]}"
+fi
+
+# Re-invoke this script rather than passing labwc a shell command line:
+# labwc (confirmed on 0.20.2) splits its -s/-S argument into words and
+# execs the first one directly, with no shell — an earlier
+# `"apply-screen-resolution || true; exec chromium ..."` string ran only
+# the resolution script (`||`, `exec`, `chromium`… passed to it as ignored
+# arguments) and never started Chromium at all: a black screen. -S rather
+# than -s: labwc exits when Chromium does, so this unit's Restart=always
+# recovers a crashed browser instead of leaving a bare compositor up.
+exec labwc -S "$0 --session"
