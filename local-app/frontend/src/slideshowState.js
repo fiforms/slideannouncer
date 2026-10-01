@@ -7,12 +7,15 @@ import { api } from './api.js'
 
 export const shows = ref([])
 export const settings = ref({})
+// This screen's location for overlay widgets' api.location (see sync.py).
+export const location = ref(null)
 export const pinnedShowId = ref(null)
 
 export async function refreshShows() {
   const data = await api.slideshow()
   shows.value = data.shows || []
   settings.value = data.settings || {}
+  location.value = data.location ?? null
   pinnedShowId.value = data.pinned_show_id ?? null
   return data
 }

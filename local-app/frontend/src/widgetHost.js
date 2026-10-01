@@ -40,10 +40,13 @@ function storageFor(prefix) {
   }
 }
 
-function createApi(placement, locale) {
+function createApi(placement, locale, location) {
   return Object.freeze({
     mode: 'live',
     locale,
+    // Where this screen is: { name, latitude, longitude, source } — its
+    // church's, else the server's site default, else null.
+    location: location ? Object.freeze({ ...location }) : null,
     // fetch(endpoint, args?) resolves to { data, fetched_at, stale };
     // rejects with WidgetDataError. Runtime args (e.g. a forecast's
     // lat/lon) travel as ?args[name]=value and are checked server-side.
@@ -63,7 +66,7 @@ function createApi(placement, locale) {
 
 // Mounts one placement into `el`. Returns { dispose } — safe to call
 // before the module has finished loading.
-export function mountWidget(el, placement, locale) {
+export function mountWidget(el, placement, locale, location = null) {
   let disposed = false
   let cleanup = null
 
@@ -81,7 +84,7 @@ export function mountWidget(el, placement, locale) {
       width: placement.w,
       height: placement.h,
       params: Object.freeze({ ...(placement.params ?? {}) }),
-      api: createApi(placement, locale),
+      api: createApi(placement, locale, location),
     })
     cleanup = typeof result === 'function' ? result : result?.destroy?.bind(result) ?? null
     if (disposed) runCleanup()

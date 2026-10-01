@@ -70,6 +70,10 @@ MEDIA_DIR = SLIDES_DIR / "media"
 MANIFEST_FILE = SLIDES_DIR / "manifest.json"
 SETTINGS_FILE = SLIDES_DIR / "settings.json"
 PLAYLIST_FILE = SLIDES_DIR / "active-playlist.json"
+# This screen's location for overlay widgets' api.location — its church's,
+# else the server's site-wide default, else null (App\Support\WidgetLocation
+# on the server). Kept from the last good sync, so it works offline.
+LOCATION_FILE = SLIDES_DIR / "location.json"
 STATUS_FILE = Path("/data/status/sync-status.json")
 
 
@@ -117,6 +121,10 @@ def read_shows() -> list:
 
 def read_settings() -> dict:
     return _read_json(SETTINGS_FILE, {})
+
+
+def read_location():
+    return _read_json(LOCATION_FILE, None)
 
 
 def _flatten(manifest: dict) -> dict:
@@ -308,6 +316,7 @@ async def sync_once() -> None:
 
     _write_json(MANIFEST_FILE, new_manifest)
     _write_json(SETTINGS_FILE, settings)
+    _write_json(LOCATION_FILE, body.get("location"))
     _write_json(PLAYLIST_FILE, {"shows": _build_active_playlist(new_manifest)})
     _write_status({"last_attempt_at": _now_iso(), "last_success_at": _now_iso(), "last_error": None})
 

@@ -121,6 +121,7 @@ def slideshow():
     return {
         "shows": shows,
         "settings": sync.read_settings(),
+        "location": sync.read_location(),
         "pinned_show_id": _resolve_pinned_show_id(shows),
     }
 

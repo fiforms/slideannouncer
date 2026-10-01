@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mountWidget } from '../widgetHost.js'
+import { location as screenLocation } from '../slideshowState.js'
 
 // One widget placement: a box at its canvas position/size that the widget
 // module draws into. WidgetLayer keys it so any change remounts cleanly.
@@ -14,7 +15,7 @@ const el = ref(null)
 let handle = null
 
 onMounted(() => {
-  handle = mountWidget(el.value, props.placement, locale.value)
+  handle = mountWidget(el.value, props.placement, locale.value, screenLocation.value)
 })
 onBeforeUnmount(() => handle?.dispose())
 </script>
