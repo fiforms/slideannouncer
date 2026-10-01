@@ -30,20 +30,21 @@ function next() {
   <div>
     <h1>{{ t('setup.pairing.title') }}</h1>
 
-    <template v-if="loaded">
-      <p v-if="status?.paired" class="intro">
-        {{ status.entity_name ? t('setup.pairing.paired', { entity: status.entity_name }) : t('setup.pairing.pairedNoEntity') }}
-      </p>
-      <!-- Same form as Settings > Pairing, minus its name field: the name
-           was already chosen on the previous step. -->
-      <PairingForm
-        v-else
-        :server-url="status?.server_url"
-        :default-name="status?.device_name || status?.hostname"
-        :show-name-field="false"
-        @paired="next"
-      />
-    </template>
+    <p v-if="status?.paired" class="intro">
+      {{ status.entity_name ? t('setup.pairing.paired', { entity: status.entity_name }) : t('setup.pairing.pairedNoEntity') }}
+    </p>
+    <!-- Same form as Settings > Pairing, minus its name field: the name
+         was already chosen on the previous step. Rendered straight away,
+         not after the status fetch, so its [autofocus] pairing-code field
+         is there for remoteNav.js to focus when the step opens; the URL/QR
+         code fill in once status arrives. -->
+    <PairingForm
+      v-else
+      :server-url="status?.server_url"
+      :default-name="status?.device_name || status?.hostname"
+      :show-name-field="false"
+      @paired="next"
+    />
 
     <WizardNav
       back="/setup/name"

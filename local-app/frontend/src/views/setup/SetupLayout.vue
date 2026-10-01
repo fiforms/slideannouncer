@@ -18,15 +18,18 @@ const currentIndex = computed(() => STEPS.indexOf(route.meta.step))
 
 <template>
   <div class="setup">
-    <ol class="steps">
+    <!-- progress-* class names, not step-*: a parent's scoped styles also
+         reach each child view's root element, so anything generic here
+         would leak into the step views themselves. -->
+    <ol class="progress">
       <li
         v-for="(step, i) in STEPS"
         :key="step"
-        class="step"
-        :class="{ 'step--done': i < currentIndex, 'step--current': i === currentIndex }"
+        class="progress-item"
+        :class="{ 'progress-item--done': i < currentIndex, 'progress-item--current': i === currentIndex }"
       >
-        <span class="step-number">{{ i < currentIndex ? '✓' : i + 1 }}</span>
-        <span class="step-label">{{ t(`setup.steps.${step}`) }}</span>
+        <span class="progress-number">{{ i < currentIndex ? '✓' : i + 1 }}</span>
+        <span>{{ t(`setup.steps.${step}`) }}</span>
       </li>
     </ol>
     <main class="body">
@@ -44,7 +47,7 @@ const currentIndex = computed(() => STEPS.indexOf(route.meta.step))
   max-width: 64rem;
   margin: 0 auto;
 }
-.steps {
+.progress {
   display: flex;
   justify-content: center;
   gap: 2.5rem;
@@ -52,13 +55,14 @@ const currentIndex = computed(() => STEPS.indexOf(route.meta.step))
   padding: 0;
   list-style: none;
 }
-.step {
+.progress-item {
   display: flex;
   align-items: center;
   gap: 0.6rem;
   color: var(--text-dim);
 }
-.step-number {
+.progress-number {
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   width: 2rem;
@@ -68,23 +72,28 @@ const currentIndex = computed(() => STEPS.indexOf(route.meta.step))
   font-weight: 700;
   font-size: 0.95rem;
 }
-.step--done .step-number {
+.progress-item--done .progress-number {
   border-color: var(--ok);
   color: var(--ok);
 }
-.step--current {
+.progress-item--current {
   color: var(--text);
   font-weight: 600;
 }
-.step--current .step-number {
+.progress-item--current .progress-number {
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;
 }
+/* Flex column so the centered steps (.setup-card) can sit in the middle
+   of the screen with margin: auto; the Network/Pairing steps just fill
+   the width from the top. */
 .body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
 }
 </style>

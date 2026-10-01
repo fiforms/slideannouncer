@@ -172,3 +172,30 @@ button:disabled:hover {
   opacity: 1 !important;
   cursor: not-allowed;
 }
+
+/* Setup wizard (views/setup/): the Welcome/Name/Done steps sit in one
+   centered card in the middle of the screen — SetupLayout.vue's body is a
+   flex column, so margin: auto centers it both ways. */
+.setup-card {
+  width: 100%;
+  max-width: 46rem;
+  margin: auto;
+  padding: 2.5rem 3rem;
+  background: var(--panel);
+  border: var(--line) solid var(--border);
+  border-radius: 1.25rem;
+}
+.setup-card h1 {
+  margin: 0 0 0.75rem;
+  font-size: 2.2rem;
+  line-height: 1.2;
+}
+.setup-card .intro {
+  margin: 0 0 2rem;
+  color: var(--text-dim);
+  font-size: 1.15rem;
+  line-height: 1.5;
+}
+.setup-card--centered {
+  text-align: center;
+}

@@ -14,21 +14,28 @@ const { t } = useI18n()
 // online, there's nothing to set up here — go straight on to naming.
 // Anything short of that (WiFi, no internet, a captive portal, a failed
 // check) shows the step as normal.
+//
+// Already online either way (WiFi, or Back to here over a cable)? Then
+// Next is the likely press, so it gets the remote's focus instead of the
+// WiFi setup button.
 const checking = ref(!!route.query.auto)
+const online = ref(false)
 
 onMounted(async () => {
-  if (!checking.value) return
   try {
     const status = await api.networkStatus()
-    if (status.connection_type === 'ethernet' && status.connectivity === 'full') {
+    online.value = status.connected && status.connectivity === 'full'
+    if (checking.value && online.value && status.connection_type === 'ethernet') {
       router.replace('/setup/name')
       return
     }
   } catch {
     // fall through to the normal Network screen
   }
-  router.replace({ path: route.path })
-  checking.value = false
+  if (checking.value) {
+    router.replace({ path: route.path })
+    checking.value = false
+  }
 })
 </script>
 
@@ -41,7 +48,7 @@ onMounted(async () => {
       <!-- The same screen as Settings > Network; its WiFi setup button
            leads to /setup/network/wifi via meta.networkBase. -->
       <NetworkStatus />
-      <WizardNav back="/setup" @next="router.push('/setup/name')" />
+      <WizardNav back="/setup" :autofocus-next="online" @next="router.push('/setup/name')" />
     </template>
   </div>
 </template>

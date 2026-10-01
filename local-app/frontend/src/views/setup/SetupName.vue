@@ -59,7 +59,7 @@ async function next() {
 </script>
 
 <template>
-  <div class="step">
+  <div class="setup-card">
     <h1>{{ t('setup.name.title') }}</h1>
 
     <p v-if="status?.paired" class="intro">{{ t('setup.name.paired', { name: status.device_name || status.hostname }) }}</p>
@@ -70,7 +70,6 @@ async function next() {
         <input
           v-model="name"
           type="text"
-          autofocus
           autocomplete="off"
           :disabled="saving"
           @keydown.enter.prevent="next"
@@ -80,19 +79,20 @@ async function next() {
     </template>
     <p v-if="error" class="pill warn">{{ error }}</p>
 
-    <WizardNav back="/setup/network" :next-disabled="saving || !loaded" @next="next" />
+    <!-- Next, not the name field, gets focus: keeping the default is the
+         common case, and Down/Up still reaches the field. -->
+    <WizardNav back="/setup/network" :next-disabled="saving || !loaded" autofocus-next @next="next" />
   </div>
 </template>
 
 <style scoped>
-.step { max-width: 40rem; }
-h1 { margin-top: 0; }
-.intro { color: var(--text-dim); font-size: 1.1rem; margin-bottom: 1.5rem; }
 .field {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
-.field-label { font-weight: 600; }
-.hint { color: var(--text-dim); }
+.field-label { font-weight: 600; font-size: 1.1rem; }
+.field input { width: 100%; }
+.hint { margin: 0.75rem 0 0; color: var(--text-dim); overflow-wrap: anywhere; }
+.pill { margin-top: 1rem; }
 </style>

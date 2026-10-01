@@ -51,7 +51,7 @@ async function start() {
 </script>
 
 <template>
-  <div class="step">
+  <div class="setup-card setup-card--centered">
     <div class="mark" aria-hidden="true">✓</div>
     <h1>{{ status?.paired ? t('setup.done.titlePaired') : t('setup.done.titleUnpaired') }}</h1>
 
@@ -76,21 +76,25 @@ async function start() {
 </template>
 
 <style scoped>
-.step { max-width: 44rem; }
 .mark {
+  flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 5rem;
-  height: 5rem;
+  width: 5.5rem;
+  height: 5.5rem;
+  margin: 0 auto 1.25rem;
   border-radius: 50%;
   background: rgba(76, 175, 80, 0.15);
   border: var(--line-thick) solid var(--ok);
   color: var(--ok);
-  font-size: 2.8rem;
+  font-size: 3rem;
   font-weight: 700;
   line-height: 1;
-  margin-bottom: 1rem;
 }
-h1 { margin-top: 0; }
-.detail { color: var(--text-dim); font-size: 1.1rem; }
+.detail {
+  margin: 0 0 0.75rem;
+  color: var(--text-dim);
+  font-size: 1.15rem;
+  line-height: 1.5;
+}
 </style>

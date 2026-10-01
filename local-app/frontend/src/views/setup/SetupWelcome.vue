@@ -41,8 +41,8 @@ async function next() {
 </script>
 
 <template>
-  <div class="step">
-    <h1>{{ t('setup.welcome.title') }}</h1>
+  <div class="setup-card setup-card--centered">
+    <h1 class="title">{{ t('setup.welcome.title') }}</h1>
     <p class="intro">{{ t('setup.welcome.intro') }}</p>
 
     <div class="field">
@@ -56,19 +56,19 @@ async function next() {
     </div>
     <p v-if="error" class="pill warn">{{ error }}</p>
 
-    <WizardNav :next-disabled="saving" @next="next" />
+    <WizardNav :next-disabled="saving" autofocus-next @next="next" />
   </div>
 </template>
 
 <style scoped>
-.step { max-width: 40rem; }
-h1 { margin-top: 0; font-size: 2.2rem; }
-.intro { color: var(--text-dim); font-size: 1.15rem; margin-bottom: 2rem; }
+.title { font-size: 2.8rem; }
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  align-items: flex-start;
+  align-items: center;
+  gap: 0.6rem;
 }
-.field-label { font-weight: 600; }
+.field-label { font-weight: 600; font-size: 1.1rem; }
+.field :deep(.dropdown) { min-width: 20rem; text-align: left; }
+.pill { margin-top: 1rem; }
 </style>
