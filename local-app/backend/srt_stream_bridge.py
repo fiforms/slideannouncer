@@ -60,9 +60,9 @@ SourceBuffer.remove() calls to a real random-access point instead of an
 arbitrary time offset.
 """
 import asyncio
+import re
 import time
 from collections import deque
-from urllib.parse import quote
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -186,11 +186,15 @@ def is_playing() -> bool:
     return _state.active
 
 
-def _listener_url(passphrase: str, latency_ms: int) -> str:
-    return (
-        f"srt://0.0.0.0:{srt_sink.SRT_PORT}"
-        f"?mode=listener&passphrase={quote(passphrase)}&latency={latency_ms * 1000}"
-    )
+def _redacted(cmd: list[str]) -> str:
+    """The ffmpeg command line for the journal, minus passphrases (SRT's
+    rides in the URL, RIST's in -secret)."""
+    out = []
+    for i, arg in enumerate(cmd):
+        if i and cmd[i - 1] == "-secret":
+            arg = "***"
+        out.append(re.sub(r"passphrase=[^&]*", "passphrase=***", arg))
+    return " ".join(out)
 
 
 # --- Generic box-tree helpers / keyframe/sync-sample parsing ----------
@@ -713,13 +717,16 @@ def _broadcast(item: tuple[bytes, float | None]) -> None:
         _end_client(queue)
 
 
-def _ffmpeg_cmd(passphrase: str, latency_ms: int) -> list[str]:
+def _ffmpeg_cmd(input_args: list[str]) -> list[str]:
+    """`input_args` is srt_sink.listener_input_args() for the configured
+    receiver mode (SRT, RIST unicast or RIST multicast) — everything from
+    here on is the same remux pipeline regardless of transport."""
     return [
         "ffmpeg",
         "-loglevel", "warning", "-nostats",
         "-fflags", "nobuffer",
         "-flags", "low_delay",
-        "-i", _listener_url(passphrase, latency_ms),
+        *input_args,
         "-c:v", "copy",
         # Video stays a pure stream copy — no decode/re-encode, the whole
         # point of this design. Audio is a real encode, not a copy: confirmed
@@ -865,20 +872,20 @@ async def _pump_stdout(proc, stderr_tail: deque) -> None:
 
 
 async def run_forever():
-    """Keeps exactly one ffmpeg SRT listener running for as long as
-    Settings > SRT Sink is enabled, (re)launching it whenever it isn't
-    running yet, and restarting it whenever it exits on its own or the
-    enable toggle/passphrase/latency changes underneath it — an SRT
-    connection's latency, like its passphrase, can't be adjusted on a
-    live listener, only renegotiated on a fresh one."""
+    """Keeps exactly one ffmpeg listener running for as long as
+    Settings > LAN Video Receiver is enabled, (re)launching it whenever it
+    isn't running yet, and restarting it whenever it exits on its own or
+    any input setting changes underneath it (mode, passphrase, latency/
+    buffer, multicast group…) — none of those can be adjusted on a live
+    SRT/RIST receiver, only applied to a fresh one. "Changed" is simply
+    srt_sink.listener_input_args() coming out different."""
     proc = None
     pump_task = None
     stderr_task = None
-    active_passphrase = None
-    active_latency_ms = None
+    active_input_args = None
 
     async def _teardown():
-        nonlocal proc, pump_task, stderr_task, active_passphrase, active_latency_ms
+        nonlocal proc, pump_task, stderr_task, active_input_args
         if proc is not None and proc.returncode is None:
             proc.kill()
         if pump_task is not None:
@@ -886,8 +893,7 @@ async def run_forever():
         if stderr_task is not None:
             stderr_task.cancel()
         proc = pump_task = stderr_task = None
-        active_passphrase = None
-        active_latency_ms = None
+        active_input_args = None
 
     was_enabled = None
     try:
@@ -899,12 +905,9 @@ async def run_forever():
                 was_enabled = enabled
             global _debug_enabled
             _debug_enabled = config["debug_overlay"]
-            passphrase = config["passphrase"] if enabled else None
-            latency_ms = config["srt_latency_ms"]
+            input_args = srt_sink.listener_input_args(config) if enabled else None
 
-            if proc is not None and (
-                not enabled or passphrase != active_passphrase or latency_ms != active_latency_ms
-            ):
+            if proc is not None and (not enabled or input_args != active_input_args):
                 print("[srt-stream-bridge] config changed, restarting listener", flush=True)
                 await _teardown()
 
@@ -914,16 +917,15 @@ async def run_forever():
 
             if proc is None:
                 _state.reset()
-                cmd = _ffmpeg_cmd(passphrase, latency_ms)
-                print(f"[srt-stream-bridge] starting listener: {' '.join(cmd)}", flush=True)
+                cmd = _ffmpeg_cmd(input_args)
+                print(f"[srt-stream-bridge] starting {config['mode']} listener: {_redacted(cmd)}", flush=True)
                 proc = await asyncio.create_subprocess_exec(
                     *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                 )
                 stderr_tail: deque = deque(maxlen=20)
                 stderr_task = asyncio.create_task(_drain_stderr(proc, stderr_tail))
                 pump_task = asyncio.create_task(_pump_stdout(proc, stderr_tail))
-                active_passphrase = passphrase
-                active_latency_ms = latency_ms
+                active_input_args = input_args
 
             done, _ = await asyncio.wait({pump_task}, timeout=CONFIG_POLL_INTERVAL_SECONDS)
             if pump_task in done:

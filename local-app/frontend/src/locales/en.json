@@ -3,7 +3,8 @@
         "cancel": "Cancel",
         "yes": "Yes",
         "no": "No",
-        "never": "Never"
+        "never": "Never",
+        "save": "Save"
     },
     "pinGate": {
         "prompt": "Enter Settings PIN",
@@ -87,8 +88,19 @@
             "latencyHint": "Lower for less delay on a clean wired network; raise it if the picture stutters.",
             "debugOverlayTitle": "Debug Overlay",
             "debugOverlayHint": "Shows playback stats on top of the video.",
-            "intro": "Receives a live video feed (OBS, vMix, etc.) from your local network over SRT and plays it full screen.",
-            "playbackTitle": "Playback"
+            "intro": "Receives a live video feed (OBS, vMix, etc.) from your local network over SRT or RIST and plays it full screen.",
+            "playbackTitle": "Playback",
+            "mode": "Mode",
+            "modeSrt": "SRT",
+            "modeRistUnicast": "RIST Unicast",
+            "modeRistMulticast": "RIST Multicast",
+            "edit": "Edit",
+            "multicastGroup": "Multicast IP",
+            "port": "Port",
+            "multicastPassphraseHint": "Must match the sender's",
+            "senderUrl": "Sender URL",
+            "ristBufferTitle": "RIST Buffer",
+            "multicastWifiWarning": "⚠ This device is on WiFi. Multicast video over WiFi is not recommended — expect dropouts and stutter. Use a wired Ethernet connection."
         },
         "revelation": {
             "default": "Default",

@@ -3,7 +3,8 @@
         "cancel": "Cancelar",
         "yes": "Sí",
         "no": "No",
-        "never": "Nunca"
+        "never": "Nunca",
+        "save": "Guardar"
     },
     "pinGate": {
         "prompt": "Ingrese el PIN de configuración",
@@ -87,8 +88,19 @@
             "latencyHint": "Bájela para menos retraso en una red cableada limpia; súbala si la imagen se entrecorta.",
             "debugOverlayTitle": "Superposición de Depuración",
             "debugOverlayHint": "Muestra estadísticas de reproducción sobre el video.",
-            "intro": "Recibe una transmisión de video en vivo (OBS, vMix, etc.) desde su red local mediante SRT y la muestra en pantalla completa.",
-            "playbackTitle": "Reproducción"
+            "intro": "Recibe una transmisión de video en vivo (OBS, vMix, etc.) desde su red local mediante SRT o RIST y la muestra en pantalla completa.",
+            "playbackTitle": "Reproducción",
+            "mode": "Modo",
+            "modeSrt": "SRT",
+            "modeRistUnicast": "RIST Unicast",
+            "modeRistMulticast": "RIST Multicast",
+            "edit": "Editar",
+            "multicastGroup": "IP Multicast",
+            "port": "Puerto",
+            "multicastPassphraseHint": "Debe coincidir con el del emisor",
+            "senderUrl": "URL del emisor",
+            "ristBufferTitle": "Búfer RIST",
+            "multicastWifiWarning": "⚠ Este dispositivo está en WiFi. No se recomienda video multicast por WiFi — habrá cortes y saltos. Use una conexión Ethernet por cable."
         },
         "revelation": {
             "default": "Predeterminado",

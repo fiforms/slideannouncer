@@ -58,6 +58,7 @@ import httpx
 
 import pairing
 import pinning
+import srt_sink
 import system_control
 
 INTERVAL_SECONDS = 60
@@ -214,6 +215,10 @@ async def sync_once() -> None:
     body = resp.json()
     shows_resp = body.get("shows", [])
     settings = body.get("settings", {})
+    # Web-edited LAN Video Receiver settings ride along here too, so they
+    # land within one sync interval instead of waiting for the 5-minute
+    # heartbeat — see srt_sink.py's SERVER_EDITABLE_FIELDS.
+    srt_sink.apply_server_config(body.get("srt_sink_config"))
 
     old_flat = _flatten(manifest)
     seen_slide_ids = set()

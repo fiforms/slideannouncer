@@ -110,6 +110,9 @@ async def send_once() -> None:
         "architecture": read_architecture(),
         "cpu_temp_c": read_cpu_temp_c(),
         "srt_sink_passphrase": srt_sink_passphrase,
+        # Full LAN Video Receiver settings + the last web-side revision
+        # applied — see srt_sink.py's SERVER_EDITABLE_FIELDS for the sync.
+        "srt_sink_config": srt_sink.report(),
         # Reported every heartbeat (cheap, and can change on a
         # slideannouncer.yaml hostname override + reboot) so the fleet
         # dashboard can build the same "Connect With" srt:// URL the
@@ -166,6 +169,10 @@ async def send_once() -> None:
     # toggle; see srt_sink.py's effective_enabled(). Missing key (older
     # server) or true both mean "no restriction."
     srt_sink.set_server_allows(response.get("srt_sink_enabled", True) is not False)
+    # Receiver settings edited on the web page (no-op unless newer than the
+    # last revision applied) — the slide sync's response carries the same
+    # push, so this usually arrives there first.
+    srt_sink.apply_server_config(response.get("srt_sink_config"))
 
     _write_status({
         "last_attempt_at": _now_iso(),

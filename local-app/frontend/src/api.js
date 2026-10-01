@@ -70,6 +70,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
     }),
+  // Partial update — mode, passphrase, multicast_group/port/passphrase,
+  // rist_buffer_ms, rist_encryption_bits (see backend srt_sink.update_settings).
+  setSrtSinkSettings: (changes) =>
+    request('/api/local/srt-sink/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(changes),
+    }),
   regenerateSrtSinkPassphrase: () => request('/api/local/srt-sink/regenerate', { method: 'POST' }),
   setSrtSinkLatency: (latencyMs) =>
     request('/api/local/srt-sink/latency', {

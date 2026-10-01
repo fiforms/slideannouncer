@@ -29,9 +29,12 @@ srt_stream_bridge.py (in-memory — that module and this one now run in the
 same process, so there's no need for a separate status file the way the
 old external srt-sink-monitor.py daemon required).
 """
+import functools
+import ipaddress
 import json
 import secrets
 import string
+import subprocess
 from pathlib import Path
 from urllib.parse import quote
 
@@ -72,6 +75,59 @@ MAX_SRT_LATENCY_MS = 2000
 
 PASSPHRASE_LENGTH = 10
 PASSPHRASE_ALPHABET = string.ascii_letters + string.digits
+# libsrt's own passphrase rule — also applied to RIST Unicast, which shares
+# the same (generated, now also hand-editable) passphrase.
+MIN_PASSPHRASE_LENGTH = 10
+MAX_PASSPHRASE_LENGTH = 79
+
+# --- Receiver modes ----------------------------------------------------
+# "srt"            — SRT listener on SRT_PORT (the original mode). Senders
+#                    call in to this device.
+# "rist_unicast"   — RIST (main profile) listener on RIST_PORT, encrypted
+#                    with the same passphrase as SRT mode.
+# "rist_multicast" — joins a RIST multicast group the sender transmits to.
+#                    SRT itself has no multicast mode at all, which is why
+#                    multicast is RIST-only. Group/port/passphrase are
+#                    whatever the sender is configured with, so they're
+#                    entered by hand and must match it exactly.
+# All three feed the same srt_stream_bridge.py remux pipeline — only
+# ffmpeg's input side differs (see listener_input_args()).
+MODES = ("srt", "rist_unicast", "rist_multicast")
+DEFAULT_MODE = "srt"
+# RIST main profile sends media on an even UDP port and its RTCP
+# (retransmit requests) on port+1, so ports are kept even.
+RIST_PORT = 5000
+DEFAULT_MULTICAST_PORT = 5000
+# RIST's receive buffer: how long it holds packets to wait for
+# retransmits of lost ones — the RIST equivalent of the SRT latency
+# slider. librist's own default is 1000ms (sized for the internet); a LAN
+# needs far less, so 500ms is the starting point.
+DEFAULT_RIST_BUFFER_MS = 500
+MIN_RIST_BUFFER_MS = 50
+MAX_RIST_BUFFER_MS = 3000
+# AES key size — the sender has to use the same one as the passphrase.
+RIST_ENCRYPTION_BITS = (128, 256)
+DEFAULT_RIST_ENCRYPTION_BITS = 128
+
+
+# Settings the AnnouncementSlides web UI (Slide Announcer page) can also
+# set. Both sides can edit them, so they sync with a revision counter
+# rather than either side simply overwriting the other:
+# - every heartbeat reports this device's current values plus
+#   `server_revision`, the last web revision it applied (report());
+# - a web edit bumps the server's revision, and the heartbeat and slide
+#   sync responses carry it down; apply_server_config() applies anything
+#   newer than server_revision, then records it;
+# - a local edit here just changes the values, and the next heartbeat
+#   reports them — the server takes a report as current whenever it
+#   comes with the server's latest revision.
+SERVER_EDITABLE_FIELDS = (
+    "mode", "passphrase", "multicast_group", "multicast_port", "multicast_passphrase", "rist_encryption_bits",
+)
+
+
+class SrtSinkConfigError(ValueError):
+    """Raised with a message safe to show directly on the Settings screen."""
 
 
 def _read_raw() -> dict:
@@ -91,13 +147,31 @@ def _write_raw(data: dict) -> None:
 
 def read_config() -> dict:
     data = _read_raw()
+    mode = data.get("mode")
+    encryption = data.get("rist_encryption_bits")
     return {
         "local_enabled": bool(data.get("local_enabled", False)),
         "server_allows": data.get("server_allows", True) is not False,
+        "mode": mode if mode in MODES else DEFAULT_MODE,
         "passphrase": data.get("passphrase", ""),
         "debug_overlay": bool(data.get("debug_overlay", False)),
         "srt_latency_ms": _clamp_latency_ms(data.get("srt_latency_ms", DEFAULT_SRT_LATENCY_MS)),
+        "rist_buffer_ms": _clamp(data.get("rist_buffer_ms"), MIN_RIST_BUFFER_MS, MAX_RIST_BUFFER_MS, DEFAULT_RIST_BUFFER_MS),
+        "rist_encryption_bits": encryption if encryption in RIST_ENCRYPTION_BITS else DEFAULT_RIST_ENCRYPTION_BITS,
+        "multicast_group": data.get("multicast_group", ""),
+        "multicast_port": _clamp(data.get("multicast_port"), 1024, 65534, DEFAULT_MULTICAST_PORT),
+        "multicast_passphrase": data.get("multicast_passphrase", ""),
+        "server_revision": _clamp(data.get("server_revision"), 0, 2**31, 0),
+        "server_apply_error": data.get("server_apply_error"),
     }
+
+
+def _clamp(value, low: int, high: int, default: int) -> int:
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(high, value))
 
 
 def _clamp_latency_ms(value) -> int:
@@ -110,9 +184,166 @@ def _clamp_latency_ms(value) -> int:
 
 def effective_enabled(config: dict | None = None) -> bool:
     """What srt_stream_bridge.py actually acts on — both the local toggle
-    and the server's force-disable switch have to allow it."""
+    and the server's force-disable switch have to allow it, and the
+    selected mode has to be fully configured (a multicast group and the
+    sender's passphrase entered; RIST modes also need RIST support in
+    this device's ffmpeg)."""
     config = config or read_config()
-    return config["local_enabled"] and config["server_allows"] and bool(config["passphrase"])
+    if not (config["local_enabled"] and config["server_allows"]):
+        return False
+    if config["mode"] == "rist_multicast":
+        return bool(config["multicast_group"] and config["multicast_passphrase"]) and rist_supported()
+    if config["mode"] == "rist_unicast":
+        return bool(config["passphrase"]) and rist_supported()
+    return bool(config["passphrase"])
+
+
+@functools.cache
+def rist_supported() -> bool:
+    """Whether this device's ffmpeg was built with librist (`rist` in
+    `ffmpeg -protocols`). Checked once per process — the ffmpeg binary
+    only changes with an OS update, which restarts this backend anyway."""
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-protocols"], capture_output=True, text=True, timeout=10,
+        ).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return any(line.strip() == "rist" for line in out.splitlines())
+
+
+def listener_input_args(config: dict) -> list[str]:
+    """ffmpeg's input-side arguments (protocol options + `-i <url>`) for
+    the configured mode — everything after this is the same remux
+    pipeline in every mode (see srt_stream_bridge.py's _ffmpeg_cmd())."""
+    mode = config["mode"]
+    if mode == "srt":
+        return [
+            "-i",
+            f"srt://0.0.0.0:{SRT_PORT}?mode=listener"
+            f"&passphrase={quote(config['passphrase'])}&latency={config['srt_latency_ms'] * 1000}",
+        ]
+    if mode == "rist_unicast":
+        secret, url = config["passphrase"], f"rist://@0.0.0.0:{RIST_PORT}"
+    else:
+        # A multicast address after the "@" (listen) makes librist join
+        # that group rather than bind a plain unicast port.
+        secret = config["multicast_passphrase"]
+        url = f"rist://@{config['multicast_group']}:{config['multicast_port']}"
+    return [
+        "-rist_profile", "main",
+        "-buffer_size", str(config["rist_buffer_ms"]),
+        "-secret", secret,
+        "-encryption", str(config["rist_encryption_bits"]),
+        "-i", url,
+    ]
+
+
+def update_settings(changes: dict) -> dict:
+    """Settings > LAN Video Receiver's mode and RIST fields. Every field is
+    optional; each one given is validated before anything is written, so
+    a bad value never half-applies. Raises SrtSinkConfigError."""
+    config = read_config()
+    if "mode" in changes:
+        if changes["mode"] not in MODES:
+            raise SrtSinkConfigError(f"Unknown mode: {changes['mode']}")
+        if changes["mode"] != "srt" and not rist_supported():
+            raise SrtSinkConfigError("This device's ffmpeg was built without RIST support.")
+        config["mode"] = changes["mode"]
+    if "passphrase" in changes:
+        config["passphrase"] = _validate_passphrase(changes["passphrase"])
+    if "multicast_passphrase" in changes:
+        config["multicast_passphrase"] = _validate_passphrase(changes["multicast_passphrase"])
+    if "multicast_group" in changes:
+        config["multicast_group"] = _validate_multicast_group(changes["multicast_group"])
+    if "multicast_port" in changes:
+        config["multicast_port"] = _validate_rist_port(changes["multicast_port"])
+    if "rist_buffer_ms" in changes:
+        config["rist_buffer_ms"] = _clamp(changes["rist_buffer_ms"], MIN_RIST_BUFFER_MS, MAX_RIST_BUFFER_MS, DEFAULT_RIST_BUFFER_MS)
+    if "rist_encryption_bits" in changes:
+        if changes["rist_encryption_bits"] not in RIST_ENCRYPTION_BITS:
+            raise SrtSinkConfigError("Encryption must be AES-128 or AES-256.")
+        config["rist_encryption_bits"] = changes["rist_encryption_bits"]
+    _write_raw(config)
+    return config
+
+
+def apply_server_config(push) -> None:
+    """Applies a web-side edit pushed down in a heartbeat or slide-sync
+    response ({"revision": n, <SERVER_EDITABLE_FIELDS>...}), if it's newer
+    than the last one applied. Validated exactly like a local edit; one
+    that fails (e.g. RIST chosen on a device whose ffmpeg lacks it) is
+    still marked applied so it isn't retried every sync, and its error is
+    reported back up for the web page to show."""
+    if not isinstance(push, dict):
+        return
+    try:
+        revision = int(push.get("revision") or 0)
+    except (TypeError, ValueError):
+        return
+    if revision <= read_config()["server_revision"]:
+        return
+    changes = {key: push[key] for key in SERVER_EDITABLE_FIELDS if push.get(key) not in (None, "")}
+    error = None
+    try:
+        update_settings(changes)
+    except SrtSinkConfigError as exc:
+        error = str(exc)
+    config = read_config()
+    config["server_revision"] = revision
+    config["server_apply_error"] = error
+    _write_raw(config)
+
+
+def report() -> dict:
+    """This device's receiver settings for the heartbeat (see
+    SERVER_EDITABLE_FIELDS for how they sync), plus read-only status the
+    web page shows alongside them."""
+    config = read_config()
+    return {
+        **{key: config[key] for key in SERVER_EDITABLE_FIELDS},
+        "local_enabled": config["local_enabled"],
+        "srt_latency_ms": config["srt_latency_ms"],
+        "rist_buffer_ms": config["rist_buffer_ms"],
+        "rist_supported": rist_supported(),
+        "rist_port": RIST_PORT,
+        "srt_port": SRT_PORT,
+        "apply_error": config["server_apply_error"],
+        "revision": config["server_revision"],
+    }
+
+
+def _validate_passphrase(value) -> str:
+    value = (value or "").strip()
+    if not (MIN_PASSPHRASE_LENGTH <= len(value) <= MAX_PASSPHRASE_LENGTH):
+        raise SrtSinkConfigError(
+            f"Passphrase must be {MIN_PASSPHRASE_LENGTH}–{MAX_PASSPHRASE_LENGTH} characters."
+        )
+    if not value.isascii() or not value.isprintable() or " " in value:
+        raise SrtSinkConfigError("Passphrase can only use letters, numbers and symbols (no spaces).")
+    return value
+
+
+def _validate_multicast_group(value) -> str:
+    value = (value or "").strip()
+    try:
+        address = ipaddress.IPv4Address(value)
+    except ipaddress.AddressValueError:
+        raise SrtSinkConfigError(f"{value or 'That'} isn't a valid IPv4 address.") from None
+    # 224.0.0.0/24 is reserved for routing protocols (never used for media).
+    if not address.is_multicast or address in ipaddress.IPv4Network("224.0.0.0/24"):
+        raise SrtSinkConfigError("Multicast address must be in 224.0.1.0–239.255.255.255 (e.g. 239.1.2.3).")
+    return str(address)
+
+
+def _validate_rist_port(value) -> int:
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        raise SrtSinkConfigError("Port must be a number.") from None
+    if not (1024 <= port <= 65534) or port % 2:
+        raise SrtSinkConfigError("Port must be an even number from 1024 to 65534 (RIST uses the next port up too).")
+    return port
 
 
 def generate_passphrase() -> str:
@@ -171,6 +402,25 @@ def set_debug_overlay(enabled: bool) -> dict:
     config["debug_overlay"] = enabled
     _write_raw(config)
     return config
+
+
+def sender_url(hostname: str, config: dict) -> str | None:
+    """The URL to configure a sender (OBS, vMix, an encoder) with for the
+    current mode — shown on screen and as the QR code. In multicast mode
+    it's the group the sender transmits to, not this device's address."""
+    mode = config["mode"]
+    if mode == "srt":
+        return connect_url(hostname, config["passphrase"], config["srt_latency_ms"]) if config["passphrase"] else None
+    if mode == "rist_unicast":
+        host, port, secret = f"{hostname}.local", RIST_PORT, config["passphrase"]
+    else:
+        host, port, secret = config["multicast_group"], config["multicast_port"], config["multicast_passphrase"]
+    if not (host and secret):
+        return None
+    return (
+        f"rist://{host}:{port}?secret={quote(secret)}"
+        f"&aes-type={config['rist_encryption_bits']}&buffer={config['rist_buffer_ms']}"
+    )
 
 
 def connect_url(hostname: str, passphrase: str, latency_ms: int) -> str:

@@ -265,8 +265,11 @@ def _srt_sink_response(config: dict) -> dict:
         "effective_enabled": srt_sink.effective_enabled(config),
         # Built here, not in the frontend, so the URL format (port,
         # mode=caller, latency) lives in exactly one place — srt_sink.py.
-        "connect_url": srt_sink.connect_url(socket.gethostname(), config["passphrase"], config["srt_latency_ms"])
-        if config["passphrase"] else None,
+        # For the configured mode (SRT, RIST unicast, or the multicast group
+        # a RIST sender transmits to) — see srt_sink.sender_url().
+        "connect_url": srt_sink.sender_url(socket.gethostname(), config),
+        "rist_supported": srt_sink.rist_supported(),
+        "rist_port": srt_sink.RIST_PORT,
     }
 
 
@@ -282,6 +285,26 @@ class SrtSinkEnableRequest(BaseModel):
 @app.post("/api/local/srt-sink")
 def srt_sink_set(body: SrtSinkEnableRequest):
     return _srt_sink_response(srt_sink.set_local_enabled(body.enabled))
+
+
+class SrtSinkSettingsRequest(BaseModel):
+    # All optional — only the fields sent are changed.
+    mode: str | None = None
+    passphrase: str | None = None
+    multicast_group: str | None = None
+    multicast_port: int | None = None
+    multicast_passphrase: str | None = None
+    rist_buffer_ms: int | None = None
+    rist_encryption_bits: int | None = None
+
+
+@app.post("/api/local/srt-sink/settings")
+def srt_sink_update_settings(body: SrtSinkSettingsRequest):
+    try:
+        config = srt_sink.update_settings(body.model_dump(exclude_none=True))
+    except srt_sink.SrtSinkConfigError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _srt_sink_response(config)
 
 
 @app.post("/api/local/srt-sink/regenerate")
