@@ -456,7 +456,7 @@ onUnmounted(() => {
         />
         <img v-else :src="currentSlide.media_url" class="slide-image">
         <img v-if="currentSlide.overlay_media_url" :src="currentSlide.overlay_media_url" class="slide-image overlay">
-        <WidgetLayer v-if="currentSlide.widgets?.length" :widgets="currentSlide.widgets" />
+        <WidgetLayer v-if="currentSlide.widgets?.length" :widgets="currentSlide.widgets" :linger-ms="1100" />
       </div>
       <div v-else class="empty-state" key="empty">
         <p v-if="status && !status.paired">{{ t('slideshow.notPaired') }}</p>

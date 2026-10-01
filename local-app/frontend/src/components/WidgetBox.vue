@@ -8,6 +8,10 @@ import { location as screenLocation } from '../slideshowState.js'
 // module draws into. WidgetLayer keys it so any change remounts cleanly.
 const props = defineProps({
   placement: { type: Object, required: true },
+  // Keep the widget alive this long after unmount, so a parent's leave
+  // transition (which only holds back the root DOM node, not child
+  // components) can fade it out instead of it vanishing at once.
+  lingerMs: { type: Number, default: 0 },
 })
 
 const { locale } = useI18n()
@@ -17,7 +21,11 @@ let handle = null
 onMounted(() => {
   handle = mountWidget(el.value, props.placement, locale.value, screenLocation.value)
 })
-onBeforeUnmount(() => handle?.dispose())
+onBeforeUnmount(() => {
+  const h = handle
+  if (props.lingerMs > 0) setTimeout(() => h?.dispose(), props.lingerMs)
+  else h?.dispose()
+})
 </script>
 
 <template>

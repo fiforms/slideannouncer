@@ -13,6 +13,8 @@ const CANVAS = { w: 1920, h: 1080 }
 
 const props = defineProps({
   widgets: { type: Array, default: () => [] },
+  // Passed to each WidgetBox; see there.
+  lingerMs: { type: Number, default: 0 },
 })
 
 const root = ref(null)
@@ -57,7 +59,7 @@ function key(p) {
         transform: `scale(${fit.scale})`,
       }"
     >
-      <WidgetBox v-for="p in placements" :key="key(p)" :placement="p" />
+      <WidgetBox v-for="p in placements" :key="key(p)" :placement="p" :linger-ms="lingerMs" />
     </div>
   </div>
 </template>
