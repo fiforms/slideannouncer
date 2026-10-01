@@ -578,7 +578,11 @@ export function installRemoteNav(appRouter) {
         if (parent) goUp(parent)
         return
       }
-      if (onKioskWithoutMenu) return
+      if (onKioskWithoutMenu) {
+        // A plain keyboard has no Menu key, so Escape doubles as one here.
+        if (event.key === 'Escape') openMenu()
+        return
+      }
       if (window.history.state?.back) router.back()
       else router.push('/kiosk')
       return
