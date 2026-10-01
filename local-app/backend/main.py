@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import captive_portal
@@ -27,6 +28,7 @@ import srt_sink
 import srt_stream_bridge
 import sync
 import system_control
+import widgets
 
 SETUP_MODE_STATUS = Path("/data/status/setup-mode.json")
 VERSION_FILE = Path("/opt/slide-announcer/VERSION")
@@ -121,6 +123,17 @@ def slideshow():
         "settings": sync.read_settings(),
         "pinned_show_id": _resolve_pinned_show_id(shows),
     }
+
+
+@app.get("/api/local/widget-data/{overlay_id}/{element}/{endpoint}")
+async def widget_data(overlay_id: int, element: str, endpoint: str):
+    # A widget's api.fetch() — forwarded to the server by reference (never
+    # a URL), with the last good answer served while offline. widgets.py.
+    status, body = await widgets.fetch_data(overlay_id, element, endpoint)
+    return JSONResponse(body, status_code=status, headers={
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
+    })
 
 
 class PinShowRequest(BaseModel):

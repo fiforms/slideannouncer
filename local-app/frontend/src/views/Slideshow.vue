@@ -8,6 +8,7 @@ import { setSetupRequired } from '../setupState.js'
 import { settings, refreshShows, activeShow } from '../slideshowState.js'
 import { menuOpen } from '../menuOverlay.js'
 import { startSrtStream, stopSrtStream, setDebugOverlay } from '../srtStreamPlayer.js'
+import WidgetLayer from '../components/WidgetLayer.vue'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -455,6 +456,7 @@ onUnmounted(() => {
         />
         <img v-else :src="currentSlide.media_url" class="slide-image">
         <img v-if="currentSlide.overlay_media_url" :src="currentSlide.overlay_media_url" class="slide-image overlay">
+        <WidgetLayer v-if="currentSlide.widgets?.length" :widgets="currentSlide.widgets" />
       </div>
       <div v-else class="empty-state" key="empty">
         <p v-if="status && !status.paired">{{ t('slideshow.notPaired') }}</p>

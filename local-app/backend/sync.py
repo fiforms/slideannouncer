@@ -24,11 +24,12 @@ slide's stored file in place without changing its storage path, so a URL
 change is a reliable proxy for "content changed" without a real version
 field.
 
-`overlay_url` is a slide's optional 'slide-overlay' media (uploaded from the
-admin/contributor Edit pages' Media Manager) — a future feature will
-composite it on top of the base slide on-screen. This daemon only fetches
-and caches it (as `<id>-overlay.<ext>`) so that feature has a file to work
-with; the kiosk frontend does not render it yet.
+`overlay_url` is a slide's optional 'slide-overlay' media (made in the
+overlay editor or uploaded from the Media Manager), cached as
+`<id>-overlay.<ext>` and drawn over the slide by Slideshow.vue. A slide's
+`widgets` (live overlay widgets placed in the editor) ride along in its
+manifest entry; the bundles they need are mirrored by widgets.py, and
+the playlist only lists placements whose bundle is on disk.
 
 Failure handling mirrors heartbeat.py: a network/timeout error leaves the
 last-synced manifest, media, and settings on disk untouched (the kiosk
@@ -60,6 +61,7 @@ import pairing
 import pinning
 import srt_sink
 import system_control
+import widgets
 
 INTERVAL_SECONDS = 60
 
@@ -158,6 +160,9 @@ async def _download(client: httpx.AsyncClient, url: str, dest: Path) -> None:
 
 def _build_active_playlist(manifest: dict) -> list:
     now = datetime.now(timezone.utc)
+    # Mirrored widget bundles — read from disk, so an offline rebuild
+    # keeps every widget whose code is already here.
+    widget_index = widgets.read_index()
     shows = []
     for show_id, show in manifest.items():
         slides = [
@@ -167,6 +172,7 @@ def _build_active_playlist(manifest: dict) -> list:
                 "mime_type": entry.get("mime_type"),
                 "video_playback_mode": entry.get("video_playback_mode"),
                 "overlay_media_url": f"/media/{entry['overlay_local_filename']}" if entry.get("overlay_local_filename") else None,
+                "widgets": widgets.placements_for_playlist(entry, widget_index),
             }
             # dict insertion order (preserved through json dump/load) is the
             # server's display order for this show — no sort key to apply.
@@ -257,8 +263,7 @@ async def sync_once() -> None:
                 entry = {**slide, "id": slide_id, "local_filename": local_filename}
 
                 # Optional 'slide-overlay' media — cached alongside the base
-                # file so a future feature can composite it; not consumed by
-                # the kiosk frontend yet.
+                # file and drawn over it by Slideshow.vue.
                 overlay_url = slide.get("overlay_url")
                 if overlay_url:
                     overlay_filename = _local_filename(slide, suffix="-overlay", url_key="overlay_url", mime_key="overlay_mime_type")
@@ -287,6 +292,9 @@ async def sync_once() -> None:
                 "is_main": bool(show.get("is_main")),
                 "slides": slides_manifest,
             }
+
+        # Widget bundles the synced slides place (see widgets.py).
+        await widgets.mirror(client, body.get("widgets", []), server_url)
 
     # Slides no longer present in any current show — deleted, expired,
     # reassigned, or belonging only to a show that disappeared entirely
