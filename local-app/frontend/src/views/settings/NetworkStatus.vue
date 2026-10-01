@@ -8,6 +8,10 @@ import { openCaptivePortal } from '../../captivePortal.js'
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+// Shared with the setup wizard's Network step, so links stay relative to
+// whichever of the two this is mounted under — see router.js's
+// meta.networkBase.
+const networkBase = route.meta.networkBase || '/settings/network'
 const status = ref(null)
 const hostname = ref(null)
 const showAdvanced = ref(false)
@@ -28,7 +32,7 @@ async function signInToPortal() {
   openingPortal.value = true
   portalError.value = null
   try {
-    await openCaptivePortal()
+    await openCaptivePortal(networkBase)
   } catch (err) {
     portalError.value = err.message
     openingPortal.value = false
@@ -78,7 +82,7 @@ onMounted(() => {
 })
 
 function goToWifiSetup() {
-  router.push('/settings/network/wifi')
+  router.push(`${networkBase}/wifi`)
 }
 
 async function forgetNetwork() {

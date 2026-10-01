@@ -4,6 +4,7 @@ import router from './router.js'
 import { installRemoteNav } from './remoteNav.js'
 import { i18n, setLocale } from './i18n.js'
 import { api } from './api.js'
+import { setSetupRequired } from './setupState.js'
 import './style.css'
 
 installRemoteNav(router)
@@ -18,6 +19,7 @@ async function bootstrap() {
   try {
     const status = await api.localStatus()
     setLocale(status.language)
+    setSetupRequired(status.setup_complete === false)
   } catch {
     // stay on the default locale
   }

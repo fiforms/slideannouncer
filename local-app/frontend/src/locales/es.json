@@ -43,6 +43,7 @@
             "language": "Idioma",
             "languageSourceServer": "definido por el administrador de la entidad",
             "languageSourceBootYaml": "predeterminado del dispositivo",
+            "languageSourceDevice": "definido en este dispositivo",
             "paired": "Emparejado",
             "notPairedHint": "Aún no emparejado — vea \"Emparejamiento\" en el panel izquierdo.",
             "softwareUpdate": "Actualización de software",
@@ -258,6 +259,49 @@
             "revelationHint": "Permite que un presentador de Revelation en su red tome esta pantalla para una presentación en vivo.",
             "srtSinkHint": "Recibe una transmisión de video en vivo (OBS, vMix, etc.) desde la red de su iglesia mediante SRT.",
             "featureOffHint": "Esta función está desactivada — actívela en Configuración > Avanzado."
+        }
+    },
+    "setup": {
+        "steps": {
+            "welcome": "Bienvenida",
+            "network": "Red",
+            "name": "Nombre",
+            "pairing": "Emparejamiento",
+            "done": "Listo"
+        },
+        "back": "Atrás",
+        "next": "Siguiente",
+        "skip": "Omitir por ahora",
+        "welcome": {
+            "title": "Bienvenido a Slide Announcer",
+            "intro": "Preparemos este dispositivo. Solo toma unos minutos.",
+            "languageLabel": "Idioma"
+        },
+        "network": {
+            "title": "Conectarse a internet",
+            "intro": "Conecte este dispositivo a WiFi o enchufe un cable de red.",
+            "checking": "Comprobando la conexión de red…"
+        },
+        "name": {
+            "title": "Nombre del dispositivo",
+            "intro": "Dele a este dispositivo un nombre que indique dónde está, como “Salón social” — o mantenga el predeterminado.",
+            "label": "Nombre o ubicación del dispositivo",
+            "hostname": "Nombre en la red: {hostname}",
+            "paired": "Este dispositivo está emparejado como “{name}”. Puede cambiarle el nombre desde el sitio web de AnnouncementSlides."
+        },
+        "pairing": {
+            "title": "Emparejar con su iglesia",
+            "paired": "Este dispositivo está emparejado con {entity}.",
+            "pairedNoEntity": "Este dispositivo está emparejado."
+        },
+        "done": {
+            "titlePaired": "¡Todo listo!",
+            "titleUnpaired": "Configuración terminada",
+            "slidesNote": "La primera vez, las diapositivas pueden tardar unos minutos en descargarse y aparecer.",
+            "unpairedNote": "Este dispositivo aún no está emparejado, así que no tiene diapositivas que mostrar. Puede emparejarlo en cualquier momento desde Configuración > Emparejamiento — presione el botón Menú del control remoto para abrir la Configuración.",
+            "restartNote": "El dispositivo se reiniciará una vez para aplicar su nuevo nombre.",
+            "start": "Iniciar presentación",
+            "restarting": "Reiniciando…"
         }
     }
 }

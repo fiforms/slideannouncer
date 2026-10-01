@@ -53,6 +53,11 @@
 //
 // The remote's Home button is confirmed on real hardware (via Key Debug)
 // to report event.key === 'BrowserHome' (keyCode 172).
+//
+// The first-run setup wizard (/setup) is a plain full-page route — no
+// zones — but Back follows each step's meta.parent like a Settings sub-
+// page, and Home/Menu do nothing there, so the remote can't drop someone
+// out of setup halfway through.
 import { ref } from 'vue'
 import { menuOpen, openMenu, closeMenu } from './menuOverlay.js'
 
@@ -119,6 +124,10 @@ function activeModal() {
 
 function inSettings() {
   return router.currentRoute.value.path.startsWith('/settings')
+}
+
+function inSetup() {
+  return router.currentRoute.value.path.startsWith('/setup')
 }
 
 // Where arrow keys may move right now: an open modal, else the active
@@ -530,7 +539,7 @@ export function installRemoteNav(appRouter) {
 
     if (HOME_KEYS.includes(event.key)) {
       event.preventDefault()
-      if (onKioskWithoutMenu) return
+      if (onKioskWithoutMenu || inSetup()) return
       router.push('/kiosk')
       return
     }
@@ -564,6 +573,11 @@ export function installRemoteNav(appRouter) {
         router.push('/kiosk')
         return
       }
+      if (inSetup()) {
+        const parent = router.currentRoute.value.meta.parent
+        if (parent) goUp(parent)
+        return
+      }
       if (onKioskWithoutMenu) return
       if (window.history.state?.back) router.back()
       else router.push('/kiosk')
@@ -572,7 +586,7 @@ export function installRemoteNav(appRouter) {
 
     if (MENU_KEYS.includes(event.key)) {
       event.preventDefault()
-      if (menuOpen.value || inSettings()) return
+      if (menuOpen.value || inSettings() || inSetup()) return
       openMenu()
     }
   })

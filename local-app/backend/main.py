@@ -8,6 +8,7 @@ disk, plus the local-only show-pin endpoint (pinning.py).
 """
 import asyncio
 import json
+import re
 import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -55,6 +56,7 @@ def local_status():
             pass
 
     paired = pairing.is_paired()
+    hostname = socket.gethostname()
 
     try:
         server_url = pairing.read_server_url()
@@ -68,7 +70,13 @@ def local_status():
     return {
         "status": "paired" if paired else "not_paired",
         "message": "Slide Announcer paired." if paired else "Slide Announcer image booted successfully. Not yet paired.",
-        "hostname": socket.gethostname(),
+        "hostname": hostname,
+        # The first-run wizard (frontend views/setup/) launches while this
+        # is false — see pairing.is_setup_complete().
+        "setup_complete": pairing.is_setup_complete(),
+        # A device name set in the wizard or at pairing has a new hostname
+        # waiting on a reboot (firstboot.py's set_hostname()).
+        "hostname_change_pending": pairing.hostname_change_pending(hostname),
         "server_url": server_url,
         "image_version": VERSION_FILE.read_text().strip() if VERSION_FILE.exists() else None,
         "app_version": heartbeat.read_app_version(),
@@ -79,7 +87,7 @@ def local_status():
         "device_name": pairing.read_device_name(),
         "entity_name": pairing.read_entity_name(),
         "language": pairing.read_effective_language(),
-        "language_source": "server" if pairing.read_language() else ("boot_yaml" if pairing.read_language_boot_hint() else None),
+        "language_source": pairing.read_language_source(),
         "heartbeat": heartbeat.read_status(),
         "sync": sync.read_status(),
     }
@@ -142,6 +150,42 @@ async def pair(body: PairRequest):
     return {"ok": True, "slide_announcer_id": data["slide_announcer_id"]}
 
 
+class LanguageRequest(BaseModel):
+    language: str
+
+
+@app.post("/api/local/language")
+def set_language(body: LanguageRequest):
+    # The setup wizard's Welcome screen. Saved even while paired (it's the
+    # device's own preference), but a server-assigned language still wins
+    # in read_effective_language(), so the response says what's in effect.
+    code = body.language.strip().lower()
+    if not re.fullmatch(r"[a-z]{2,3}", code):
+        raise HTTPException(status_code=422, detail="Unsupported language code.")
+    pairing.write_local_language(code)
+    return {"language": pairing.read_effective_language(), "language_source": pairing.read_language_source()}
+
+
+class DeviceNameRequest(BaseModel):
+    device_name: str
+
+
+@app.post("/api/local/device-name")
+def set_device_name(body: DeviceNameRequest):
+    # Pre-pairing naming from the setup wizard. Once paired, the server owns
+    # the name (renamed from the fleet UI, synced back by heartbeat.py).
+    if pairing.is_paired():
+        raise HTTPException(status_code=409, detail="This device is paired; rename it from the website.")
+    hostname = pairing.set_local_device_name(body.device_name)
+    return {"device_name": pairing.read_device_name(), "hostname": hostname}
+
+
+@app.post("/api/local/setup/complete")
+def setup_complete():
+    pairing.mark_setup_complete()
+    return {"ok": True}
+
+
 @app.post("/api/local/unpair")
 async def unpair():
     pairing.unpair_and_wipe()
@@ -193,11 +237,16 @@ async def network_server_check():
     return await server_check.check()
 
 
+class PortalSignInRequest(BaseModel):
+    return_path: str | None = None
+
+
 @app.post("/api/local/network/portal/sign-in")
-async def network_portal_sign_in():
+async def network_portal_sign_in(body: PortalSignInRequest | None = None):
     # Frontend navigates the kiosk tab to this URL; captive_portal's
-    # watcher brings it back to Settings > Network once online.
-    return {"url": await captive_portal.start_sign_in()}
+    # watcher brings it back to the Network page it came from (Settings or
+    # the setup wizard) once online.
+    return {"url": await captive_portal.start_sign_in(body.return_path if body else None)}
 
 
 class ForgetRequest(BaseModel):

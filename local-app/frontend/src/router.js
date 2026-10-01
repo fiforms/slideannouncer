@@ -12,8 +12,15 @@ import RevelationPeering from './views/settings/RevelationPeering.vue'
 import Pairing from './views/settings/Pairing.vue'
 import DeviceTools from './views/settings/DeviceTools.vue'
 import KeyDebug from './views/settings/KeyDebug.vue'
+import SetupLayout from './views/setup/SetupLayout.vue'
+import SetupWelcome from './views/setup/SetupWelcome.vue'
+import SetupNetwork from './views/setup/SetupNetwork.vue'
+import SetupName from './views/setup/SetupName.vue'
+import SetupPairing from './views/setup/SetupPairing.vue'
+import SetupDone from './views/setup/SetupDone.vue'
 import { api } from './api.js'
 import { isUnlocked, lock, unlock } from './pinLock.js'
+import { isSetupRequired } from './setupState.js'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -40,13 +47,15 @@ const router = createRouter({
         { path: 'advanced', component: Advanced, meta: { railPath: '/settings/advanced' } },
         // Screen resolution now lives on Advanced.
         { path: 'screens', redirect: '/settings/advanced' },
-        { path: 'network', component: NetworkStatus, meta: { railPath: '/settings/network' } },
-        { path: 'network/wifi', component: WifiList, meta: { railPath: '/settings/network', parent: '/settings/network' } },
+        // meta.networkBase: these three screens are shared with the setup
+        // wizard below, and link among themselves relative to it.
+        { path: 'network', component: NetworkStatus, meta: { railPath: '/settings/network', networkBase: '/settings/network' } },
+        { path: 'network/wifi', component: WifiList, meta: { railPath: '/settings/network', parent: '/settings/network', networkBase: '/settings/network' } },
         {
           path: 'network/wifi/:ssid',
           component: WifiConnect,
           props: true,
-          meta: { railPath: '/settings/network', parent: '/settings/network/wifi' },
+          meta: { railPath: '/settings/network', parent: '/settings/network/wifi', networkBase: '/settings/network' },
         },
         { path: 'srt-sink', component: SrtSink, meta: { railPath: '/settings/srt-sink' } },
         { path: 'revelation', component: RevelationPeering, meta: { railPath: '/settings/revelation' } },
@@ -61,7 +70,39 @@ const router = createRouter({
         { path: 'keydebug', component: KeyDebug, meta: { railPath: '/settings/system', parent: '/settings/device-tools' } },
       ],
     },
+    // First-run setup wizard — launched instead of the slideshow until
+    // the backend reports setup_complete (see the guard below and
+    // setupState.js). Full-page, not under /settings: no rail, and no PIN
+    // gate. meta.step: which step the progress bar highlights. meta.parent:
+    // where the remote's Back goes (remoteNav.js), same as in Settings.
+    {
+      path: '/setup',
+      component: SetupLayout,
+      children: [
+        { path: '', component: SetupWelcome, meta: { step: 'welcome' } },
+        { path: 'network', component: SetupNetwork, meta: { step: 'network', parent: '/setup', networkBase: '/setup/network' } },
+        { path: 'network/wifi', component: WifiList, meta: { step: 'network', parent: '/setup/network', networkBase: '/setup/network' } },
+        {
+          path: 'network/wifi/:ssid',
+          component: WifiConnect,
+          props: true,
+          meta: { step: 'network', parent: '/setup/network/wifi', networkBase: '/setup/network' },
+        },
+        { path: 'name', component: SetupName, meta: { step: 'name', parent: '/setup/network' } },
+        { path: 'pairing', component: SetupPairing, meta: { step: 'pairing', parent: '/setup/name' } },
+        { path: 'done', component: SetupDone, meta: { step: 'done', parent: '/setup/pairing' } },
+      ],
+    },
   ],
+})
+
+// A fresh (or factory-reset) device lands in the setup wizard instead of
+// the slideshow. Only /kiosk is redirected — everything else that leaves
+// the wizard (Settings' "Back to slideshow", the remote's Home) goes
+// through /kiosk anyway.
+router.beforeEach((to) => {
+  if (to.path === '/kiosk' && isSetupRequired()) return '/setup'
+  return true
 })
 
 // Settings PIN gate — see PinGate.vue and pinLock.js. Only checked on the

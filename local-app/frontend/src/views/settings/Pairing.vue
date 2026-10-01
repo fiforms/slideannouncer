@@ -1,97 +1,32 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import QRCode from 'qrcode'
 import { api } from '../../api.js'
+import PairingForm from '../../components/PairingForm.vue'
 
 const router = useRouter()
 const { t } = useI18n()
 
-// Fallback only — normally status.hostname (below) already holds this
-// device's current effective hostname (device_uuid-derived until it's
-// ever paired, see firstboot.py's set_hostname()), which is a much more
-// useful default than a random one: it's stable and it's what's already
-// printed/spoken about this specific unit. This only kicks in if the
-// status call itself fails.
-function randomDeviceName() {
-  const suffix = Math.floor(1000 + Math.random() * 9000)
-  return `SlideAnnouncer-${suffix}`
-}
-
 const status = ref(null)
-const code = ref('')
-const deviceName = ref('')
 
-const nameInput = ref(null)
-const codeInput = ref(null)
-
-// idle -> pairing -> error (paired devices just fall through to the status
-// card below once `status.paired` flips true, so there's no "success" state
-// to hold here — reloading status IS the success path)
-const state = ref('idle')
-const errorMessage = ref(null)
-
-// Set once, only by pair() succeeding in this session — not derived from
-// status.paired, which stays true across a reboot too and would otherwise
-// show the reboot banner forever. This device's hostname was just
-// (re)derived from the name typed above (see pairing.py's pair()), and
-// won't actually take effect until the next boot — see firstboot.py's
-// set_hostname().
+// Set once, only by the form's `paired` event in this session — not
+// derived from status.paired, which stays true across a reboot too and
+// would otherwise show the reboot banner forever. This device's hostname
+// was just (re)derived from the name typed in the form (see pairing.py's
+// pair()), and won't actually take effect until the next boot — see
+// firstboot.py's set_hostname().
 const justPaired = ref(false)
 
 async function loadStatus() {
   status.value = await api.localStatus().catch(() => null)
-  if (!deviceName.value) deviceName.value = status.value?.hostname || randomDeviceName()
 }
 
 onMounted(loadStatus)
 
-// Where a church's own staff generate a pairing code from — pairing.py's
-// read_server_url() is the source of truth (this device's configured
-// AnnouncementSlides server), exposed read-only via /api/local/status.
-const pairingUrl = computed(() => status.value?.server_url ? `${status.value.server_url}/slide-announcers` : null)
-const pairingQrDataUrl = ref(null)
-const pairingQrLightboxDataUrl = ref(null)
-const pairingLightboxOpen = ref(false)
-
-// Same two-size approach as SrtSink.vue's QR code — a small inline
-// preview plus a much larger one meant to be scanned from across a room,
-// since this is the one screen someone unboxing a fresh device is most
-// likely to be standing right in front of without a computer handy.
-watch(pairingUrl, async (url) => {
-  pairingQrDataUrl.value = url ? await QRCode.toDataURL(url, { width: 160, margin: 1 }) : null
-  pairingQrLightboxDataUrl.value = url ? await QRCode.toDataURL(url, { width: 720, margin: 2 }) : null
-}, { immediate: true })
-
-function openPairingLightbox() {
-  if (pairingQrLightboxDataUrl.value) pairingLightboxOpen.value = true
-}
-
-function closePairingLightbox() {
-  pairingLightboxOpen.value = false
-}
-
-function onKeydown(event) {
-  if (event.key === 'Escape' && pairingLightboxOpen.value) closePairingLightbox()
-}
-
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
-
-async function pair() {
-  if (code.value.length !== 6) return
-  state.value = 'pairing'
-  errorMessage.value = null
-  try {
-    await api.pair(code.value.trim(), deviceName.value.trim() || randomDeviceName())
-    state.value = 'idle'
-    justPaired.value = true
-    await loadStatus()
-  } catch (err) {
-    errorMessage.value = err.message
-    state.value = 'error'
-  }
+async function onPaired() {
+  justPaired.value = true
+  await loadStatus()
 }
 
 const rebooting = ref(false)
@@ -216,61 +151,12 @@ function goToSlideshow() {
       </section>
     </template>
 
-    <form v-else class="form" @submit.prevent="pair">
-      <p class="hint">
-        {{ pairingUrl ? t('settings.pairing.generateHintUrl') : t('settings.pairing.generateHint') }}
-      </p>
-
-      <div v-if="pairingUrl" class="generate-row">
-        <code class="pairing-url">{{ pairingUrl }}</code>
-        <button type="button" class="tile action" @click="openPairingLightbox">
-          {{ t('settings.pairing.showQrCode') }}
-        </button>
-      </div>
-      <img v-if="pairingQrDataUrl" :src="pairingQrDataUrl" :alt="pairingUrl" class="qr-code" />
-
-      <label class="field">
-        <span>{{ t('settings.pairing.deviceNameLabel') }} <span class="optional">{{ t('settings.pairing.optional') }}</span></span>
-        <input
-          type="text"
-          v-model="deviceName"
-          ref="nameInput"
-          autocomplete="off"
-          @keydown.enter.prevent="codeInput?.focus()"
-        >
-      </label>
-
-      <label class="field">
-        <span>{{ t('settings.pairing.pairingCodeLabel') }}</span>
-        <input
-          type="text"
-          v-model="code"
-          ref="codeInput"
-          inputmode="numeric"
-          maxlength="6"
-          autofocus
-          autocomplete="off"
-          class="code-input"
-          @keydown.enter.prevent="pair()"
-        >
-      </label>
-
-      <p v-if="state === 'error'" class="pill warn">{{ errorMessage }}</p>
-
-      <button type="submit" class="tile action" :disabled="code.length !== 6 || state === 'pairing'">
-        {{ state === 'pairing' ? t('settings.pairing.pairing') : t('settings.pairing.pairButton') }}
-      </button>
-    </form>
-
-    <div v-if="pairingLightboxOpen" class="lightbox" data-nav-modal @click="closePairingLightbox">
-      <div class="lightbox-content" @click.stop>
-        <img :src="pairingQrLightboxDataUrl" :alt="pairingUrl" class="qr-large" />
-        <p class="pairing-url lightbox-url">{{ pairingUrl }}</p>
-        <button type="button" class="tile action lightbox-close" data-nav-close @click="closePairingLightbox">
-          {{ t('settings.pairing.close') }}
-        </button>
-      </div>
-    </div>
+    <PairingForm
+      v-else
+      :server-url="status?.server_url"
+      :default-name="status?.hostname"
+      @paired="onPaired"
+    />
   </div>
 </template>
 
@@ -322,75 +208,4 @@ h2 {
   font-weight: 600;
 }
 .status-block { margin-top: 0.5rem; }
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  max-width: 28rem;
-}
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-.optional { color: var(--text-dim); font-weight: normal; }
-.code-input {
-  font-size: 1.75rem;
-  letter-spacing: 0.4em;
-  text-align: center;
-}
-.generate-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-}
-.pairing-url {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: 0.9rem;
-  padding: 0.5rem 0.8rem;
-  background: var(--panel, rgba(255, 255, 255, 0.06));
-  border-radius: 0.4rem;
-}
-.qr-code {
-  display: block;
-  margin-top: 0.9rem;
-  width: 160px;
-  height: 160px;
-  background: #fff;
-  padding: 0.5rem;
-  border-radius: 0.4rem;
-}
-.lightbox {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-.lightbox-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.25rem;
-  max-width: 90vw;
-}
-.qr-large {
-  width: min(70vh, 70vw);
-  height: min(70vh, 70vw);
-  background: #fff;
-  padding: 1.5rem;
-  border-radius: 0.8rem;
-}
-.lightbox-url {
-  color: var(--text-dim);
-  text-align: center;
-}
-.lightbox-close {
-  padding: 0.9rem 2rem;
-  font-size: 1.1rem;
-}
 </style>

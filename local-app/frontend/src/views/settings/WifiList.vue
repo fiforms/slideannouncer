@@ -1,11 +1,13 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
 
+const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const networkBase = route.meta.networkBase || '/settings/network'
 const accessPoints = ref([])
 const loading = ref(true)
 const error = ref(null)
@@ -27,7 +29,7 @@ onMounted(scan)
 
 function select(ap) {
   router.push({
-    path: `/settings/network/wifi/${encodeURIComponent(ap.ssid)}`,
+    path: `${networkBase}/wifi/${encodeURIComponent(ap.ssid)}`,
     query: { secured: ap.security ? '1' : '0' },
   })
 }

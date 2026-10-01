@@ -19,6 +19,13 @@ per-device from the server once paired.
   `device_name`/`entity_name`.
 - [x] Precedence confirmed: server always wins once paired, never reverts
   to the boot-yaml hint while paired.
+- [x] The first-run setup wizard's Welcome screen saves a device-chosen
+  language (`POST /api/local/language` → `pairing.LOCAL_LANGUAGE_FILE`,
+  `/data/status/language-local`). Precedence is now server > device >
+  boot-yaml (`read_effective_language()`), and `pair()` offers the device
+  choice to the server ahead of the boot-yaml hint. `language_source` on
+  `/api/local/status` can now also be `"device"`. Settings > System has
+  the same picker (read-only while a server-assigned language exists).
 - [ ] Still open: document the boot-yaml `language` key in
   `provisioning/README.md` / `docs/` alongside the other boot-yaml keys.
 

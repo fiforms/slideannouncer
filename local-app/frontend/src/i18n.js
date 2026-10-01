@@ -8,6 +8,12 @@ import es from './locales/es.json'
 // falls back to English rather than showing an empty/undefined locale.
 export const SUPPORTED_LOCALES = ['en', 'es']
 
+// Language pickers (setup wizard's Welcome step, Settings > System): each
+// language named in itself, so it's readable whichever one the screen is
+// currently showing.
+const LANGUAGE_NAMES = { en: 'English', es: 'Español' }
+export const LANGUAGE_OPTIONS = SUPPORTED_LOCALES.map((code) => ({ value: code, label: LANGUAGE_NAMES[code] || code }))
+
 export const i18n = createI18n({
   legacy: false,
   locale: 'en',

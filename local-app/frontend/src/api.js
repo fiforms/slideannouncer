@@ -92,7 +92,25 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }),
   networkServerCheck: () => request('/api/local/network/server-check'),
-  networkPortalSignIn: () => request('/api/local/network/portal/sign-in', { method: 'POST' }),
+  networkPortalSignIn: (returnPath) =>
+    request('/api/local/network/portal/sign-in', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ return_path: returnPath }),
+    }),
+  setLanguage: (language) =>
+    request('/api/local/language', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language }),
+    }),
+  setDeviceName: (deviceName) =>
+    request('/api/local/device-name', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_name: deviceName }),
+    }),
+  completeSetup: () => request('/api/local/setup/complete', { method: 'POST' }),
   revelationEnabled: () => request('/api/local/revelation/enabled'),
   setRevelationEnabled: (enabled) =>
     request('/api/local/revelation/enabled', {

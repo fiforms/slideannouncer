@@ -9,6 +9,7 @@ const props = defineProps({ ssid: { type: String, required: true } })
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const networkBase = route.meta.networkBase || '/settings/network'
 
 const secured = route.query.secured !== '0'
 const password = ref('')
@@ -57,7 +58,7 @@ const openingPortal = ref(false)
 async function signInToPortal() {
   openingPortal.value = true
   try {
-    await openCaptivePortal()
+    await openCaptivePortal(networkBase)
   } catch (err) {
     errorMessage.value = err.message
     openingPortal.value = false
@@ -66,7 +67,7 @@ async function signInToPortal() {
 
 function done() {
   clearInterval(redirectTimer)
-  router.replace('/settings/network')
+  router.replace(networkBase)
 }
 
 const CONNECTIVITY_KEYS = ['full', 'limited', 'portal', 'none', 'unknown']

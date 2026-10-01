@@ -43,6 +43,7 @@
             "language": "Language",
             "languageSourceServer": "set by entity admin",
             "languageSourceBootYaml": "device default",
+            "languageSourceDevice": "set on this device",
             "paired": "Paired",
             "notPairedHint": "Not paired yet — see \"Pairing\" in the left panel.",
             "softwareUpdate": "Software Update",
@@ -258,6 +259,49 @@
             "revelationHint": "Let a Revelation presenter on your network take over this display for a live presentation.",
             "srtSinkHint": "Receive a live video feed (OBS, vMix, etc.) from your church network over SRT.",
             "featureOffHint": "This feature is turned off — switch it on in Settings > Advanced."
+        }
+    },
+    "setup": {
+        "steps": {
+            "welcome": "Welcome",
+            "network": "Network",
+            "name": "Name",
+            "pairing": "Pairing",
+            "done": "Done"
+        },
+        "back": "Back",
+        "next": "Next",
+        "skip": "Skip for now",
+        "welcome": {
+            "title": "Welcome to Slide Announcer",
+            "intro": "Let's get this device ready. It only takes a few minutes.",
+            "languageLabel": "Language"
+        },
+        "network": {
+            "title": "Connect to the internet",
+            "intro": "Connect this device to WiFi, or plug in a network cable.",
+            "checking": "Checking the network connection…"
+        },
+        "name": {
+            "title": "Name this device",
+            "intro": "Give this device a name that says where it is, like “Fellowship Hall” — or keep the default.",
+            "label": "Device Name or Location",
+            "hostname": "Network name: {hostname}",
+            "paired": "This device is paired as “{name}”. You can rename it from the AnnouncementSlides website."
+        },
+        "pairing": {
+            "title": "Pair with your church",
+            "paired": "This device is paired with {entity}.",
+            "pairedNoEntity": "This device is paired."
+        },
+        "done": {
+            "titlePaired": "You're all set!",
+            "titleUnpaired": "Setup finished",
+            "slidesNote": "The first time, it may take a few minutes for slides to download and appear.",
+            "unpairedNote": "This device isn't paired yet, so it has no slides to show. You can pair it any time from Settings > Pairing — press the Menu button on the remote to open Settings.",
+            "restartNote": "The device will restart once to apply its new name.",
+            "start": "Start Slideshow",
+            "restarting": "Restarting…"
         }
     }
 }

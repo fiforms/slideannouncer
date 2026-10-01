@@ -33,7 +33,7 @@ PROBE_URL = "http://connectivitycheck.gstatic.com/generate_204"
 PROBE_TIMEOUT_SECONDS = 5.0
 CDP_PORT = 9222
 KIOSK_ORIGIN = "http://localhost"
-RETURN_URL = f"{KIOSK_ORIGIN}/settings/network"
+DEFAULT_RETURN_PATH = "/settings/network"
 WATCH_INTERVAL_SECONDS = 3.0
 WATCH_TIMEOUT_SECONDS = 600.0
 
@@ -99,7 +99,7 @@ def _cdp_navigate(url: str) -> None:
         ws.close()
 
 
-async def _watch() -> None:
+async def _watch(return_url: str) -> None:
     deadline = time.monotonic() + WATCH_TIMEOUT_SECONDS
     left_home = False
     while True:
@@ -119,19 +119,23 @@ async def _watch() -> None:
             continue
         if not at_home:
             try:
-                await asyncio.to_thread(_cdp_navigate, f"{RETURN_URL}?portal={'timeout' if timed_out else 'done'}")
+                await asyncio.to_thread(_cdp_navigate, f"{return_url}?portal={'timeout' if timed_out else 'done'}")
             except Exception as exc:  # noqa: BLE001 - nothing more to do; Back key still works
                 print(f"[captive-portal] couldn't return kiosk to settings: {exc}", flush=True)
         return
 
 
-async def start_sign_in() -> str:
+async def start_sign_in(return_path: str | None = None) -> str:
     """Portal URL for the kiosk tab to open, with the return watcher
     (re)started. Falls back to the probe URL itself, which any portal
-    still intercepting traffic will answer with its sign-in page."""
+    still intercepting traffic will answer with its sign-in page.
+    `return_path` is the kiosk page to come back to — only a local path,
+    so this can't be pointed off-device."""
     global _watch_task
+    if not return_path or not return_path.startswith("/") or return_path.startswith("//"):
+        return_path = DEFAULT_RETURN_PATH
     result = await probe()
     if _watch_task and not _watch_task.done():
         _watch_task.cancel()
-    _watch_task = asyncio.create_task(_watch())
+    _watch_task = asyncio.create_task(_watch(f"{KIOSK_ORIGIN}{return_path}"))
     return result["portal_url"] or PROBE_URL

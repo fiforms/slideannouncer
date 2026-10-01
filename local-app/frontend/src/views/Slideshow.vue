@@ -1,12 +1,15 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '../api.js'
 import { setLocale } from '../i18n.js'
+import { setSetupRequired } from '../setupState.js'
 import { settings, refreshShows, activeShow } from '../slideshowState.js'
 import { menuOpen } from '../menuOverlay.js'
 import { startSrtStream, stopSrtStream, setDebugOverlay } from '../srtStreamPlayer.js'
 
+const router = useRouter()
 const { t } = useI18n()
 
 // Unattended kiosk display — mirrors the web slideshow's crossfade/timing
@@ -362,6 +365,12 @@ async function refreshStatus() {
     // Keeps the on-screen language current with whatever the server (or,
     // pre-pairing, the boot-yaml hint) reports — see i18n.js's setLocale().
     setLocale(status.value.language)
+    // main.js's boot-time check missed it (backend not up yet) — hand a
+    // fresh device over to the setup wizard now instead.
+    if (status.value.setup_complete === false) {
+      setSetupRequired(true)
+      router.replace('/setup')
+    }
   } catch {
     // Attention indicator just won't update this cycle.
   }

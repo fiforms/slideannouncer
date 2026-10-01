@@ -73,6 +73,19 @@ ENTITY_NAME_FILE = Path("/data/status/entity-name")
 # DEVICE_NAME_FILE/ENTITY_NAME_FILE. Always wins over LANGUAGE_BOOT_HINT_FILE
 # once it exists; see read_effective_language().
 LANGUAGE_FILE = Path("/data/status/language")
+# Language picked on the device itself — the first-run setup wizard's
+# Welcome screen (frontend views/setup/SetupWelcome.vue). Sits between the
+# two above in read_effective_language(): overrides the boot-yaml hint,
+# but a server-assigned LANGUAGE_FILE still wins once one arrives. Not in
+# WIPE_PATHS — like audio-output, it's a property of where the device is,
+# not of its pairing (a factory reset still clears it with the rest of
+# /data).
+LOCAL_LANGUAGE_FILE = Path("/data/status/language-local")
+# Present once the first-run setup wizard has been finished (or skipped
+# through). See is_setup_complete(). Not in WIPE_PATHS either: an unpair
+# drops the device back to an unpaired slideshow, not back into the
+# wizard — only a factory reset (which reformats /data) does that.
+SETUP_COMPLETE_FILE = Path("/data/status/setup-complete")
 # Which physical output PipeWire should default to — "hdmi" (the TV, via
 # the same cable driving the display) or "headphones" (the Pi's analogue
 # jack, e.g. feeding a church PA). Purely a device-local hardware
@@ -273,14 +286,87 @@ def read_language_boot_hint() -> str | None:
     return data.get("code")
 
 
+def read_local_language() -> str | None:
+    if not LOCAL_LANGUAGE_FILE.exists():
+        return None
+    return LOCAL_LANGUAGE_FILE.read_text().strip() or None
+
+
+def write_local_language(code: str) -> None:
+    LOCAL_LANGUAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    LOCAL_LANGUAGE_FILE.write_text(code)
+    LOCAL_LANGUAGE_FILE.chmod(0o644)
+
+
+def read_language_source() -> str | None:
+    """Which layer read_effective_language() is answering from — "server",
+    "device" (picked in the setup wizard) or "boot_yaml"."""
+    if read_language():
+        return "server"
+    if read_local_language():
+        return "device"
+    if read_language_boot_hint():
+        return "boot_yaml"
+    return None
+
+
 def read_effective_language() -> str | None:
     """The language the device should actually use right now: the
     server-assigned value once paired (authoritative and never reverts to
-    the boot-yaml hint while paired — see LOCALIZATION_TODO.md), falling
-    back to provisioning/firstboot.py's boot-yaml hint before pairing or if
-    the server hasn't assigned one yet.
+    a local value while paired — see LOCALIZATION_TODO.md), else the one
+    picked in the setup wizard, else provisioning/firstboot.py's boot-yaml
+    hint.
     """
-    return read_language() or read_language_boot_hint()
+    return read_language() or read_local_language() or read_language_boot_hint()
+
+
+def is_setup_complete() -> bool:
+    """False only on a fresh (or factory-reset) device that hasn't been
+    through the first-run wizard yet. A paired device always counts as set
+    up — covers devices paired before the wizard existed, and one paired
+    in the wizard but powered off before its final screen."""
+    return SETUP_COMPLETE_FILE.exists() or is_paired()
+
+
+def mark_setup_complete() -> None:
+    SETUP_COMPLETE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SETUP_COMPLETE_FILE.touch()
+    SETUP_COMPLETE_FILE.chmod(0o644)
+
+
+def _fallback_hostname() -> str:
+    device_uuid = identity.get_device_uuid()
+    return identity.derive_numeric_hostname(device_uuid) if device_uuid else "slideannouncer"
+
+
+def set_local_device_name(device_name: str) -> str:
+    """Names an unpaired device from the setup wizard — the same
+    device-name/hostname pair pair() writes, minus the server's
+    sibling_hostnames collision check (pairing re-derives the hostname
+    with that check anyway). Returns the hostname, which takes effect on
+    the next reboot (firstboot.py's set_hostname())."""
+    name = device_name.strip()
+    hostname = slugify_hostname(name) or _fallback_hostname()
+    if name:
+        write_device_name(name)
+    write_hostname(hostname)
+    return hostname
+
+
+def hostname_change_pending(current_hostname: str) -> bool:
+    """True when HOSTNAME_FILE holds a name the OS isn't using yet, i.e. a
+    reboot would rename this device. A `hostname` hand-set in the boot
+    yaml always wins in set_hostname(), so nothing is pending then."""
+    wanted = read_hostname()
+    if not wanted or wanted == current_hostname:
+        return False
+    config = {}
+    if BOOT_YAML.exists():
+        try:
+            config = yaml.safe_load(BOOT_YAML.read_text()) or {}
+        except yaml.YAMLError:
+            pass
+    return not config.get("hostname")
 
 
 def read_paired_at() -> str | None:
@@ -307,7 +393,7 @@ async def pair(code: str, device_name: str) -> dict:
         "mac_address": identity.get_mac_address(),
         "device_uuid": identity.get_device_uuid(),
     }
-    language_hint = read_language_boot_hint()
+    language_hint = read_local_language() or read_language_boot_hint()
     if language_hint:
         payload["language"] = language_hint
 
@@ -338,10 +424,7 @@ async def pair(code: str, device_name: str) -> dict:
     # sibling_hostnames comment. Takes effect on the next reboot, same as
     # a hand-set `hostname` in slideannouncer.yaml always has (see
     # firstboot.py's set_hostname()).
-    device_uuid = identity.get_device_uuid()
-    slug = slugify_hostname(device_name) or (
-        identity.derive_numeric_hostname(device_uuid) if device_uuid else "slideannouncer"
-    )
+    slug = slugify_hostname(device_name) or _fallback_hostname()
     taken = set(data.get("sibling_hostnames") or [])
     hostname, suffix = slug, 2
     while hostname in taken:
