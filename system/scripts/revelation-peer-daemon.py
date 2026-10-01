@@ -61,6 +61,8 @@ REPAIR_CODES = {"not-paired", "invalid-signature", "invalid-pin", "pin-lockout"}
 # endpoints — duplicated here rather than imported, same reasoning as the
 # signature-verification helper below.
 REVELATION_DISPLAY_SETTINGS_FILE = Path("/data/status/revelation-display-settings.json")
+# Settings > Advanced on/off switch — see revelation.py's REVELATION_ENABLED_FILE.
+REVELATION_ENABLED_FILE = Path("/data/status/revelation-enabled")
 
 KIOSK_URL = "http://localhost/kiosk"
 CDP_PORT = 9222
@@ -113,6 +115,19 @@ def follower_auth_message(purpose: str, master_id: str, follower_id: str, nonce:
 def socket_message(token: str, expires_at, socket_path: str) -> bytes:
     digest = hashlib.sha256(f"{token}:{expires_at}:{socket_path}".encode()).hexdigest()
     return f"revelation-peer-socket:v1:{digest}".encode()
+
+
+def revelation_enabled() -> bool:
+    """Settings > Advanced's switch (revelation.py's read_enabled()). Absent
+    reads as enabled here — revelation.py's own default (on only if a
+    master is already paired) only differs when there are no peers, and
+    then there's nothing for this daemon to connect to anyway."""
+    if not REVELATION_ENABLED_FILE.exists():
+        return True
+    try:
+        return REVELATION_ENABLED_FILE.read_text().strip() == "1"
+    except OSError:
+        return True
 
 
 def read_peers() -> list[dict]:
@@ -375,7 +390,14 @@ def peer_worker(peer: dict, own_instance_id: str, discovery: _DiscoveryListener,
                 },
                 wait_timeout=HTTP_TIMEOUT_SECONDS,
             )
-            client.wait()  # blocks until disconnected
+            # Not client.wait(): poll so an unpair or the Advanced switch
+            # being turned off (stop_event) actually drops the connection,
+            # instead of leaving it up until the master next disconnects.
+            while client.connected and not stop_event.wait(1):
+                pass
+            if client.connected:
+                client.disconnect()
+                return
         except Exception as exc:  # noqa: BLE001 - any connect/transport failure just triggers a retry
             log(f"{peer['name']} ({instance_id}) connection error: {exc}")
             if any(code in str(exc) for code in ("not-paired", "invalid-signature")):
@@ -402,7 +424,9 @@ def main() -> None:
 
     try:
         while True:
-            peers = read_peers()
+            # Switched off in Settings > Advanced: treat it exactly like
+            # every master being unpaired, which stops every worker below.
+            peers = read_peers() if revelation_enabled() else []
             paired_ids = {peer["instanceId"] for peer in peers}
 
             for instance_id in list(workers):

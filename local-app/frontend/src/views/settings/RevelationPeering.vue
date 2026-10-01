@@ -275,7 +275,7 @@ onUnmounted(() => clearInterval(statusInterval))
         </label>
         <p v-if="pairError" class="pill warn">{{ pairError }}</p>
         <div class="button-row">
-          <button type="button" class="tile" @click="cancelPairing">{{ t('common.cancel') }}</button>
+          <button type="button" class="tile" data-nav-close @click="cancelPairing">{{ t('common.cancel') }}</button>
           <button type="submit" class="tile action" :disabled="pairing || !pin">
             {{ pairing ? t('settings.revelation.pairing') : t('settings.revelation.pair') }}
           </button>
@@ -312,7 +312,6 @@ h2 { font-size: 1.1rem; margin-bottom: 0.5rem; }
 .label { color: var(--text-dim); }
 .actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
 .actions .action { padding: 0.6rem 1.1rem; font-size: 0.95rem; }
-.actions .action:disabled { opacity: 0.6; cursor: default; }
 .actions .action.active {
   border-color: var(--accent, #6c8cff);
   color: var(--accent, #6c8cff);

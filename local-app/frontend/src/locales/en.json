@@ -23,11 +23,11 @@
     "settingsLayout": {
         "backToSlideshow": "← Back to slideshow",
         "system": "System",
-        "screens": "Screens",
         "network": "Network",
-        "videoReceiver": "Video Receiver",
+        "videoReceiver": "LAN Video Receiver",
         "revelationPeering": "Revelation Peering",
-        "pairing": "Pairing"
+        "pairing": "Pairing",
+        "advanced": "Advanced"
     },
     "settings": {
         "system": {
@@ -180,6 +180,23 @@
                 "portal": "Sign-in required",
                 "none": "No internet",
                 "unknown": "Unknown"
+            },
+            "hostname": "Hostname",
+            "showAdvanced": "Advanced Info",
+            "hideAdvanced": "Hide Advanced Info",
+            "advancedTitle": "Advanced Info",
+            "portalTitle": "Sign-in Required",
+            "portalHint": "This network needs you to sign in on a web page before it lets the device online. The page opens full screen — use the remote's pointer and keyboard to sign in. You'll be brought back here automatically once you're online (or press Back to return).",
+            "portalSignIn": "Sign In to Network",
+            "portalDone": "Signed in — you're online.",
+            "portalTimeout": "Sign-in didn't finish within 10 minutes, so you've been brought back here.",
+            "remoteServer": "Slide Server",
+            "server": {
+                "checking": "Checking…",
+                "ok": "Reachable",
+                "error": "Server error",
+                "unreachable": "Unreachable",
+                "unconfigured": "Not configured"
             }
         },
         "wifiList": {
@@ -197,9 +214,12 @@
             "hide": "Hide",
             "connect": "Connect",
             "connecting": "Connecting to {ssid}…",
-            "connected": "Connected",
-            "connectivityCheck": "Connectivity check: {connectivity}",
-            "done": "Done"
+            "done": "Done",
+            "successTitle": "You're online!",
+            "successDetail": "Connected to {ssid}, and the internet is reachable.",
+            "limitedTitle": "Connected, but no internet",
+            "limitedDetail": "Joined {ssid}, but the internet check says: {connectivity}.",
+            "returning": "Returning to Network settings in {seconds}…"
         },
         "deviceTools": {
             "title": "Device Restart, Reset & Debugging",
@@ -226,6 +246,12 @@
             "hint": "Press a button on the remote. Each row is a raw {code} the page received, oldest at the bottom. If a button produces no row at all, the keypress isn't reaching Chromium — check labwc/evdev instead.",
             "time": "Time",
             "waitingForKeypress": "Waiting for a keypress…"
+        },
+        "advanced": {
+            "featuresTitle": "Optional Features",
+            "revelationHint": "Let a Revelation presenter on your network take over this display for a live presentation.",
+            "srtSinkHint": "Receive a live video feed (OBS, vMix, etc.) from your church network over SRT.",
+            "featureOffHint": "This feature is turned off — switch it on in Settings > Advanced."
         }
     }
 }

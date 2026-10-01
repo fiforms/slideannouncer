@@ -15,11 +15,13 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket
 from pydantic import BaseModel
 
+import captive_portal
 import heartbeat
 import network
 import pairing
 import pinning
 import revelation
+import server_check
 import srt_sink
 import srt_stream_bridge
 import sync
@@ -184,6 +186,20 @@ async def network_connect(body: ConnectRequest):
     return {"connectivity": status.connectivity, "status": status}
 
 
+@app.get("/api/local/network/server-check")
+async def network_server_check():
+    # Separate from /network/status so a slow or dead server never holds
+    # up the rest of the Network page.
+    return await server_check.check()
+
+
+@app.post("/api/local/network/portal/sign-in")
+async def network_portal_sign_in():
+    # Frontend navigates the kiosk tab to this URL; captive_portal's
+    # watcher brings it back to Settings > Network once online.
+    return {"url": await captive_portal.start_sign_in()}
+
+
 class ForgetRequest(BaseModel):
     ssid: str
 
@@ -332,6 +348,20 @@ def srt_sink_client_log(body: SrtSinkClientLogRequest):
 async def revelation_scan():
     discovered = await asyncio.to_thread(revelation.discover)
     return {"discovered": discovered}
+
+
+@app.get("/api/local/revelation/enabled")
+def revelation_enabled_status():
+    return {"enabled": revelation.read_enabled()}
+
+
+class RevelationEnabledRequest(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/local/revelation/enabled")
+def revelation_enabled_set(body: RevelationEnabledRequest):
+    return {"enabled": revelation.write_enabled(body.enabled)}
 
 
 @app.get("/api/local/revelation/status")

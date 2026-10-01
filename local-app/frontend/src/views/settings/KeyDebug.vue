@@ -70,7 +70,7 @@ table {
 th, td {
   padding: 0.3rem 0.9rem 0.3rem 0;
   text-align: left;
-  border-bottom: 1px solid var(--panel-hover);
+  border-bottom: var(--line) solid var(--panel-hover);
 }
 th { color: var(--text-dim); font-weight: 600; }
 </style>

@@ -75,7 +75,7 @@ watch(menuOpen, (open) => {
   max-height: 80vh;
   overflow-y: auto;
   background: var(--panel);
-  border: 1px solid var(--border);
+  border: var(--line) solid var(--border);
   border-radius: 1rem;
   padding: 1.5rem;
 }
@@ -91,7 +91,7 @@ watch(menuOpen, (open) => {
   border-color: var(--accent);
 }
 .menu-divider {
-  border-top: 1px solid var(--border);
+  border-top: var(--line) solid var(--border);
   margin: 0.25rem 0;
 }
 </style>

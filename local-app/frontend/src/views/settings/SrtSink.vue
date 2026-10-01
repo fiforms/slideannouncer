@@ -14,7 +14,6 @@ const connectUrl = ref(null)
 const debugOverlay = ref(false)
 const qrDataUrl = ref(null)
 const qrLightboxDataUrl = ref(null)
-const saving = ref(false)
 const regenerating = ref(false)
 const savingDebugOverlay = ref(false)
 const error = ref(null)
@@ -91,19 +90,6 @@ async function load() {
   }
 }
 
-async function setEnabled(value) {
-  if (value === localEnabled.value || saving.value) return
-  saving.value = true
-  error.value = null
-  try {
-    applyStatus(await api.setSrtSink(value))
-  } catch (err) {
-    error.value = err.message
-  } finally {
-    saving.value = false
-  }
-}
-
 async function regenerate() {
   regenerating.value = true
   error.value = null
@@ -158,26 +144,10 @@ onMounted(load)
       <h2>{{ t('settings.srtSink.title') }}</h2>
       <p class="hint">{{ t('settings.srtSink.hint') }}</p>
 
-      <div class="toggle-row" role="group">
-        <button
-          type="button"
-          class="toggle-button"
-          :class="{ active: !saving && localEnabled }"
-          :disabled="saving"
-          @click="setEnabled(true)"
-        >
-          {{ t('settings.srtSink.enabled') }}
-        </button>
-        <button
-          type="button"
-          class="toggle-button"
-          :class="{ active: !saving && !localEnabled }"
-          :disabled="saving"
-          @click="setEnabled(false)"
-        >
-          {{ t('settings.srtSink.disabled') }}
-        </button>
-      </div>
+      <!-- On/off lives in Settings > Advanced (this page is only in the
+           rail while it's on) — this is just a fallback if someone lands
+           here with it off. -->
+      <p v-if="!localEnabled" class="hint">{{ t('settings.advanced.featureOffHint') }}</p>
 
       <p v-if="localEnabled && !serverAllows" class="pill warn">
         {{ t('settings.srtSink.serverDisabled') }}
@@ -254,10 +224,10 @@ onMounted(load)
       </div>
     </section>
 
-    <div v-if="lightboxOpen" class="lightbox" @click="closeLightbox">
+    <div v-if="lightboxOpen" class="lightbox" data-nav-modal @click="closeLightbox">
       <div class="lightbox-content" @click.stop>
         <img :src="qrLightboxDataUrl" :alt="t('settings.srtSink.connectWith')" class="qr-large" />
-        <button type="button" class="tile action lightbox-close" @click="closeLightbox">
+        <button type="button" class="tile action lightbox-close" data-nav-close @click="closeLightbox">
           {{ t('settings.srtSink.close') }}
         </button>
       </div>
@@ -289,12 +259,9 @@ h2 {
   font-size: 1.1rem;
   font-weight: 600;
   border-radius: 0.6rem;
-  border: 2px solid var(--panel-hover, rgba(255, 255, 255, 0.12));
+  border: var(--line-thick) solid var(--panel-hover, rgba(255, 255, 255, 0.12));
   background: transparent;
   color: var(--text);
-}
-.toggle-button:disabled {
-  opacity: 0.6;
 }
 .toggle-button.active {
   border-color: var(--accent, #6c8cff);

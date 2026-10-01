@@ -83,6 +83,15 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
     }),
+  networkServerCheck: () => request('/api/local/network/server-check'),
+  networkPortalSignIn: () => request('/api/local/network/portal/sign-in', { method: 'POST' }),
+  revelationEnabled: () => request('/api/local/revelation/enabled'),
+  setRevelationEnabled: (enabled) =>
+    request('/api/local/revelation/enabled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    }),
   revelationScan: () => request('/api/local/revelation/scan'),
   revelationStatus: () => request('/api/local/revelation/status'),
   revelationPair: (host, port, pin) =>

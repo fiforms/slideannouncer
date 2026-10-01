@@ -9,6 +9,27 @@
   --accent: #4f8cff;
   --danger: #ff6b6b;
   --ok: #4caf50;
+  /* Settings pane that currently has remote focus (SettingsLayout.vue) —
+     between --bg and --panel so tiles inside it still stand out. */
+  --zone-active: #141b24;
+  --zone-active-border: rgba(79, 140, 255, 0.35);
+  /* Line widths scale with the screen like everything else here (see the
+     html font-size note below): a fixed 1px border is half as thick on a
+     4K panel as at 1080p, thin enough that TVs visibly shimmer on it.
+     Each lands on its old fixed width at 1080p and roughly 2-3x at 4K
+     (Chromium snaps border widths down to whole device pixels). */
+  --line: max(1px, 0.14vh);
+  --line-thick: max(2px, 0.2vh);
+  --focus-ring: max(3px, 0.28vh);
+  --focus-offset: max(2px, 0.19vh);
+  /* Disabled buttons: a solid mid-grey (about halfway from --panel to
+     --text) with dark text, so "can't press this" reads at a glance from
+     across a room instead of relying on a faint opacity change. */
+  --disabled-bg: #6f7781;
+  --disabled-text: #262d36;
+  --title-bar-bg: #a9b7c8;
+  --title-bar-text: #10151c;
+  --title-bar-dim: #34404d;
 }
 
 * {
@@ -53,14 +74,14 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 li:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 2px;
+  outline: var(--focus-ring) solid var(--accent);
+  outline-offset: var(--focus-offset);
 }
 
 .tile,
 .list-item {
   background: var(--panel);
-  border: 1px solid var(--border);
+  border: var(--line) solid var(--border);
   border-radius: 0.75rem;
   color: var(--text);
   text-align: left;
@@ -88,10 +109,66 @@ li:focus-visible {
 input[type="text"],
 input[type="password"] {
   background: var(--bg);
-  border: 1px solid var(--border);
+  border: var(--line) solid var(--border);
   color: var(--text);
   border-radius: 0.5rem;
   padding: 0.75rem 1rem;
   font-size: 1.1rem;
   cursor: text;
+}
+
+/* Settings page body: a column of .tile.panel boxes, sized to fit one
+   TV screen without scrolling (System.vue, DeviceTools.vue). */
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  max-width: 40rem;
+}
+.panel {
+  padding: 0.8rem 1.2rem;
+}
+
+/* Heading bar across the top of a settings box (.tile panel): soft
+   blue-grey bar, dark centered heading, inset a little from the box's own
+   rounded edges. Expects the box's padding to be 0.8rem 1.2rem — the
+   negative margins pull the bar out to 0.35rem from each edge. Always a
+   wrapper around an <h2>: the three-column grid keeps the heading centered
+   while an optional extra (a status pill) sits at the right end. */
+.panel-title {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 1rem;
+  margin: -0.45rem -0.85rem 0.75rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.45rem;
+  background: var(--title-bar-bg);
+  color: var(--title-bar-text);
+}
+.panel-title h2 {
+  grid-column: 2;
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  text-align: center;
+}
+.panel-title > :not(h2) {
+  grid-column: 3;
+  justify-self: end;
+}
+.panel-title .label { color: var(--title-bar-dim); }
+.panel-title .pill.ok { background: rgba(46, 125, 50, 0.15); color: #2e7d32; }
+.panel-title .pill.warn { background: rgba(198, 40, 40, 0.12); color: #c62828; }
+
+/* !important: views' own scoped button variants (.action.danger,
+   .action.active, .toggle-button…) carry higher specificity than any
+   global selector could, and disabled has to win over all of them. */
+button:disabled,
+button:disabled:hover {
+  background: var(--disabled-bg) !important;
+  border-color: var(--disabled-bg) !important;
+  color: var(--disabled-text) !important;
+  opacity: 1 !important;
+  cursor: not-allowed;
 }

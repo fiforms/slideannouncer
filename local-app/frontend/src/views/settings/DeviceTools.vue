@@ -84,16 +84,15 @@ async function factoryReset() {
 </script>
 
 <template>
-  <div>
-    <h1>{{ t('settings.deviceTools.title') }}</h1>
-
-    <section class="block">
-      <h2>{{ t('settings.deviceTools.restartTitle') }}</h2>
+  <!-- Same layout as System.vue (which links here): no page title, one
+       .panel box per section with a .panel-title heading bar, compact
+       enough to fit the screen without scrolling. -->
+  <div class="settings-page">
+    <section class="tile panel">
+      <div class="panel-title"><h2>{{ t('settings.deviceTools.restartTitle') }}</h2></div>
       <p class="hint">{{ t('settings.deviceTools.restartHint') }}</p>
 
-      <div v-if="rebooting" class="status-block">
-        <p class="pill warn">{{ t('settings.deviceTools.rebooting') }}</p>
-      </div>
+      <p v-if="rebooting" class="pill warn">{{ t('settings.deviceTools.rebooting') }}</p>
       <div v-else-if="!confirmingReboot" class="actions">
         <button class="tile action" @click="confirmingReboot = true">{{ t('settings.deviceTools.restartButton') }}</button>
         <button class="tile action" :disabled="sleeping" @click="sleepDisplay">
@@ -104,26 +103,24 @@ async function factoryReset() {
         <button class="tile action danger" @click="reboot">{{ t('settings.deviceTools.restartConfirm') }}</button>
         <button class="tile action" @click="confirmingReboot = false">{{ t('common.cancel') }}</button>
       </div>
-      <p v-if="rebootError" class="pill warn">{{ rebootError }}</p>
-      <p v-if="sleepError" class="pill warn">{{ sleepError }}</p>
-      <p class="hint">{{ t('settings.deviceTools.sleepHint') }}</p>
+      <p v-if="rebootError" class="pill warn note">{{ rebootError }}</p>
+      <p v-if="sleepError" class="pill warn note">{{ sleepError }}</p>
+      <p class="hint note">{{ t('settings.deviceTools.sleepHint') }}</p>
     </section>
 
-    <section class="block">
-      <h2>{{ t('settings.deviceTools.factoryResetTitle') }}</h2>
-      <p class="hint">
-        {{ t('settings.deviceTools.factoryResetHint') }}
-      </p>
+    <section class="tile panel">
+      <div class="panel-title"><h2>{{ t('settings.deviceTools.factoryResetTitle') }}</h2></div>
+      <p class="hint">{{ t('settings.deviceTools.factoryResetHint') }}</p>
 
-      <div v-if="resetting" class="status-block">
-        <p class="pill warn">{{ t('settings.deviceTools.resetting') }}</p>
-      </div>
+      <p v-if="resetting" class="pill warn">{{ t('settings.deviceTools.resetting') }}</p>
       <div v-else-if="!confirmingReset" class="actions">
         <button class="tile action danger" @click="confirmingReset = true">{{ t('settings.deviceTools.factoryResetButton') }}</button>
       </div>
+      <!-- Confirm word field and its buttons on one row, so the confirm
+           step doesn't grow the box (and push the page into scrolling). -->
       <div v-else class="confirm-form">
         <label class="field">
-          <span>{{ t('settings.deviceTools.typeToConfirm', { word: RESET_CONFIRM_WORD }) }}</span>
+          <span class="label">{{ t('settings.deviceTools.typeToConfirm', { word: RESET_CONFIRM_WORD }) }}</span>
           <input type="text" v-model="resetConfirmText" autofocus autocomplete="off">
         </label>
         <div class="actions">
@@ -137,34 +134,35 @@ async function factoryReset() {
           <button class="tile action" @click="confirmingReset = false; resetConfirmText = ''">{{ t('common.cancel') }}</button>
         </div>
       </div>
-      <p v-if="resetError" class="pill warn">{{ resetError }}</p>
+      <p v-if="resetError" class="pill warn note">{{ resetError }}</p>
     </section>
 
-    <section class="block">
-      <h2>{{ t('settings.deviceTools.keyDebugTitle') }}</h2>
-      <p class="hint">{{ t('settings.deviceTools.keyDebugHint') }}</p>
-      <router-link to="/settings/keydebug" class="tile action key-debug-link">{{ t('settings.deviceTools.openKeyDebug') }}</router-link>
+    <section class="tile panel">
+      <div class="panel-title"><h2>{{ t('settings.deviceTools.keyDebugTitle') }}</h2></div>
+      <div class="inline-row">
+        <p class="hint">{{ t('settings.deviceTools.keyDebugHint') }}</p>
+        <router-link to="/settings/keydebug" class="tile action key-debug-link">{{ t('settings.deviceTools.openKeyDebug') }}</router-link>
+      </div>
     </section>
   </div>
 </template>
 
 <style scoped>
-h1 { margin-top: 0; }
-.block {
-  max-width: 32rem;
-  margin-bottom: 2.5rem;
-}
-h2 {
-  font-size: 1.1rem;
-  margin-bottom: 0.5rem;
-}
 .hint {
   color: var(--text-dim);
-  margin-top: 0;
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+}
+.note {
+  margin: 0.6rem 0 0;
+}
+.label {
+  color: var(--text-dim);
+  font-weight: 600;
 }
 .action {
-  padding: 0.9rem 1.6rem;
-  font-size: 1.05rem;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
 }
 .action.danger {
   border-color: var(--danger);
@@ -173,21 +171,34 @@ h2 {
 .actions {
   display: flex;
   gap: 1rem;
+  margin-top: 0.35rem;
 }
-.status-block { margin-top: 0.5rem; }
 .confirm-form {
   display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  align-items: flex-start;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.3rem;
+}
+.field input {
+  padding: 0.55rem 0.9rem;
+  font-size: 1rem;
+}
+.inline-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+.inline-row .hint {
+  flex: 1;
+  margin: 0;
 }
 .key-debug-link {
-  display: inline-block;
+  flex: none;
   text-decoration: none;
 }
 </style>

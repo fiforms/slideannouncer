@@ -30,7 +30,7 @@ let countdownTimer = null
 const dotCount = computed(() => pin.value?.length ?? 4)
 
 function goToSettings() {
-  router.replace(route.query.redirect || '/settings/system')
+  router.replace(route.query.redirect || '/settings')
 }
 
 function revertToKiosk() {
@@ -141,7 +141,7 @@ onUnmounted(() => {
   width: 1.1rem;
   height: 1.1rem;
   border-radius: 50%;
-  border: 2px solid var(--border);
+  border: var(--line-thick) solid var(--border);
   background: transparent;
 }
 .dot--filled {

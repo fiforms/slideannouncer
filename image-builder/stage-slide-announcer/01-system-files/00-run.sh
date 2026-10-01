@@ -54,6 +54,7 @@ install -m 755 files/system/scripts/apply-audio-output.sh "${ROOTFS_DIR}/usr/loc
 install -m 755 files/system/scripts/apply-screen-resolution.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-screen-resolution"
 install -m 755 files/system/scripts/volume-key-monitor.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-volume-key-monitor"
 install -m 755 files/system/scripts/revelation-peer-daemon.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-revelation-peer"
+install -m 755 files/system/scripts/paint-debug.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-paint-debug"
 
 # HandlePowerKey=ignore: without it, systemd-logind's own default power-key
 # handling (suspend) races slide-announcer-power-button.service for the

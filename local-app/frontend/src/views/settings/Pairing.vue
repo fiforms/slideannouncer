@@ -262,11 +262,11 @@ function goToSlideshow() {
       </button>
     </form>
 
-    <div v-if="pairingLightboxOpen" class="lightbox" @click="closePairingLightbox">
+    <div v-if="pairingLightboxOpen" class="lightbox" data-nav-modal @click="closePairingLightbox">
       <div class="lightbox-content" @click.stop>
         <img :src="pairingQrLightboxDataUrl" :alt="pairingUrl" class="qr-large" />
         <p class="pairing-url lightbox-url">{{ pairingUrl }}</p>
-        <button type="button" class="tile action lightbox-close" @click="closePairingLightbox">
+        <button type="button" class="tile action lightbox-close" data-nav-close @click="closePairingLightbox">
           {{ t('settings.pairing.close') }}
         </button>
       </div>

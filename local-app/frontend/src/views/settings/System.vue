@@ -180,151 +180,187 @@ async function updateNow() {
 </script>
 
 <template>
-  <div>
-    <h1>{{ t('settings.system.title') }}</h1>
-
-    <section class="block">
-      <h2>{{ t('settings.system.deviceInfo') }}</h2>
-      <dl v-if="deviceStatus" class="info-grid">
-        <dt>{{ t('settings.system.deviceLabel') }}</dt>
-        <dd v-if="deviceStatus.paired">{{ deviceStatus.device_name ?? '—' }}</dd>
-        <dd v-else class="hint">{{ t('settings.system.notPairedYet') }}</dd>
-        <dt>{{ t('settings.system.pairedEntity') }}</dt><dd>{{ deviceStatus.entity_name ?? '—' }}</dd>
-        <dt>{{ t('settings.system.deviceUuid') }}</dt><dd>{{ deviceStatus.device_uuid ?? '—' }}</dd>
-        <dt>{{ t('settings.system.currentOsVersion') }}</dt><dd>{{ versions.image_version || '—' }}</dd>
-        <dt>{{ t('settings.system.currentAppVersion') }}</dt><dd>{{ versions.app_version || '—' }}</dd>
-        <dt>{{ t('settings.system.language') }}</dt>
-        <dd>
+  <!-- No page title — the rail's highlighted "System" item already says
+       where you are, and this page needs every row of vertical space to
+       fit a 1080p/4K TV without scrolling. -->
+  <div class="settings-page">
+    <section class="tile panel">
+      <div class="panel-title"><h2>{{ t('settings.system.deviceInfo') }}</h2></div>
+      <!-- Not-paired shows as the Paired Entity value itself (with the
+           pointer to the Pairing page) rather than a separate Paired
+           yes/no row plus a hint paragraph. -->
+      <div v-if="deviceStatus" class="info-grid">
+        <span class="label">{{ t('settings.system.deviceLabel') }}</span>
+        <span class="value">{{ (deviceStatus.paired && deviceStatus.device_name) || '—' }}</span>
+        <span class="label">{{ t('settings.system.pairedEntity') }}</span>
+        <span v-if="deviceStatus.paired" class="value">{{ deviceStatus.entity_name ?? '—' }}</span>
+        <span v-else class="value">{{ t('settings.system.notPairedHint') }}</span>
+        <span class="label">{{ t('settings.network.hostname') }}</span>
+        <span class="value">{{ deviceStatus.hostname || '—' }}</span>
+        <span class="label">{{ t('settings.system.language') }}</span>
+        <span class="value">
           {{ deviceStatus.language || '—' }}
           <span v-if="deviceStatus.language_source" class="hint">
             ({{ deviceStatus.language_source === 'server' ? t('settings.system.languageSourceServer') : t('settings.system.languageSourceBootYaml') }})
           </span>
-        </dd>
-        <dt>{{ t('settings.system.paired') }}</dt><dd>{{ deviceStatus.paired ? t('common.yes') : t('common.no') }}</dd>
-      </dl>
-      <p v-if="deviceStatus && !deviceStatus.paired" class="hint">
-        {{ t('settings.system.notPairedHint') }}
-      </p>
+        </span>
+      </div>
     </section>
 
-    <section class="block">
-      <div class="tile result">
+    <section class="tile panel">
+      <!-- The short "up to date / update available" status sits on the
+           heading row itself rather than a row of its own below it. -->
+      <div class="panel-title">
         <h2>{{ t('settings.system.softwareUpdate') }}</h2>
-
-        <!-- An update is running (this tab's click, another tab's click, or the
-             nightly timer) — the progress block replaces the check result
-             entirely while it's active, since neither is meaningful until it's
-             done. -->
-        <div v-if="updateRunning">
-          <div class="row">
-            <span class="label">{{ t('settings.system.inProgress', { label: progressLabel }) }}</span>
-            <span v-if="progress?.version">{{ t('settings.system.version', { version: progress.version }) }}</span>
-          </div>
-          <p class="hint" style="margin: 0 0 0.6rem;">{{ progress?.phase || t('settings.system.working') }}</p>
-          <div class="progress-track">
-            <div
-              class="progress-fill"
-              :class="{ indeterminate: progress?.percent == null }"
-              :style="progress?.percent != null ? { width: progress.percent + '%' } : {}"
-            />
-          </div>
-          <p v-if="progress?.percent != null" class="hint" style="margin: 0.35rem 0 0; text-align: right;">
-            {{ progress.percent }}%
-          </p>
-        </div>
-
-        <p v-else-if="checkResult && !updateInfo" class="pill warn">
-          {{ checkResult.output || t('settings.system.noUsableResult') }}
-        </p>
-
-        <div v-else-if="updateInfo">
-          <div v-if="nextUpdate" class="row">
+        <template v-if="!updateRunning && updateInfo">
+          <span v-if="nextUpdate" class="head-status">
             <span class="label">{{ t('settings.system.updateAvailable') }}</span>
             <span class="pill warn">
               {{ nextUpdateTag }}
               {{ t('settings.system.version', { version: nextUpdate.version }) }}
             </span>
-          </div>
-          <p v-else class="pill ok">{{ t('settings.system.upToDate') }}</p>
+          </span>
+          <span v-else class="pill ok">{{ t('settings.system.upToDate') }}</span>
+        </template>
+      </div>
 
-          <p v-if="nextUpdate?.kind === 'os' && nextUpdate.releaseType === 'full'" class="hint">
-            {{ t('settings.system.fullOsRebootHint') }}
-          </p>
+      <div class="versions">
+        <span class="version-item">
+          <span class="label">{{ t('settings.system.currentOsVersion') }}</span>
+          <span class="value">{{ versions.image_version || '—' }}</span>
+        </span>
+        <span class="version-item">
+          <span class="label">{{ t('settings.system.currentAppVersion') }}</span>
+          <span class="value">{{ versions.app_version || '—' }}</span>
+        </span>
+      </div>
+
+      <!-- An update is running (this tab's click, another tab's click, or the
+           nightly timer) — the progress block replaces the check result
+           entirely while it's active, since neither is meaningful until it's
+           done. -->
+      <div v-if="updateRunning" class="progress-block">
+        <div class="row">
+          <span class="label">{{ t('settings.system.inProgress', { label: progressLabel }) }}</span>
+          <span v-if="progress?.version">{{ t('settings.system.version', { version: progress.version }) }}</span>
         </div>
-
-        <div class="actions">
-          <button class="tile action" :disabled="checking || updateRunning" @click="checkForUpdate">
-            {{ checking ? t('settings.system.checking') : t('settings.system.checkForUpdate') }}
-          </button>
-          <button class="tile action" :disabled="!nextUpdate || updateRunning" @click="updateNow">
-            {{ t('settings.system.updateNow') }}
-          </button>
+        <p class="hint" style="margin: 0 0 0.4rem;">{{ progress?.phase || t('settings.system.working') }}</p>
+        <div class="progress-track">
+          <div
+            class="progress-fill"
+            :class="{ indeterminate: progress?.percent == null }"
+            :style="progress?.percent != null ? { width: progress.percent + '%' } : {}"
+          />
         </div>
-
-        <p v-if="checkError" class="pill warn">{{ checkError }}</p>
-        <p v-if="applyError" class="pill warn">{{ applyError }}</p>
-        <p v-if="!updateRunning && progress?.done" class="pill ok">
-          {{ progress.result === 'installed' || progress.result === 'success'
-            ? t('settings.system.updateInstalled')
-            : progress.result === 'tryboot_triggered'
-              ? t('settings.system.updateStaged')
-              : t('settings.system.updateResult', { result: progress.result || 'unknown' }) }}
+        <p v-if="progress?.percent != null" class="hint" style="margin: 0.25rem 0 0; text-align: right;">
+          {{ progress.percent }}%
         </p>
       </div>
-    </section>
 
-    <section class="block">
-      <div class="tile result">
-        <h2>{{ t('settings.system.audioOutput') }}</h2>
-        <div class="actions">
-          <button
-            class="tile action"
-            :class="{ active: audioOutput === 'hdmi' }"
-            :disabled="audioOutputSaving"
-            @click="selectAudioOutput('hdmi')"
-          >
-            {{ t('settings.system.audioOutputHdmi') }}
-          </button>
-          <button
-            class="tile action"
-            :class="{ active: audioOutput === 'headphones' }"
-            :disabled="audioOutputSaving"
-            @click="selectAudioOutput('headphones')"
-          >
-            {{ t('settings.system.audioOutputHeadphones') }}
-          </button>
-        </div>
-        <p v-if="audioOutputError" class="pill warn">{{ audioOutputError }}</p>
+      <p v-else-if="checkResult && !updateInfo" class="pill warn note">
+        {{ checkResult.output || t('settings.system.noUsableResult') }}
+      </p>
+
+      <p v-else-if="nextUpdate?.kind === 'os' && nextUpdate.releaseType === 'full'" class="hint note">
+        {{ t('settings.system.fullOsRebootHint') }}
+      </p>
+
+      <div class="actions">
+        <button class="tile action" :disabled="checking || updateRunning" @click="checkForUpdate">
+          {{ checking ? t('settings.system.checking') : t('settings.system.checkForUpdate') }}
+        </button>
+        <button class="tile action" :disabled="!nextUpdate || updateRunning" @click="updateNow">
+          {{ t('settings.system.updateNow') }}
+        </button>
       </div>
+
+      <p v-if="checkError" class="pill warn note">{{ checkError }}</p>
+      <p v-if="applyError" class="pill warn note">{{ applyError }}</p>
+      <p v-if="!updateRunning && progress?.done" class="pill ok note">
+        {{ progress.result === 'installed' || progress.result === 'success'
+          ? t('settings.system.updateInstalled')
+          : progress.result === 'tryboot_triggered'
+            ? t('settings.system.updateStaged')
+            : t('settings.system.updateResult', { result: progress.result || 'unknown' }) }}
+      </p>
     </section>
 
-    <section class="block">
+    <section class="tile panel">
+      <div class="panel-title"><h2>{{ t('settings.system.audioOutput') }}</h2></div>
+      <div class="actions">
+        <button
+          class="tile action"
+          :class="{ active: audioOutput === 'hdmi' }"
+          :disabled="audioOutputSaving"
+          @click="selectAudioOutput('hdmi')"
+        >
+          {{ t('settings.system.audioOutputHdmi') }}
+        </button>
+        <button
+          class="tile action"
+          :class="{ active: audioOutput === 'headphones' }"
+          :disabled="audioOutputSaving"
+          @click="selectAudioOutput('headphones')"
+        >
+          {{ t('settings.system.audioOutputHeadphones') }}
+        </button>
+      </div>
+      <p v-if="audioOutputError" class="pill warn note">{{ audioOutputError }}</p>
+    </section>
+
+    <div>
       <router-link to="/settings/device-tools" class="tile action device-tools-link">
         {{ t('settings.system.deviceToolsLink') }}
       </router-link>
-    </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
-h1 { margin-top: 0; }
-.block {
-  max-width: 32rem;
-  margin-bottom: 2.5rem;
-}
-h2 {
-  font-size: 1.1rem;
-  margin-bottom: 0.5rem;
+.head-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 .hint {
   color: var(--text-dim);
   margin-top: 0;
 }
-.action {
-  padding: 0.9rem 1.6rem;
-  font-size: 1.05rem;
+.note {
+  margin: 0.6rem 0 0;
 }
-.action:disabled { opacity: 0.6; cursor: default; }
+/* Label column (bold, dim) + value column (normal, full-white text) —
+   the same pairing .versions uses inline in the Software Update box. */
+.info-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 1.5rem;
+}
+.label {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+/* On the light heading bar (style.css .panel-title) — this scoped rule
+   would otherwise outrank the bar's own darker label color. */
+.panel-title .label { color: var(--title-bar-dim); }
+.value {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.versions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 2.5rem;
+  margin-bottom: 0.75rem;
+}
+.version-item {
+  display: flex;
+  gap: 0.75rem;
+}
+.action {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+}
 .action.active {
   border-color: var(--accent, #6c8cff);
   color: var(--accent, #6c8cff);
@@ -336,17 +372,14 @@ h2 {
 .actions {
   display: flex;
   gap: 1rem;
+  margin-top: 0.35rem;
 }
-.result {
-  padding: 1.25rem 1.5rem;
-}
-.result h2 { margin-top: 0; }
+.progress-block { margin-bottom: 0.6rem; }
 .row {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.4rem;
 }
-.label { color: var(--text-dim); }
 .progress-track {
   height: 0.6rem;
   border-radius: 999px;
@@ -367,13 +400,6 @@ h2 {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(250%); }
 }
-.info-grid {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.4rem 1.5rem;
-  margin: 0 0 1rem;
-}
-.info-grid dt { color: var(--text-dim); }
 .device-tools-link {
   display: inline-block;
   text-decoration: none;

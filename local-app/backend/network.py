@@ -12,6 +12,8 @@ import asyncio
 import re
 from dataclasses import dataclass, field
 
+import captive_portal
+
 
 class NetworkCommandError(RuntimeError):
     """`nmcli` ran but returned a non-zero exit status."""
@@ -53,6 +55,8 @@ class NetworkStatus:
     gateway: str | None = None
     dns_servers: list[str] = field(default_factory=list)
     connectivity: str | None = None  # "full" | "limited" | "portal" | "none" | "unknown"
+    # Where a captive portal's sign-in page is, when connectivity == "portal".
+    portal_url: str | None = None
 
 
 def _prefix_to_subnet_mask(prefix: int) -> str:
@@ -104,9 +108,9 @@ async def get_status() -> NetworkStatus:
                 dns_servers.append(dns)
 
     try:
-        connectivity = await check_connectivity()
+        connectivity, portal_url = await check_connectivity()
     except NetworkCommandError:
-        connectivity = "unknown"
+        connectivity, portal_url = "unknown", None
 
     ssid = None
     signal = None
@@ -132,6 +136,7 @@ async def get_status() -> NetworkStatus:
         gateway=gateway,
         dns_servers=dns_servers,
         connectivity=connectivity,
+        portal_url=portal_url,
     )
 
 
@@ -207,10 +212,24 @@ async def connect(ssid: str, password: str | None) -> None:
     await _run(*args, timeout=30)
 
 
-async def check_connectivity() -> str:
-    """One of NetworkManager's own states: full | limited | portal | none."""
-    out = await _run("networking", "connectivity", "check", timeout=10)
-    return out.strip()
+async def check_connectivity() -> tuple[str, str | None]:
+    """(state, portal_url) — state is one of NetworkManager's own
+    full | limited | portal | none. NM's answer alone can't be trusted for
+    "full": this image never configures NM's connectivity check URI, and
+    without one NM says "full" for any connection with a default route,
+    captive portal or not. So a "full" (or a "portal", for its URL) is
+    double-checked with captive_portal.probe()."""
+    nm_state = (await _run("networking", "connectivity", "check", timeout=10)).strip()
+    if nm_state not in ("full", "portal"):
+        return nm_state, None
+    result = await captive_portal.probe()
+    if result["state"] == "portal":
+        return "portal", result["portal_url"]
+    if result["state"] == "none":
+        # Connected with a route, but the probe got nowhere — no way out
+        # to the internet (or that one host is blocked).
+        return "limited", None
+    return "full", None
 
 
 async def forget(ssid: str) -> None:
