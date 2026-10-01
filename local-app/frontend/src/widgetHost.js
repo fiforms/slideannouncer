@@ -44,9 +44,14 @@ function createApi(placement, locale) {
   return Object.freeze({
     mode: 'live',
     locale,
-    // Resolves to { data, fetched_at, stale }; rejects with WidgetDataError.
-    async fetch(endpoint) {
-      const url = placement.data_url.replace('__endpoint__', encodeURIComponent(endpoint))
+    // fetch(endpoint, args?) resolves to { data, fetched_at, stale };
+    // rejects with WidgetDataError. Runtime args (e.g. a forecast's
+    // lat/lon) travel as ?args[name]=value and are checked server-side.
+    async fetch(endpoint, args) {
+      const query = new URLSearchParams()
+      for (const [k, v] of Object.entries(args ?? {})) query.append(`args[${k}]`, String(v))
+      const base = placement.data_url.replace('__endpoint__', encodeURIComponent(endpoint))
+      const url = query.toString() ? `${base}?${query}` : base
       const res = await fetch(url, { headers: { Accept: 'application/json' } })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) throw new WidgetDataError(body.error ?? 'unavailable', res.status)

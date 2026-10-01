@@ -204,3 +204,26 @@ def test_malformed_references_are_never_forwarded(monkeypatch, args):
 
     assert fetch(monkeypatch, server, *args)[0] == 404
     assert calls == []
+
+
+def test_runtime_args_are_forwarded_and_cached_separately(monkeypatch):
+    seen = []
+
+    def server(request):
+        seen.append(dict(request.url.params))
+        lat = request.url.params.get("args[lat]")
+        return httpx.Response(200, json={"data": {"lat": lat}, "stale": False})
+
+    items = [("args[lat]", "34.07"), ("args[lon]", "-118.4"), ("args[../x]", "1"), ("other", "y")]
+    status, body = fetch(monkeypatch, server, 42, "as-el-1", "forecast", items)
+    assert status == 200 and body["data"]["lat"] == "34.07"
+    assert seen == [{"args[lat]": "34.07", "args[lon]": "-118.4"}]
+
+    fetch(monkeypatch, server, 42, "as-el-1", "forecast", [("args[lat]", "35.5"), ("args[lon]", "-80")])
+
+    def offline(request):
+        raise httpx.ConnectError("down")
+
+    # Each lat/lon keeps its own last-good copy.
+    assert fetch(monkeypatch, offline, 42, "as-el-1", "forecast", items)[1]["data"]["lat"] == "34.07"
+    assert fetch(monkeypatch, offline, 42, "as-el-1", "forecast", [("args[lon]", "-80"), ("args[lat]", "35.5")])[1]["data"]["lat"] == "35.5"

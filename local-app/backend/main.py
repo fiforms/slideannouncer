@@ -13,7 +13,7 @@ import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -126,10 +126,10 @@ def slideshow():
 
 
 @app.get("/api/local/widget-data/{overlay_id}/{element}/{endpoint}")
-async def widget_data(overlay_id: int, element: str, endpoint: str):
+async def widget_data(overlay_id: int, element: str, endpoint: str, request: Request):
     # A widget's api.fetch() — forwarded to the server by reference (never
     # a URL), with the last good answer served while offline. widgets.py.
-    status, body = await widgets.fetch_data(overlay_id, element, endpoint)
+    status, body = await widgets.fetch_data(overlay_id, element, endpoint, request.query_params.multi_items())
     return JSONResponse(body, status_code=status, headers={
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "no-store",

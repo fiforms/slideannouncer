@@ -48,6 +48,8 @@ VERSION_RE = re.compile(r"^\d{1,5}\.\d{1,5}\.\d{1,5}([-+][0-9A-Za-z.-]{1,40})?$"
 FILE_RE = re.compile(r"^[A-Za-z0-9._\-/@ ]+$")
 ELEMENT_RE = re.compile(r"^as-el-\d{1,6}$")
 ENDPOINT_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
+ARG_KEY_RE = re.compile(r"^args\[([a-z][a-z0-9_]{0,39})\]$")
+MAX_ARGS = 10
 
 # Passed straight back to the kiosk: the server's answer is final for these
 # (e.g. a slide editor hasn't set the calendar address yet).
@@ -175,8 +177,20 @@ def placements_for_playlist(entry: dict, index: dict) -> list:
     return out
 
 
-def _cache_file(overlay_id: int, element: str, endpoint: str) -> Path:
-    key = hashlib.sha1(f"{overlay_id}/{element}/{endpoint}".encode()).hexdigest()
+def _clean_args(query_items) -> dict:
+    """Runtime args from the kiosk's `?args[name]=value` — well-formed
+    names and short scalar values only; anything else in the query is
+    dropped. The server does the real validation against the manifest."""
+    args = {}
+    for key, value in query_items or []:
+        m = ARG_KEY_RE.match(key)
+        if m and len(value) <= 200 and len(args) < MAX_ARGS:
+            args[m.group(1)] = value
+    return dict(sorted(args.items()))
+
+
+def _cache_file(overlay_id: int, element: str, endpoint: str, args: dict) -> Path:
+    key = hashlib.sha1(f"{overlay_id}/{element}/{endpoint}?{json.dumps(args)}".encode()).hexdigest()
     return DATA_CACHE_DIR / f"{key}.json"
 
 
@@ -188,13 +202,14 @@ def _cached(path: Path):
     return {**saved["body"], "stale": True}
 
 
-async def fetch_data(overlay_id: int, element: str, endpoint: str) -> tuple[int, dict]:
+async def fetch_data(overlay_id: int, element: str, endpoint: str, query_items=None) -> tuple[int, dict]:
     """(status, JSON body) for the kiosk. Only well-formed ids are ever
     forwarded, and only to the paired server's widget-data endpoint."""
     if not ELEMENT_RE.match(element) or not ENDPOINT_RE.match(endpoint) or overlay_id < 1:
         return 404, {"error": "not_found"}
 
-    cache = _cache_file(overlay_id, element, endpoint)
+    args = _clean_args(query_items)
+    cache = _cache_file(overlay_id, element, endpoint, args)
     token = pairing.read_device_token()
     if not token:
         return (200, cached) if (cached := _cached(cache)) else (503, {"error": "not_paired"})
@@ -204,6 +219,7 @@ async def fetch_data(overlay_id: int, element: str, endpoint: str) -> tuple[int,
         async with httpx.AsyncClient(timeout=DATA_TIMEOUT_SECONDS) as client:
             resp = await client.get(
                 f"{server_url}/api/slide-announcers/widget-data/{overlay_id}/{element}/{endpoint}",
+                params={f"args[{k}]": v for k, v in args.items()},
                 headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
             )
         body = resp.json()
