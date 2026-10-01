@@ -3,6 +3,7 @@ import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import QRCode from 'qrcode'
 import { api } from '../../api.js'
+import ToggleSwitch from '../../components/ToggleSwitch.vue'
 
 const { t } = useI18n()
 
@@ -12,7 +13,6 @@ const effectiveEnabled = ref(false)
 const passphrase = ref('')
 const connectUrl = ref(null)
 const debugOverlay = ref(false)
-const qrDataUrl = ref(null)
 const qrLightboxDataUrl = ref(null)
 const regenerating = ref(false)
 const savingDebugOverlay = ref(false)
@@ -59,11 +59,10 @@ function applyStatus(data) {
 
 // Generated client-side (no qrencode/system package needed) — the URL is
 // already fully known from the API response, so there's nothing a
-// server-rendered image would add. Two sizes: a small inline preview, and
-// a much larger one for the lightbox — meant to be read by a phone camera
+// server-rendered image would add. Lightbox-sized only (no inline preview,
+// to keep the page from scrolling) — meant to be read by a phone camera
 // from normal TV-viewing distance, not up close at the kiosk screen.
 watch(connectUrl, async (url) => {
-  qrDataUrl.value = url ? await QRCode.toDataURL(url, { width: 220, margin: 1 }) : null
   qrLightboxDataUrl.value = url ? await QRCode.toDataURL(url, { width: 720, margin: 2 }) : null
 }, { immediate: true })
 
@@ -137,90 +136,69 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
-    <h1>{{ t('settingsLayout.videoReceiver') }}</h1>
-
-    <section class="block">
-      <h2>{{ t('settings.srtSink.title') }}</h2>
-      <p class="hint">{{ t('settings.srtSink.hint') }}</p>
+  <div class="settings-page">
+    <section class="tile panel">
+      <div class="panel-title"><h2>{{ t('settingsLayout.videoReceiver') }}</h2></div>
+      <p class="hint">{{ t('settings.srtSink.intro') }}</p>
 
       <!-- On/off lives in Settings > Advanced (this page is only in the
            rail while it's on) — this is just a fallback if someone lands
            here with it off. -->
-      <p v-if="!localEnabled" class="hint">{{ t('settings.advanced.featureOffHint') }}</p>
+      <p v-if="!localEnabled" class="hint note">{{ t('settings.advanced.featureOffHint') }}</p>
+      <p v-else-if="!serverAllows" class="pill warn note">{{ t('settings.srtSink.serverDisabled') }}</p>
 
-      <p v-if="localEnabled && !serverAllows" class="pill warn">
-        {{ t('settings.srtSink.serverDisabled') }}
-      </p>
-
-      <template v-if="localEnabled">
-        <div v-if="passphrase" class="field">
+      <div v-if="localEnabled && (passphrase || connectUrl)" class="info-grid">
+        <template v-if="passphrase">
           <span class="label">{{ t('settings.srtSink.passphrase') }}</span>
-          <div class="passphrase-row">
-            <code>{{ passphrase }}</code>
-            <button type="button" class="tile action" :disabled="regenerating" @click="regenerate">
-              {{ regenerating ? t('settings.srtSink.regenerating') : t('settings.srtSink.regenerate') }}
-            </button>
-          </div>
-        </div>
-
-        <div v-if="connectUrl" class="field">
+          <code>{{ passphrase }}</code>
+          <button type="button" class="tile action" :disabled="regenerating" @click="regenerate">
+            {{ regenerating ? t('settings.srtSink.regenerating') : t('settings.srtSink.regenerate') }}
+          </button>
+        </template>
+        <template v-if="connectUrl">
           <span class="label">{{ t('settings.srtSink.connectWith') }}</span>
-          <div class="connect-url-row">
-            <code class="connect-url">{{ connectUrl }}</code>
-            <button type="button" class="tile action" @click="openLightbox">
-              {{ t('settings.srtSink.displayQrCode') }}
-            </button>
-          </div>
-          <img v-if="qrDataUrl" :src="qrDataUrl" :alt="t('settings.srtSink.connectWith')" class="qr-code" />
-        </div>
-      </template>
-
-      <p v-if="error" class="pill warn">{{ error }}</p>
-    </section>
-
-    <section v-if="localEnabled" class="block">
-      <h2>{{ t('settings.srtSink.latencyTitle') }}</h2>
-      <p class="hint">{{ t('settings.srtSink.latencyHint') }}</p>
-
-      <div class="latency-row">
-        <input
-          type="range"
-          min="0"
-          :max="SRT_LATENCY_STOPS_MS.length - 1"
-          step="1"
-          :value="srtLatencyIndex"
-          :disabled="savingLatency"
-          class="latency-slider"
-          @change="setSrtLatency(Number($event.target.value))"
-        />
-        <span class="latency-value">{{ SRT_LATENCY_STOPS_MS[srtLatencyIndex] }} ms</span>
+          <code class="connect-url">{{ connectUrl }}</code>
+          <button type="button" class="tile action" @click="openLightbox">
+            {{ t('settings.srtSink.displayQrCode') }}
+          </button>
+        </template>
       </div>
+      <p v-if="error" class="pill warn note">{{ error }}</p>
     </section>
 
-    <section class="block">
-      <h2>{{ t('settings.srtSink.debugOverlayTitle') }}</h2>
-      <p class="hint">{{ t('settings.srtSink.debugOverlayHint') }}</p>
+    <section v-if="localEnabled" class="tile panel">
+      <div class="panel-title"><h2>{{ t('settings.srtSink.playbackTitle') }}</h2></div>
 
-      <div class="toggle-row" role="group">
-        <button
-          type="button"
-          class="toggle-button"
-          :class="{ active: !savingDebugOverlay && debugOverlay }"
+      <div class="setting">
+        <div class="setting-text">
+          <span class="setting-name">{{ t('settings.srtSink.latencyTitle') }}</span>
+          <span class="hint">{{ t('settings.srtSink.latencyHint') }}</span>
+        </div>
+        <div class="latency-row">
+          <input
+            type="range"
+            min="0"
+            :max="SRT_LATENCY_STOPS_MS.length - 1"
+            step="1"
+            :value="srtLatencyIndex"
+            :disabled="savingLatency"
+            class="latency-slider"
+            @change="setSrtLatency(Number($event.target.value))"
+          />
+          <span class="latency-value">{{ SRT_LATENCY_STOPS_MS[srtLatencyIndex] }} ms</span>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-text">
+          <span class="setting-name">{{ t('settings.srtSink.debugOverlayTitle') }}</span>
+          <span class="hint">{{ t('settings.srtSink.debugOverlayHint') }}</span>
+        </div>
+        <ToggleSwitch
+          :model-value="debugOverlay"
           :disabled="savingDebugOverlay"
-          @click="setDebugOverlaySetting(true)"
-        >
-          {{ t('settings.srtSink.debugOverlayEnabled') }}
-        </button>
-        <button
-          type="button"
-          class="toggle-button"
-          :class="{ active: !savingDebugOverlay && !debugOverlay }"
-          :disabled="savingDebugOverlay"
-          @click="setDebugOverlaySetting(false)"
-        >
-          {{ t('settings.srtSink.debugOverlayDisabled') }}
-        </button>
+          @update:model-value="setDebugOverlaySetting"
+        />
       </div>
     </section>
 
@@ -236,90 +214,51 @@ onMounted(load)
 </template>
 
 <style scoped>
-h1 { margin-top: 0; }
-.block {
-  max-width: 32rem;
-  margin-bottom: 2.5rem;
-}
-h2 {
-  font-size: 1.1rem;
-  margin-bottom: 0.5rem;
-}
-.hint {
-  color: var(--text-dim);
-}
-.toggle-row {
-  display: flex;
-  gap: 1rem;
-  margin: 1.25rem 0 1.5rem;
-}
-.toggle-button {
-  flex: 1;
-  padding: 1.1rem 1.5rem;
-  font-size: 1.1rem;
-  font-weight: 600;
-  border-radius: 0.6rem;
-  border: var(--line-thick) solid var(--panel-hover, rgba(255, 255, 255, 0.12));
-  background: transparent;
-  color: var(--text);
-}
-.toggle-button.active {
-  border-color: var(--accent, #6c8cff);
-  color: var(--accent, #6c8cff);
-  background: var(--panel, rgba(108, 140, 255, 0.08));
-}
-.field {
-  display: block;
-  margin-bottom: 1.25rem;
-}
-.label {
-  display: block;
-  margin-bottom: 0.4rem;
-  color: var(--text-dim);
-}
-.passphrase-row,
-.connect-url-row {
-  display: flex;
+.hint { color: var(--text-dim); margin: 0; font-size: 0.9rem; }
+.note { margin: 0.6rem 0 0; }
+.label { color: var(--text-dim); font-weight: 600; }
+/* label | value | button, one row each for passphrase and connect URL */
+.info-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.6rem 1rem;
+  margin-top: 0.9rem;
 }
-.passphrase-row code,
-.connect-url-row code {
-  font-size: 1.1rem;
-  padding: 0.5rem 0.8rem;
-  background: var(--panel, rgba(255, 255, 255, 0.06));
+.info-grid code {
+  padding: 0.4rem 0.7rem;
+  background: var(--bg);
   border-radius: 0.4rem;
   letter-spacing: 0.05em;
 }
-.connect-url-row {
-  align-items: flex-start;
-}
 .connect-url {
-  flex: 1;
-  min-width: 0;
   overflow-wrap: anywhere;
-  font-size: 0.9rem;
-  letter-spacing: normal;
+  font-size: 0.85rem;
+  letter-spacing: normal !important;
 }
 .action {
-  flex-shrink: 0;
-  padding: 0.6rem 1.1rem;
+  padding: 0.55rem 1.1rem;
   font-size: 0.95rem;
 }
-.qr-code {
-  display: block;
-  margin-top: 0.9rem;
-  width: 220px;
-  height: 220px;
-  background: #fff;
-  padding: 0.6rem;
-  border-radius: 0.4rem;
-}
-.latency-row {
+.setting {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
-  margin-top: 1rem;
+  gap: 1.5rem;
+  padding: 0.6rem 0;
+}
+.setting + .setting { border-top: var(--line) solid var(--border); }
+.setting-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.setting-name { font-weight: 600; }
+.latency-row {
+  flex: 0 0 45%;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
 }
 .latency-slider {
   flex: 1;
@@ -327,11 +266,10 @@ h2 {
 }
 .latency-value {
   flex-shrink: 0;
-  min-width: 5rem;
+  min-width: 4.5rem;
   text-align: right;
-  font-size: 1.1rem;
   font-weight: 600;
-  color: var(--accent, #6c8cff);
+  color: var(--accent);
 }
 .lightbox {
   position: fixed;

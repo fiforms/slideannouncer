@@ -33,9 +33,11 @@
 //
 // Modals (an open <dialog>, or any element marked data-nav-modal — the QR
 // lightboxes) scope arrow navigation to themselves and take focus when
-// they open; Back clicks their [data-nav-close] button; focus goes back to
-// where it was once they close. The Menu overlay is handled the same way,
-// plus its list wraps top↔bottom.
+// they open (their [autofocus] control, if any); Back clicks their
+// [data-nav-close] button, or failing that fires a `navclose` event on the
+// modal for it to close itself; focus goes back to where it was once they
+// close. data-nav-wrap makes Up/Down wrap top↔bottom inside one (Dropdown's
+// option list). The Menu overlay is handled the same way, and always wraps.
 //
 // Focus is also kept from silently disappearing: a focused button that
 // goes disabled mid-action (Check for Update while checking) gets focus
@@ -391,6 +393,14 @@ function syncFocus() {
       el.focus()
       return
     }
+    // Still there, just disabled for a moment (a Dropdown whose choice is
+    // saving) — make it the control recoverFocus() waits on, so focus
+    // comes back to it once it re-enables instead of going to whatever
+    // else is nearest the closed modal.
+    if (el.isConnected && isVisible(el)) {
+      lastFocused = el
+      lastRect = el.getBoundingClientRect()
+    }
   }
 
   const hasFocus = active && active !== document.body && isFocusable(active)
@@ -483,7 +493,8 @@ export function installRemoteNav(appRouter) {
       // Focus lost to a disabled/removed control — navigate from where it was.
       const from = hasFocus ? active.getBoundingClientRect() : lastRect
       let next = from ? findNext(from, direction, candidates, active) : candidates[0]
-      if (!next && menuOpen.value && (direction === 'up' || direction === 'down')) {
+      const wraps = menuOpen.value || activeModal()?.hasAttribute('data-nav-wrap')
+      if (!next && wraps && (direction === 'up' || direction === 'down')) {
         next = wrapCandidate(direction, candidates)
       }
       if (next) {
@@ -538,6 +549,9 @@ export function installRemoteNav(appRouter) {
         const close = modal.querySelector('[data-nav-close]')
         if (close) close.click()
         else if (modal.tagName === 'DIALOG') modal.close()
+        // No close button to click (a Dropdown's open list) — let the
+        // component close itself.
+        else modal.dispatchEvent(new CustomEvent('navclose'))
         return
       }
       if (settingsZone === 'content') {
