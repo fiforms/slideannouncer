@@ -11,8 +11,8 @@ same reasons heartbeat.py gives.
 
 Every entity now has one or more named, orderable "shows" instead of one
 flat slide list. The `/shows` endpoint returns every show belonging to the
-device's paired entity, each already server-resolved for order and
-language — **no `sort_order` field is provided**, on either the show list
+device's paired entity, each already server-resolved for order (every
+language is included; the device filters, see main.py) — **no `sort_order` field is provided**, on either the show list
 or a show's `slides` array: array order is display order, period.
 
 "New/changed" for a given slide is detected the same way it always was —
@@ -176,6 +176,10 @@ def _build_active_playlist(manifest: dict) -> list:
         slides = [
             {
                 "id": entry["id"],
+                # Language code (None = untagged, shows for everyone). Every
+                # language is synced; main.py's slideshow() filters by the
+                # device's current language at read time.
+                "language": entry.get("language"),
                 "media_url": f"/media/{entry['local_filename']}",
                 "mime_type": entry.get("mime_type"),
                 "video_playback_mode": entry.get("video_playback_mode"),

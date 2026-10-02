@@ -118,6 +118,16 @@ def _resolve_pinned_show_id(shows: list) -> str | None:
 @app.get("/api/local/slideshow")
 def slideshow():
     shows = sync.read_shows()
+    # Every language is synced to every device; only slides in this
+    # device's language (or untagged ones) play. Filtering here, at read
+    # time, means a language change applies at once rather than after the
+    # next sync. With no language known yet, nothing is filtered.
+    language = pairing.read_effective_language()
+    if language:
+        shows = [
+            {**show, "slides": [s for s in show["slides"] if s.get("language") in (None, language)]}
+            for show in shows
+        ]
     return {
         "shows": shows,
         "settings": sync.read_settings(),
