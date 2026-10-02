@@ -46,7 +46,7 @@ watch(menuOpen, (open) => {
         :class="{ 'list-item--active': show.id === pinnedShowId }"
         @click="selectShow(show)"
       >
-        <span>{{ show.name }}</span>
+        <span>{{ show.is_main ? t('menu.mainShow') : show.name }}</span>
         <span v-if="show.id === pinnedShowId" class="pill ok">{{ t('menu.playing') }}</span>
       </button>
       <div class="menu-divider" />

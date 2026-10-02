@@ -11,6 +11,7 @@
         "countdown": "Returning to slideshow in {seconds}s…"
     },
     "menu": {
+        "mainShow": "Main Show",
         "playing": "Playing",
         "settings": "Settings…"
     },

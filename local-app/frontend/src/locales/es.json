@@ -11,6 +11,7 @@
         "countdown": "Volviendo a la presentación en {seconds}s…"
     },
     "menu": {
+        "mainShow": "Programa Principal",
         "playing": "Reproduciendo",
         "settings": "Configuración…"
     },
