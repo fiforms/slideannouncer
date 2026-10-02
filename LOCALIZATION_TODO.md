@@ -95,3 +95,22 @@ per-device from the server once paired.
   option is adding the language cache file to that same list so it's wiped
   too and falls back to reading boot-yaml fresh on next boot — consistent
   with the factory-reset behavior above without extra special-casing.
+
+## 5. Two-way language sync (last change wins) — done
+
+Supersedes "server always wins" above. The language is one setting shared by
+the device UI, the slides and the website, changeable from either side.
+
+- Server: `slide_announcers.language_revision`, bumped by
+  `SlideAnnouncer::changeLanguage()` on every real change (web edit or
+  device-originated).
+- Device picks (setup wizard, Settings > Advanced) apply locally at once and
+  are queued (`language-pending`); the heartbeat sends them as
+  `language_change {code, base_revision}`, triggered immediately by
+  `POST /api/local/language` when paired.
+- The server applies the change only if `base_revision` equals its current
+  revision; otherwise a web edit landed first and the server's value wins.
+  Every heartbeat/pairing response returns the settled `language` +
+  `language_revision`, which the device stores (`pairing.apply_server_language()`).
+- A web edit reaches the device on its next heartbeat (≤ 5 min).
+- Settings > System now shows the language read-only.

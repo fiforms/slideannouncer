@@ -121,6 +121,16 @@ async def send_once() -> None:
         "hostname": socket.gethostname(),
     }
 
+    # A language picked on this device and not yet acknowledged — sent with
+    # the server revision it was picked against, so the server can tell it
+    # apart from a web edit made in the meantime (that one wins).
+    sent_language = pairing.read_pending_language()
+    if sent_language:
+        payload["language_change"] = {
+            "code": sent_language,
+            "base_revision": pairing.read_language_revision(),
+        }
+
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
@@ -157,13 +167,14 @@ async def send_once() -> None:
     # this without touching device_name at all.
     if response.get("entity_name"):
         pairing.write_entity_name(response["entity_name"])
-    # Server is authoritative for language once paired too — same
-    # rationale as device_name/entity_name above. Unlike those two fields,
-    # `language` can legitimately be absent (no language assigned to this
-    # device yet), in which case the boot-yaml hint from provisioning/
-    # firstboot.py keeps applying — see pairing.read_effective_language().
-    if response.get("language"):
-        pairing.write_language(response["language"])
+    # Language is one two-way setting: a web edit lands here, and a pick made
+    # on this device went up in `language_change` above. Either way the
+    # server's answer is the settled value — a stale device pick loses to a
+    # newer web edit. `language` is null until someone has set one, in which
+    # case the boot-yaml hint keeps applying (pairing.read_effective_language()).
+    pairing.apply_server_language(
+        response.get("language"), response.get("language_revision"), sent_language
+    )
     # Fleet-wide force-disable switch for SRT Sink (admin dashboard) — an
     # explicit false always overrides this device's own local Settings
     # toggle; see srt_sink.py's effective_enabled(). Missing key (older

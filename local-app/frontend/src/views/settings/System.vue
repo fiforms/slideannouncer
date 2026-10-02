@@ -2,17 +2,13 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
-import { setLocale, LANGUAGE_OPTIONS } from '../../i18n.js'
-import Dropdown from '../../components/Dropdown.vue'
+import { LANGUAGE_OPTIONS } from '../../i18n.js'
 
 const { t } = useI18n()
 
-// pairing.read_language_source() — "device" is the setup wizard's choice.
-const LANGUAGE_SOURCE_KEYS = {
-  server: 'settings.system.languageSourceServer',
-  device: 'settings.system.languageSourceDevice',
-  boot_yaml: 'settings.system.languageSourceBootYaml',
-}
+// Read-only here — the language is changed in Settings > Advanced (or on
+// the website), and is the same setting for the UI and the slides.
+const languageName = (code) => LANGUAGE_OPTIONS.find((o) => o.value === code)?.label || code || '—'
 
 const checking = ref(false)
 const checkError = ref(null)
@@ -24,28 +20,6 @@ const applyError = ref(null)
 const updateRunning = ref(false)
 const progress = ref(null)
 let progressTimer = null
-
-// Same device-level choice as the setup wizard's Welcome step (pairing.py's
-// LOCAL_LANGUAGE_FILE). Only editable while nothing outranks it: once an
-// entity admin assigns a language from the website, that always wins (see
-// read_effective_language()), so the row goes back to read-only.
-const languageSaving = ref(false)
-const languageError = ref(null)
-const languageEditable = computed(() => deviceStatus.value && deviceStatus.value.language_source !== 'server')
-
-async function selectLanguage(code) {
-  languageSaving.value = true
-  languageError.value = null
-  try {
-    const data = await api.setLanguage(code)
-    deviceStatus.value = { ...deviceStatus.value, ...data }
-    setLocale(data.language)
-  } catch (err) {
-    languageError.value = err.message
-  } finally {
-    languageSaving.value = false
-  }
-}
 
 const audioOutput = ref(null)
 const audioOutputSaving = ref(false)
@@ -229,22 +203,8 @@ async function updateNow() {
         <span class="label">{{ t('settings.network.hostname') }}</span>
         <span class="value">{{ deviceStatus.hostname || '—' }}</span>
         <span class="label">{{ t('settings.system.language') }}</span>
-        <span v-if="languageEditable" class="value">
-          <Dropdown
-            :model-value="deviceStatus.language || 'en'"
-            :options="LANGUAGE_OPTIONS"
-            :disabled="languageSaving"
-            @update:model-value="selectLanguage"
-          />
-        </span>
-        <span v-else class="value">
-          {{ deviceStatus.language || '—' }}
-          <span v-if="deviceStatus.language_source" class="hint">
-            ({{ t(LANGUAGE_SOURCE_KEYS[deviceStatus.language_source] || 'settings.system.languageSourceBootYaml') }})
-          </span>
-        </span>
+        <span class="value">{{ languageName(deviceStatus.language) }}</span>
       </div>
-      <p v-if="languageError" class="pill warn note">{{ languageError }}</p>
     </section>
 
     <section class="tile panel">

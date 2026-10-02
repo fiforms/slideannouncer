@@ -41,9 +41,6 @@
             "currentOsVersion": "Versión actual del sistema operativo",
             "currentAppVersion": "Versión actual de la app",
             "language": "Idioma",
-            "languageSourceServer": "definido por el administrador de la entidad",
-            "languageSourceBootYaml": "predeterminado del dispositivo",
-            "languageSourceDevice": "definido en este dispositivo",
             "paired": "Emparejado",
             "notPairedHint": "Aún no emparejado — vea \"Emparejamiento\" en el panel izquierdo.",
             "softwareUpdate": "Actualización de software",
@@ -253,6 +250,8 @@
             "waitingForKeypress": "Esperando una pulsación de tecla…"
         },
         "advanced": {
+            "languageTitle": "Idioma",
+            "languageHint": "Se usa para esta pantalla y las diapositivas que muestra. También cambia el idioma en el sitio web y sigue los cambios hechos allí.",
             "featuresTitle": "Funciones Opcionales",
             "revelationHint": "Permite que un presentador de Revelation en su red tome esta pantalla para una presentación en vivo.",
             "srtSinkHint": "Recibe una transmisión de video en vivo (OBS, vMix, etc.) desde la red de su iglesia mediante SRT.",

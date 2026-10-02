@@ -4,8 +4,29 @@ import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
 import { features, loadFeatures, setFeature } from '../../features.js'
 import ToggleSwitch from '../../components/ToggleSwitch.vue'
+import Dropdown from '../../components/Dropdown.vue'
+import { setLocale, LANGUAGE_OPTIONS } from '../../i18n.js'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+
+// One language for both this screen and the slides, shared with the
+// website: picking one here applies at once and is pushed to the server.
+const languageSaving = ref(false)
+const languageError = ref(null)
+
+async function selectLanguage(code) {
+  if (code === locale.value || languageSaving.value) return
+  languageSaving.value = true
+  languageError.value = null
+  try {
+    const data = await api.setLanguage(code)
+    setLocale(data.language)
+  } catch (err) {
+    languageError.value = err.message
+  } finally {
+    languageSaving.value = false
+  }
+}
 
 // Screen resolution — moved here from the old standalone Screens page.
 const resolution = ref(null)
@@ -62,6 +83,18 @@ onMounted(() => {
 
 <template>
   <div class="settings-page">
+    <section class="tile panel">
+      <div class="panel-title"><h2>{{ t('settings.advanced.languageTitle') }}</h2></div>
+      <Dropdown
+        :model-value="locale"
+        :options="LANGUAGE_OPTIONS"
+        :disabled="languageSaving"
+        @update:model-value="selectLanguage"
+      />
+      <p v-if="languageError" class="pill warn note">{{ languageError }}</p>
+      <p class="hint note">{{ t('settings.advanced.languageHint') }}</p>
+    </section>
+
     <section class="tile panel">
       <div class="panel-title"><h2>{{ t('settings.screens.resolution') }}</h2></div>
       <div class="actions">

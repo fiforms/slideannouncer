@@ -169,14 +169,18 @@ class LanguageRequest(BaseModel):
 
 
 @app.post("/api/local/language")
-def set_language(body: LanguageRequest):
-    # The setup wizard's Welcome screen. Saved even while paired (it's the
-    # device's own preference), but a server-assigned language still wins
-    # in read_effective_language(), so the response says what's in effect.
+async def set_language(body: LanguageRequest):
+    # The setup wizard's Welcome screen and Settings > Advanced. Applies
+    # locally at once; when paired it's also pushed to the server right away
+    # (rather than waiting for the next scheduled heartbeat) so the web page
+    # and slide filtering follow. If the push fails, it stays queued for the
+    # next heartbeat.
     code = body.language.strip().lower()
     if not re.fullmatch(r"[a-z]{2,3}", code):
         raise HTTPException(status_code=422, detail="Unsupported language code.")
-    pairing.write_local_language(code)
+    pairing.set_device_language(code)
+    if pairing.read_pending_language():
+        await heartbeat.send_once()
     return {"language": pairing.read_effective_language(), "language_source": pairing.read_language_source()}
 
 

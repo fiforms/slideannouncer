@@ -41,9 +41,6 @@
             "currentOsVersion": "Current OS version",
             "currentAppVersion": "Current app version",
             "language": "Language",
-            "languageSourceServer": "set by entity admin",
-            "languageSourceBootYaml": "device default",
-            "languageSourceDevice": "set on this device",
             "paired": "Paired",
             "notPairedHint": "Not paired yet — see \"Pairing\" in the left panel.",
             "softwareUpdate": "Software Update",
@@ -253,6 +250,8 @@
             "waitingForKeypress": "Waiting for a keypress…"
         },
         "advanced": {
+            "languageTitle": "Language",
+            "languageHint": "Used for this screen and the slides shown on it. Also changes the language on the website, and follows changes made there.",
             "featuresTitle": "Optional Features",
             "revelationHint": "Let a Revelation presenter on your network take over this display for a live presentation.",
             "srtSinkHint": "Receive a live video feed (OBS, vMix, etc.) from your church network over SRT.",

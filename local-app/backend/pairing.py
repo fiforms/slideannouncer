@@ -73,6 +73,13 @@ ENTITY_NAME_FILE = Path("/data/status/entity-name")
 # DEVICE_NAME_FILE/ENTITY_NAME_FILE. Always wins over LANGUAGE_BOOT_HINT_FILE
 # once it exists; see read_effective_language().
 LANGUAGE_FILE = Path("/data/status/language")
+# Server's `language_revision` as of the last sync, and a language picked on
+# this device that the server hasn't acknowledged yet. Together they make
+# the language a two-way setting where the later change wins: the pending
+# pick is sent with the revision it was made against, and the server only
+# accepts it if no web edit has landed since. See heartbeat.py.
+LANGUAGE_REVISION_FILE = Path("/data/status/language-revision")
+LANGUAGE_PENDING_FILE = Path("/data/status/language-pending")
 # Language picked on the device itself — the first-run setup wizard's
 # Welcome screen (frontend views/setup/SetupWelcome.vue). Sits between the
 # two above in read_effective_language(): overrides the boot-yaml hint,
@@ -126,6 +133,8 @@ WIPE_PATHS = [
     HOSTNAME_FILE,
     ENTITY_NAME_FILE,
     LANGUAGE_FILE,
+    LANGUAGE_REVISION_FILE,
+    LANGUAGE_PENDING_FILE,
     Path("/data/slides"),
     Path("/data/local-app/settings.json"),
     # A pinned show id is meaningless once unpaired — a re-pair may attach
@@ -231,6 +240,56 @@ def write_language(code: str) -> None:
     LANGUAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
     LANGUAGE_FILE.write_text(code)
     LANGUAGE_FILE.chmod(0o644)
+
+
+def read_language_revision() -> int:
+    try:
+        return int(LANGUAGE_REVISION_FILE.read_text().strip())
+    except (OSError, ValueError):
+        return 0
+
+
+def read_pending_language() -> str | None:
+    """A language picked on this device that the server hasn't confirmed."""
+    try:
+        return LANGUAGE_PENDING_FILE.read_text().strip() or None
+    except OSError:
+        return None
+
+
+def set_device_language(code: str) -> None:
+    """The user picked a language on this device (Settings > Advanced).
+    Takes effect locally at once and is queued for the next heartbeat to
+    push to the server. Also remembered as the device's own preference so it
+    survives an unpair (see LOCAL_LANGUAGE_FILE).
+    """
+    write_local_language(code)
+    if not DEVICE_TOKEN_FILE.exists():
+        return
+    write_language(code)
+    LANGUAGE_PENDING_FILE.write_text(code)
+    LANGUAGE_PENDING_FILE.chmod(0o644)
+
+
+def apply_server_language(code: str | None, revision: int | None, sent_pending: str | None = None) -> None:
+    """Folds the server's language (from a heartbeat or pairing response)
+    into the local cache. `sent_pending` is the pending pick that went out
+    with the request this answers: the server has now either applied it or
+    overruled it, so it's dropped — unless the user picked something else
+    while the request was in flight, in which case that newer pick is left
+    queued and the local language is left alone.
+    """
+    pending = read_pending_language()
+    if pending is not None and pending != sent_pending:
+        return
+    if revision is not None:
+        LANGUAGE_REVISION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        LANGUAGE_REVISION_FILE.write_text(str(revision))
+        LANGUAGE_REVISION_FILE.chmod(0o644)
+    if code:
+        write_language(code)
+        write_local_language(code)
+    LANGUAGE_PENDING_FILE.unlink(missing_ok=True)
 
 
 def read_audio_output() -> str:
@@ -417,6 +476,9 @@ async def pair(code: str, device_name: str) -> dict:
     write_device_name(device_name)
     if data.get("entity_name"):
         write_entity_name(data["entity_name"])
+    # The server's language is now the shared one: this device's own pick
+    # when it created the entry, or the existing value on a re-pair.
+    apply_server_language(data.get("language"), data.get("language_revision"))
 
     # Derive this device's hostname from the name just typed, picking
     # around any sibling already using that name on this entity — see
