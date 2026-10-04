@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import WidgetBox from './WidgetBox.vue'
 
 // Live overlay widgets above a slide's overlay image — the kiosk twin of
@@ -16,6 +16,9 @@ const props = defineProps({
   // Passed to each WidgetBox; see there.
   lingerMs: { type: Number, default: 0 },
 })
+// Fired when every widget in the layer has painted (immediately if there are
+// none), so the slideshow can keep the slide off screen until then.
+const emit = defineEmits(['ready'])
 
 const root = ref(null)
 const fit = ref(null)
@@ -46,6 +49,13 @@ const placements = computed(() => props.widgets.filter((w) => w.entry_url))
 function key(p) {
   return `${p.id}:${p.entry_url}:${p.w}x${p.h}:${JSON.stringify(p.params ?? {})}`
 }
+
+const readyKeys = ref(new Set())
+function markReady(p) {
+  readyKeys.value = new Set(readyKeys.value).add(key(p))
+}
+const allReady = computed(() => placements.value.every((p) => readyKeys.value.has(key(p))))
+watch(allReady, (ready) => { if (ready) emit('ready') }, { immediate: true })
 </script>
 
 <template>
@@ -59,7 +69,7 @@ function key(p) {
         transform: `scale(${fit.scale})`,
       }"
     >
-      <WidgetBox v-for="p in placements" :key="key(p)" :placement="p" :linger-ms="lingerMs" />
+      <WidgetBox v-for="p in placements" :key="key(p)" :placement="p" :linger-ms="lingerMs" @ready="markReady(p)" />
     </div>
   </div>
 </template>

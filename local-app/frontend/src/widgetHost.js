@@ -11,6 +11,11 @@
 // mirror (/media/widgets/…, see backend/widgets.py), and api.fetch() goes
 // to the local backend's /api/local/widget-data proxy, which forwards to
 // the server by reference and serves the last good answer while offline.
+//
+// Readiness works as in the web host: a widget is "ready" when `mount`
+// returns, unless its module exports `manualReady = true`, in which case it
+// calls `api.ready()` once its first real content is drawn. A failing or
+// silent widget counts as ready after READY_TIMEOUT_MS.
 
 export class WidgetDataError extends Error {
   constructor(reason, status) {
@@ -40,7 +45,7 @@ function storageFor(prefix) {
   }
 }
 
-function createApi(placement, locale, location) {
+function createApi(placement, locale, location, ready) {
   return Object.freeze({
     mode: 'live',
     locale,
@@ -61,14 +66,28 @@ function createApi(placement, locale, location) {
       return body
     },
     storage: storageFor(`as-widget:${placement.widget}:${placement.id}:`),
+    // Call once the first real content is painted (widgets that export
+    // `manualReady = true`; harmless otherwise). Idempotent.
+    ready,
   })
 }
 
-// Mounts one placement into `el`. Returns { dispose } — safe to call
-// before the module has finished loading.
+const READY_TIMEOUT_MS = 8000
+
+// Mounts one placement into `el`. Returns { ready, dispose }: `ready`
+// resolves (never rejects) once the widget has painted — or failed, or timed
+// out — and `dispose` runs the cleanup. Safe to call dispose before the
+// module has finished loading.
 export function mountWidget(el, placement, locale, location = null) {
   let disposed = false
   let cleanup = null
+  let markReady
+  const ready = new Promise((resolve) => { markReady = resolve })
+  const timeout = setTimeout(() => {
+    console.warn(`Widget "${placement.widget}" did not signal ready in ${READY_TIMEOUT_MS}ms`)
+    markReady()
+  }, READY_TIMEOUT_MS)
+  ready.then(() => clearTimeout(timeout))
 
   function runCleanup() {
     const fn = cleanup
@@ -84,17 +103,21 @@ export function mountWidget(el, placement, locale, location = null) {
       width: placement.w,
       height: placement.h,
       params: Object.freeze({ ...(placement.params ?? {}) }),
-      api: createApi(placement, locale, location),
+      api: createApi(placement, locale, location, markReady),
     })
     cleanup = typeof result === 'function' ? result : result?.destroy?.bind(result) ?? null
     if (disposed) runCleanup()
+    if (mod.manualReady !== true) markReady()
   })().catch((err) => {
     console.warn(`Widget "${placement.widget}" failed to load`, err)
+    markReady()
   })
 
   return {
+    ready,
     dispose() {
       disposed = true
+      markReady()
       runCleanup()
     },
   }

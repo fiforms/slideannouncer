@@ -8,7 +8,7 @@ import { setSetupRequired } from '../setupState.js'
 import { settings, refreshShows, activeShow } from '../slideshowState.js'
 import { menuOpen } from '../menuOverlay.js'
 import { startSrtStream, stopSrtStream, setDebugOverlay } from '../srtStreamPlayer.js'
-import WidgetLayer from '../components/WidgetLayer.vue'
+import SlideStage from '../components/SlideStage.vue'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -96,7 +96,6 @@ const showVolumeIndicator = ref(false)
 const showSeekIndicator = ref(false)
 const seekPositionSeconds = ref(0)
 const seekDurationSeconds = ref(0)
-const videoEl = ref(null)
 const srtVideoEl = ref(null)
 let lastSeekAt = 0
 let lastSeekDirection = 0
@@ -113,7 +112,120 @@ let playThroughFallbackTimer = null
 // silently instead of popping the indicator up on page load.
 let hasVolumeBaseline = false
 
-const currentSlide = computed(() => playlist.value[currentIndex.value] ?? null)
+// Slides are never built on screen. Each one is mounted as a hidden
+// SlideStage first and only faded in once everything on it (image/video,
+// overlay, widgets) has loaded and painted — the same scheme as the web
+// slideshow (resources/js/Components/SlideshowModal.vue). The next slide is
+// mounted ahead of time as soon as the current one is up, so a normal
+// advance swaps instantly; if it isn't ready when the interval fires, the
+// current slide simply stays up until it is.
+//
+// A stage record is { id, index, slide, visible }. `visible` stages are on
+// screen (the active one, plus the outgoing one while it fades out under
+// the new one); at most one non-visible stage — the incoming one — exists.
+// The slide is a snapshot, so a playlist refresh never alters what's on
+// screen mid-slide.
+const FADE_MS = 1000
+let stageSeq = 0
+const stages = ref([])
+const activeId = ref(null)
+const stageRefs = new Map()
+const readyIds = new Set()
+const leaveTimers = new Set()
+// True once something asked to move to the incoming slide (the interval
+// fired, or a key was pressed): swap as soon as it is ready. Also true
+// until the very first slide is up.
+let swapRequested = false
+
+const activeStage = computed(() => stages.value.find((s) => s.id === activeId.value) ?? null)
+const currentSlide = computed(() => activeStage.value?.slide ?? null)
+const incomingStage = () => stages.value.find((s) => !s.visible) ?? null
+const activeVideo = () => stageRefs.get(activeId.value)?.videoEl ?? null
+
+// Where the show is heading: the incoming slide if a move is pending, so
+// pressing Next twice quickly skips two slides rather than one.
+const targetIndex = () => (swapRequested && incomingStage()) ? incomingStage().index : currentIndex.value
+
+function setStageRef(id, instance) {
+  if (instance) stageRefs.set(id, instance)
+  else stageRefs.delete(id)
+}
+
+function dropStage(id) {
+  stages.value = stages.value.filter((s) => s.id !== id)
+  readyIds.delete(id)
+}
+
+function ensureIncoming(index) {
+  const existing = incomingStage()
+  if (existing?.index === index) return
+  if (existing) dropStage(existing.id)
+  stages.value.push({ id: ++stageSeq, index, slide: playlist.value[index], visible: false })
+}
+
+function prefetchNext() {
+  const len = playlist.value.length
+  if (len > 1) ensureIncoming((currentIndex.value + 1) % len)
+}
+
+function onStageReady(id) {
+  readyIds.add(id)
+  trySwap()
+}
+
+function trySwap() {
+  const next = incomingStage()
+  if (!swapRequested || !next || !readyIds.has(next.id)) return
+  swapRequested = false
+  const previous = activeStage.value
+  next.visible = true
+  activeId.value = next.id
+  currentIndex.value = next.index
+  if (previous) {
+    // Drop the old stage once the new one has fully faded in over it.
+    const timer = setTimeout(() => { leaveTimers.delete(timer); dropStage(previous.id) }, FADE_MS + 100)
+    leaveTimers.add(timer)
+  }
+  restartAdvanceTimer()
+  armPlayThroughFallback()
+  prefetchNext()
+}
+
+function resetStages() {
+  leaveTimers.forEach(clearTimeout)
+  leaveTimers.clear()
+  stages.value = []
+  stageRefs.clear()
+  readyIds.clear()
+  activeId.value = null
+  currentIndex.value = 0
+  swapRequested = playlist.value.length > 0
+  if (swapRequested) ensureIncoming(0)
+}
+
+// What the stages were built from. refreshShows() hands back fresh objects
+// every sync, so compare content: only a real change should discard the
+// prepared slide.
+const playlistSignature = computed(() => JSON.stringify(playlist.value))
+
+watch(playlistSignature, () => {
+  const list = playlist.value
+  if (!list.length) {
+    resetStages()
+    return
+  }
+  if (currentIndex.value >= list.length) currentIndex.value = 0
+  if (!activeStage.value) {
+    resetStages()
+    return
+  }
+  const incoming = incomingStage()
+  if (incoming) {
+    dropStage(incoming.id)
+    if (swapRequested) ensureIncoming(Math.min(incoming.index, list.length - 1))
+  }
+  if (!swapRequested) prefetchNext()
+})
 
 function isVideoSlide(slide) {
   return !!slide?.mime_type?.startsWith('video/')
@@ -147,6 +259,9 @@ function clearPlayThroughFallback() {
 function restartAdvanceTimer() {
   if (advanceTimer) clearInterval(advanceTimer)
   advanceTimer = null
+  // Waiting for the next slide to load: the countdown restarts when it
+  // appears (trySwap), not before.
+  if (swapRequested) return
   if (paused.value || externalPlaybackActive.value || playlist.value.length <= 1) return
   // A 'play_through' video advances from its 'ended' event (onVideoEnded)
   // instead of a fixed delay — skip the interval entirely for it.
@@ -160,7 +275,7 @@ function restartAdvanceTimer() {
   // play_through video it was never restarted for, and cut it off
   // mid-playback instead of waiting for onVideoEnded.
   advanceTimer = setInterval(() => {
-    goToIndex(currentIndex.value + 1)
+    goToIndex(targetIndex() + 1)
   }, slideIntervalMs())
 }
 
@@ -174,22 +289,6 @@ function onVideoEnded() {
   // its last frame until the interval-based advance (if any) fires.
 }
 
-// Plays with sound — kiosk-start.sh launches Chromium with
-// --autoplay-policy=no-user-gesture-required specifically so this succeeds
-// with no prior interaction (there's never anyone at the TV to click
-// anything). The muted retry is just a safety net in case that flag is
-// ever missing or this is run in a non-Chromium browser for testing.
-async function playWithSound(event) {
-  const el = event.target
-  el.muted = false
-  try {
-    await el.play()
-  } catch {
-    el.muted = true
-    try { await el.play() } catch { /* give up silently */ }
-  }
-}
-
 // A play_through video is supposed to advance from onVideoEnded's 'ended'
 // listener — but on real hardware, a video has been observed to visibly
 // freeze on its last frame without 'ended' ever firing (most likely a
@@ -197,28 +296,32 @@ async function playWithSound(event) {
 // that file/device combination, not reproducible from the code alone).
 // On the web slideshow that's recoverable (a person just clicks Next);
 // on an unattended kiosk it's stuck until someone walks up with the
-// remote. So this schedules a fallback advance at the video's own
-// reported duration (plus a small buffer for normal decode/paint
-// latency) — a no-op if 'ended' fires first (onVideoEnded clears it), and
-// a no-op if the slide has already moved on for some other reason
-// (manual nav, playlist refresh) by the time it fires.
-function onVideoLoadedMetadata(event) {
-  playWithSound(event)
+// remote. So when a play_through video comes on screen (its stage has
+// already preloaded it, so the duration is known), this schedules a
+// fallback advance at the video's own reported duration (plus a small
+// buffer for normal decode/paint latency) — a no-op if 'ended' fires first
+// (onVideoEnded clears it), and a no-op if the slide has already moved on
+// for some other reason (manual nav, playlist refresh) by the time it fires.
+function armPlayThroughFallback() {
   clearPlayThroughFallback()
   const slide = currentSlide.value
   if (!isVideoSlide(slide) || slide.video_playback_mode !== 'play_through') return
-  const el = event.target
+  const el = activeVideo()
   const expectedIndex = currentIndex.value
-  const durationMs = Number.isFinite(el.duration) ? el.duration * 1000 : slideIntervalMs()
+  const durationMs = Number.isFinite(el?.duration) ? el.duration * 1000 : slideIntervalMs()
   playThroughFallbackTimer = setTimeout(() => {
     if (currentIndex.value === expectedIndex) goToIndex(expectedIndex + 1)
   }, durationMs + PLAY_THROUGH_FALLBACK_BUFFER_MS)
 }
 
+function onStageEnded(id) {
+  if (id === activeId.value) onVideoEnded()
+}
+
 async function refreshPlaylist() {
   try {
     await refreshShows()
-    if (currentIndex.value >= playlist.value.length) currentIndex.value = 0
+    // A changed playlist is picked up by the playlistSignature watch.
     restartAdvanceTimer()
   } catch {
     // Leave whatever's already on screen — mirrors sync.py leaving the
@@ -227,14 +330,28 @@ async function refreshPlaylist() {
   }
 }
 
-// Jumping resets the advance timer so the interval waits a full
-// slideIntervalMs() from the manual change, rather than possibly
-// auto-advancing again a moment later.
+// Every manual nav or auto-advance goes through here. The countdown is
+// stopped while the target slide gets ready and restarts when it appears
+// (trySwap), so the interval waits a full slideIntervalMs() on the new
+// slide. Landing on the slide already showing (restartShow() while on slide
+// 1, a one-slide show) just restarts the countdown.
 function goToIndex(index) {
   const len = playlist.value.length
   if (len === 0) return
-  currentIndex.value = ((index % len) + len) % len
-  restartAdvanceTimer()
+  const target = ((index % len) + len) % len
+  if (advanceTimer) clearInterval(advanceTimer)
+  advanceTimer = null
+  clearPlayThroughFallback()
+  if (target === currentIndex.value && activeStage.value) {
+    swapRequested = false
+    restartAdvanceTimer()
+    armPlayThroughFallback()
+    prefetchNext()
+  } else {
+    swapRequested = true
+    ensureIncoming(target)
+    trySwap()
+  }
   // A slide change makes any in-progress seek indicator stale (wrong video).
   if (seekHideTimer) { clearTimeout(seekHideTimer); seekHideTimer = null }
   showSeekIndicator.value = false
@@ -246,9 +363,9 @@ function goToIndex(index) {
 // can be scrubbed quickly. On a non-video slide there's nothing to seek, so
 // these keys fall back to plain next/prev slide navigation instead.
 function seekOrGoToIndex(direction) {
-  const el = videoEl.value
+  const el = activeVideo()
   if (!el) {
-    goToIndex(currentIndex.value + direction)
+    goToIndex(targetIndex() + direction)
     return
   }
   const now = Date.now()
@@ -281,7 +398,7 @@ function restartShow() {
   const wasIndex = currentIndex.value
   goToIndex(0)
   if (wasIndex === 0) {
-    const el = videoEl.value
+    const el = activeVideo()
     if (el) {
       el.currentTime = 0
       if (!paused.value) el.play().catch(() => {})
@@ -292,7 +409,7 @@ function restartShow() {
 function togglePause() {
   paused.value = !paused.value
   restartAdvanceTimer()
-  const el = videoEl.value
+  const el = activeVideo()
   if (el) {
     if (paused.value) el.pause()
     else el.play().catch(() => {})
@@ -326,12 +443,12 @@ watch(externalPlaybackActive, (active) => {
     if (advanceTimer) clearInterval(advanceTimer)
     advanceTimer = null
     clearPlayThroughFallback()
-    videoEl.value?.pause()
+    activeVideo()?.pause()
     if (srtVideoEl.value) startSrtStream(srtVideoEl.value)
   } else {
     stopSrtStream()
     restartAdvanceTimer()
-    if (!paused.value) videoEl.value?.play().catch(() => {})
+    if (!paused.value) activeVideo()?.play().catch(() => {})
   }
 }, { flush: 'post' })
 
@@ -343,8 +460,8 @@ function onKeydown(event) {
   // still visible behind the scrim. remoteNav.js's global listener handles
   // the overlay's own focus movement separately.
   if (menuOpen.value || externalPlaybackActive.value) return
-  if (NEXT_SLIDE_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(currentIndex.value + 1) }
-  else if (PREV_SLIDE_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(currentIndex.value - 1) }
+  if (NEXT_SLIDE_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(targetIndex() + 1) }
+  else if (PREV_SLIDE_KEYS.includes(event.key)) { event.preventDefault(); goToIndex(targetIndex() - 1) }
   else if (SEEK_FORWARD_KEYS.includes(event.key)) { event.preventDefault(); seekOrGoToIndex(1) }
   else if (SEEK_BACK_KEYS.includes(event.key)) { event.preventDefault(); seekOrGoToIndex(-1) }
   else if (RESTART_KEYS.includes(event.key)) { event.preventDefault(); restartShow() }
@@ -429,6 +546,7 @@ onUnmounted(() => {
   if (volumeHideTimer) clearTimeout(volumeHideTimer)
   if (seekHideTimer) clearTimeout(seekHideTimer)
   clearPlayThroughFallback()
+  leaveTimers.forEach(clearTimeout)
   window.removeEventListener('keydown', onKeydown)
   if (externalPlaybackActive.value) stopSrtStream()
 })
@@ -436,33 +554,27 @@ onUnmounted(() => {
 
 <template>
   <div class="kiosk">
+    <SlideStage
+      v-for="stage in stages"
+      :key="stage.id"
+      :ref="(instance) => setStageRef(stage.id, instance)"
+      :slide="stage.slide"
+      :visible="stage.visible"
+      :active="stage.id === activeId"
+      @ready="onStageReady(stage.id)"
+      @ended="onStageEnded(stage.id)"
+    />
+    <div v-if="!stages.length" class="empty-state">
+      <p v-if="status && !status.paired">{{ t('slideshow.notPaired') }}</p>
+      <p v-else>{{ t('slideshow.waiting') }}</p>
+    </div>
+    <!-- Over the slides, which stay mounted (and loaded) underneath. -->
     <video
       v-if="externalPlaybackActive"
       ref="srtVideoEl"
-      class="slide-image"
+      class="slide-image external"
       playsinline
     />
-    <transition v-else name="crossfade" mode="out-in">
-      <div v-if="currentSlide" :key="currentSlide.id" class="slide-layers">
-        <video
-          v-if="isVideoSlide(currentSlide)"
-          ref="videoEl"
-          :src="currentSlide.media_url"
-          :loop="currentSlide.video_playback_mode === 'loop'"
-          playsinline
-          class="slide-image"
-          @ended="onVideoEnded"
-          @loadedmetadata="onVideoLoadedMetadata"
-        />
-        <img v-else :src="currentSlide.media_url" class="slide-image">
-        <img v-if="currentSlide.overlay_media_url" :src="currentSlide.overlay_media_url" class="slide-image overlay">
-        <WidgetLayer v-if="currentSlide.widgets?.length" :widgets="currentSlide.widgets" :linger-ms="1100" />
-      </div>
-      <div v-else class="empty-state" key="empty">
-        <p v-if="status && !status.paired">{{ t('slideshow.notPaired') }}</p>
-        <p v-else>{{ t('slideshow.waiting') }}</p>
-      </div>
-    </transition>
 
     <div v-if="needsAttention" class="attention-dot" :title="t('slideshow.needsAttention')" />
 
@@ -499,27 +611,16 @@ onUnmounted(() => {
   overflow: hidden;
   cursor: none;
 }
-.slide-layers {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
 .slide-image {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
-.slide-image.overlay {
+.slide-image.external {
   position: absolute;
   inset: 0;
-}
-.crossfade-enter-active,
-.crossfade-leave-active {
-  transition: opacity 1s ease;
-}
-.crossfade-enter-from,
-.crossfade-leave-to {
-  opacity: 0;
+  z-index: 5;
+  background: #000;
 }
 .empty-state {
   color: var(--text-dim);
