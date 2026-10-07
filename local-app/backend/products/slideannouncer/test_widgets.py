@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 import pairing
-import widgets
+from products.slideannouncer import widgets
 
 SERVER = "https://slides.example.org"
 REAL_ASYNC_CLIENT = httpx.AsyncClient

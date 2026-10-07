@@ -1,10 +1,10 @@
-"""Local backend — WiFi/network settings API for the on-device settings menu
-(see SLIDE_ANNOUNCER.md, "Kiosk display", "Local settings menu"), the
-pairing screen's API, the heartbeat and slide-sync background tasks, the
-local-status endpoint the kiosk home page polls, and the slideshow endpoint
-the kiosk display (frontend/src/views/Slideshow.vue) and Menu overlay
-(MenuOverlay.vue) poll for the cached shows/settings sync.py maintains on
-disk, plus the local-only show-pin endpoint (pinning.py).
+"""Local backend — the product-neutral core of the on-device API: WiFi/
+network settings, pairing, language/name/setup, audio/screen/system
+control and update endpoints, and the local-status endpoint the kiosk
+polls. Everything product-specific (the slideshow, pinned show, LAN video
+receiver, …) arrives through product.get(): its routers are mounted below,
+its background tasks run beside the heartbeat, and its status fields are
+merged into /api/local/status. See product.py and docs/PRODUCTS.md.
 """
 import asyncio
 import json
@@ -13,7 +13,7 @@ import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -22,14 +22,9 @@ import heartbeat
 import network
 import network_diagnostics
 import pairing
-import pinning
-import revelation
+import product
 import server_check
-import srt_sink
-import srt_stream_bridge
-import sync
 import system_control
-import widgets
 
 SETUP_MODE_STATUS = Path("/data/status/setup-mode.json")
 VERSION_FILE = Path("/opt/slide-announcer/VERSION")
@@ -37,16 +32,15 @@ VERSION_FILE = Path("/opt/slide-announcer/VERSION")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    heartbeat_task = asyncio.create_task(heartbeat.run_forever())
-    sync_task = asyncio.create_task(sync.run_forever())
-    srt_stream_task = asyncio.create_task(srt_stream_bridge.run_forever())
+    tasks = [asyncio.create_task(run()) for run in [heartbeat.run_forever, *product.get().background_tasks]]
     yield
-    heartbeat_task.cancel()
-    sync_task.cancel()
-    srt_stream_task.cancel()
+    for task in tasks:
+        task.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
+for _router in product.get().routers:
+    app.include_router(_router)
 
 
 @app.get("/api/local/status")
@@ -92,73 +86,9 @@ def local_status():
         "language": pairing.read_effective_language(),
         "language_source": pairing.read_language_source(),
         "heartbeat": heartbeat.read_status(),
-        "sync": sync.read_status(),
+        "product": product.get().name,
+        **product.get().status_fields(),
     }
-
-
-@app.get("/api/local/sync/status")
-def sync_status():
-    return sync.read_status()
-
-
-def _resolve_pinned_show_id(shows: list) -> str | None:
-    """The pin as the kiosk should actually use right now: the on-device
-    pin if it's set and still among the synced shows, else the Main show,
-    else (only if there are no shows at all) None. sync.py already clears
-    a pin that's gone stale after a successful sync — this is cheap
-    defense-in-depth for the window before that's happened."""
-    pinned = pinning.read_pinned_show_id()
-    if pinned and any(show["id"] == pinned for show in shows):
-        return pinned
-    main_show = next((show for show in shows if show.get("is_main")), None)
-    if main_show:
-        return main_show["id"]
-    return shows[0]["id"] if shows else None
-
-
-@app.get("/api/local/slideshow")
-def slideshow():
-    shows = sync.read_shows()
-    # Every language is synced to every device; only slides in this
-    # device's language (or untagged ones) play. Filtering here, at read
-    # time, means a language change applies at once rather than after the
-    # next sync. With no language known yet, nothing is filtered.
-    language = pairing.read_effective_language()
-    if language:
-        shows = [
-            {**show, "slides": [s for s in show["slides"] if s.get("language") in (None, language)]}
-            for show in shows
-        ]
-    return {
-        "shows": shows,
-        "settings": sync.read_settings(),
-        "location": sync.read_location(),
-        "pinned_show_id": _resolve_pinned_show_id(shows),
-    }
-
-
-@app.get("/api/local/widget-data/{overlay_id}/{element}/{endpoint}")
-async def widget_data(overlay_id: int, element: str, endpoint: str, request: Request):
-    # A widget's api.fetch() — forwarded to the server by reference (never
-    # a URL), with the last good answer served while offline. widgets.py.
-    status, body = await widgets.fetch_data(overlay_id, element, endpoint, request.query_params.multi_items())
-    return JSONResponse(body, status_code=status, headers={
-        "X-Content-Type-Options": "nosniff",
-        "Cache-Control": "no-store",
-    })
-
-
-class PinShowRequest(BaseModel):
-    show_id: str | None = None
-
-
-@app.post("/api/local/pin-show")
-def pin_show(body: PinShowRequest):
-    # Local-only action — no server round trip. The main Laravel backend
-    # has no concept of "what a kiosk currently has pinned"; see
-    # MULTI_SHOW_IMPLEMENTATION.md.
-    pinning.write_pinned_show_id(body.show_id)
-    return {"ok": True, "pinned_show_id": body.show_id}
 
 
 class PairRequest(BaseModel):
@@ -172,7 +102,10 @@ async def pair(body: PairRequest):
         data = await pairing.pair(body.code, body.device_name)
     except pairing.PairingError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"ok": True, "slide_announcer_id": data["slide_announcer_id"]}
+    # `device_id` is the contract's name (docs/DEVICE_CONTRACT.md); servers
+    # that predate it send the id as `slide_announcer_id`.
+    device_id = data.get("device_id", data.get("slide_announcer_id"))
+    return {"ok": True, "device_id": device_id, "slide_announcer_id": device_id}
 
 
 class LanguageRequest(BaseModel):
@@ -353,182 +286,6 @@ def audio_volume_status():
     # own comment), and /api/local/status pulls in heavier heartbeat/sync
     # state this doesn't need.
     return {"volume": pairing.read_audio_volume(), "muted": pairing.read_audio_muted()}
-
-
-def _srt_sink_response(config: dict) -> dict:
-    return {
-        **config,
-        "effective_enabled": srt_sink.effective_enabled(config),
-        # Built here, not in the frontend, so the URL format (port,
-        # mode=caller, latency) lives in exactly one place — srt_sink.py.
-        # For the configured mode (SRT, RIST unicast, or the multicast group
-        # a RIST sender transmits to) — see srt_sink.sender_url().
-        "connect_url": srt_sink.sender_url(socket.gethostname(), config),
-        "rist_supported": srt_sink.rist_supported(),
-        "rist_port": srt_sink.RIST_PORT,
-    }
-
-
-@app.get("/api/local/srt-sink")
-def srt_sink_status():
-    return _srt_sink_response(srt_sink.read_config())
-
-
-class SrtSinkEnableRequest(BaseModel):
-    enabled: bool
-
-
-@app.post("/api/local/srt-sink")
-def srt_sink_set(body: SrtSinkEnableRequest):
-    return _srt_sink_response(srt_sink.set_local_enabled(body.enabled))
-
-
-class SrtSinkSettingsRequest(BaseModel):
-    # All optional — only the fields sent are changed.
-    mode: str | None = None
-    passphrase: str | None = None
-    multicast_group: str | None = None
-    multicast_port: int | None = None
-    multicast_passphrase: str | None = None
-    rist_buffer_ms: int | None = None
-    rist_encryption_bits: int | None = None
-
-
-@app.post("/api/local/srt-sink/settings")
-def srt_sink_update_settings(body: SrtSinkSettingsRequest):
-    try:
-        config = srt_sink.update_settings(body.model_dump(exclude_none=True))
-    except srt_sink.SrtSinkConfigError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _srt_sink_response(config)
-
-
-@app.post("/api/local/srt-sink/regenerate")
-def srt_sink_regenerate():
-    return _srt_sink_response(srt_sink.regenerate_passphrase())
-
-
-class SrtSinkLatencyRequest(BaseModel):
-    latency_ms: int
-
-
-@app.post("/api/local/srt-sink/latency")
-def srt_sink_set_latency(body: SrtSinkLatencyRequest):
-    return _srt_sink_response(srt_sink.set_srt_latency_ms(body.latency_ms))
-
-
-class SrtSinkDebugOverlayRequest(BaseModel):
-    enabled: bool
-
-
-@app.post("/api/local/srt-sink/debug-overlay")
-def srt_sink_set_debug_overlay(body: SrtSinkDebugOverlayRequest):
-    return _srt_sink_response(srt_sink.set_debug_overlay(body.enabled))
-
-
-@app.get("/api/local/srt-sink/playing")
-def srt_sink_playing():
-    # debug_overlay rides along here (already polled every second by
-    # Slideshow.vue) rather than needing its own poll — see
-    # srt_sink.set_debug_overlay()'s own comment.
-    return {
-        "active": srt_stream_bridge.is_playing(),
-        "debug_overlay": srt_sink.read_config()["debug_overlay"],
-    }
-
-
-@app.websocket("/api/local/srt-sink/stream")
-async def srt_sink_stream(websocket: WebSocket):
-    # srt_stream_bridge.serve_client() replays a cached init segment +
-    # recent fragments on connect (see that module's docstring) so a
-    # kiosk page reload mid-stream can rejoin without waiting for the
-    # source's next keyframe, then forwards live fragments until either
-    # side disconnects.
-    await websocket.accept()
-    await srt_stream_bridge.serve_client(websocket)
-
-
-class SrtSinkClientLogRequest(BaseModel):
-    message: str
-
-
-@app.post("/api/local/srt-sink/client-log")
-def srt_sink_client_log(body: SrtSinkClientLogRequest):
-    # Fire-and-forget relay from srtStreamPlayer.js (frontend/src/
-    # srtStreamPlayer.js's logClient()) — a kiosk has no one watching
-    # devtools, so MSE/WebSocket failures on that side would otherwise be
-    # invisible. Lands in the same journal as srt_stream_bridge.py's own
-    # logging (`journalctl -u slide-announcer-backend`).
-    print(f"[srt-stream-bridge] client: {body.message}", flush=True)
-    return {"ok": True}
-
-
-@app.get("/api/local/revelation/scan")
-async def revelation_scan():
-    discovered = await asyncio.to_thread(revelation.discover)
-    return {"discovered": discovered}
-
-
-@app.get("/api/local/revelation/enabled")
-def revelation_enabled_status():
-    return {"enabled": revelation.read_enabled()}
-
-
-class RevelationEnabledRequest(BaseModel):
-    enabled: bool
-
-
-@app.post("/api/local/revelation/enabled")
-def revelation_enabled_set(body: RevelationEnabledRequest):
-    return {"enabled": revelation.write_enabled(body.enabled)}
-
-
-@app.get("/api/local/revelation/status")
-def revelation_status():
-    return revelation.read_status()
-
-
-class RevelationPairRequest(BaseModel):
-    host: str
-    port: int
-    pin: str
-
-
-@app.post("/api/local/revelation/pair")
-async def revelation_pair(body: RevelationPairRequest):
-    try:
-        data = await revelation.pair(body.host, body.port, body.pin)
-    except revelation.RevelationPeerError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"ok": True, **data}
-
-
-class RevelationUnpairRequest(BaseModel):
-    instance_id: str
-
-
-@app.post("/api/local/revelation/unpair")
-def revelation_unpair(body: RevelationUnpairRequest):
-    revelation.unpair(body.instance_id)
-    return {"ok": True}
-
-
-@app.get("/api/local/revelation/display-settings")
-def revelation_display_settings():
-    return revelation.read_display_settings()
-
-
-class RevelationDisplaySettingsRequest(BaseModel):
-    variant: str | None = None
-    lang: str | None = None
-
-
-@app.post("/api/local/revelation/display-settings")
-def revelation_set_display_settings(body: RevelationDisplaySettingsRequest):
-    try:
-        return revelation.write_display_settings(body.variant, body.lang)
-    except revelation.RevelationPeerError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/api/local/system/update-check")

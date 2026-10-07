@@ -24,7 +24,7 @@ import httpx
 import yaml
 
 import identity
-import pinning
+import product
 
 BOOT_YAML = Path("/boot/firmware/slideannouncer.yaml")
 DEVICE_TOKEN_FILE = Path("/data/device-token")
@@ -135,13 +135,11 @@ WIPE_PATHS = [
     LANGUAGE_FILE,
     LANGUAGE_REVISION_FILE,
     LANGUAGE_PENDING_FILE,
-    Path("/data/slides"),
-    Path("/data/local-app/settings.json"),
-    # A pinned show id is meaningless once unpaired — a re-pair may attach
-    # this device to a different entity's show catalog entirely, so it's
-    # wiped with the rest of the pairing state, unlike the room-property
-    # settings (audio-output, audio-volume) above.
-    pinning.PINNED_SHOW_ID_FILE,
+    # Product state (cached slides, pinned show, …) joins this list through
+    # product.get().wipe_paths — see unpair_and_wipe(). A re-pair may attach
+    # this device to different product data entirely, so it's wiped with
+    # the rest of the pairing state, unlike the room-property settings
+    # (audio-output, audio-volume) above.
 ]
 
 
@@ -163,6 +161,13 @@ def read_server_url() -> str:
     if not server_url:
         raise PairingError(f"server_url is not set in {BOOT_YAML}.")
     return server_url.rstrip("/")
+
+
+def api_url(path: str) -> str:
+    """Full URL of a server endpoint under this product's API prefix
+    (`product.api_base`) — the one place that joins server_url, the
+    prefix and a path, for core and product code alike."""
+    return f"{read_server_url()}{product.get().api_base}/{path.lstrip('/')}"
 
 
 def is_paired() -> bool:
@@ -445,7 +450,6 @@ async def pair(code: str, device_name: str) -> dict:
     safe to render as-is) on a bad/expired code, rate-limiting, or a
     network failure reaching the server.
     """
-    server_url = read_server_url()
     payload = {
         "code": code,
         "device_name": device_name,
@@ -458,7 +462,7 @@ async def pair(code: str, device_name: str) -> dict:
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(f"{server_url}/api/slide-announcers/pair", json=payload)
+            resp = await client.post(api_url("pair"), json=payload)
     except httpx.RequestError as exc:
         raise PairingError(f"Could not reach the server: {exc}") from exc
 
@@ -503,7 +507,7 @@ def unpair_and_wipe() -> None:
     action reboots via system_control.reboot() right after; heartbeat.py's
     401 handling does the same).
     """
-    for path in WIPE_PATHS:
+    for path in [*WIPE_PATHS, *product.get().wipe_paths]:
         if path.is_dir():
             shutil.rmtree(path, ignore_errors=True)
         elif path.exists():

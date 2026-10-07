@@ -66,7 +66,7 @@ from collections import deque
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-import srt_sink
+from . import srt_sink
 
 # How often serve_client() reports its own per-client queue depth back to
 # the browser (see that function's own comment).

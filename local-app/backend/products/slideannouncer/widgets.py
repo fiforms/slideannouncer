@@ -215,10 +215,9 @@ async def fetch_data(overlay_id: int, element: str, endpoint: str, query_items=N
         return (200, cached) if (cached := _cached(cache)) else (503, {"error": "not_paired"})
 
     try:
-        server_url = pairing.read_server_url()
         async with httpx.AsyncClient(timeout=DATA_TIMEOUT_SECONDS) as client:
             resp = await client.get(
-                f"{server_url}/api/slide-announcers/widget-data/{overlay_id}/{element}/{endpoint}",
+                pairing.api_url(f"widget-data/{overlay_id}/{element}/{endpoint}"),
                 params={f"args[{k}]": v for k, v in args.items()},
                 headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
             )

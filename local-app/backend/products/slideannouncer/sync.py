@@ -58,10 +58,9 @@ from urllib.parse import urlparse
 import httpx
 
 import pairing
-import pinning
-import srt_sink
 import system_control
-import widgets
+
+from . import pinning, srt_sink, widgets
 
 INTERVAL_SECONDS = 60
 
@@ -206,12 +205,12 @@ async def sync_once() -> None:
         _write_json(PLAYLIST_FILE, {"shows": _build_active_playlist(manifest)})
         return
 
-    server_url = pairing.read_server_url()
+    server_url = pairing.read_server_url()  # widget bundle URLs are validated against it
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
-                f"{server_url}/api/slide-announcers/shows",
+                pairing.api_url("shows"),
                 headers={"Authorization": f"Bearer {token}"},
             )
     except httpx.RequestError as exc:

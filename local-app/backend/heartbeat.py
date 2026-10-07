@@ -25,10 +25,14 @@ from pathlib import Path
 import httpx
 
 import pairing
-import srt_sink
+import product
 import system_control
 
 INTERVAL_SECONDS = 5 * 60
+
+# Request keys the core heartbeat owns; a product's heartbeat_payload() may
+# not override them.
+_CORE_KEYS = {"app_version", "os_version", "architecture", "cpu_temp_c", "hostname", "language_change"}
 
 OS_VERSION_FILE = Path("/opt/slide-announcer/VERSION")
 APP_VERSION_FILE = Path("/data/local-app/current/VERSION")
@@ -99,26 +103,18 @@ async def send_once() -> None:
     if not token:
         return
 
-    server_url = pairing.read_server_url()
-    # Only ever reported once generated (on this device's first SRT Sink
-    # enable) — the server never sets this, only mirrors it for an admin
-    # to read off the fleet dashboard. See srt_sink.py's own docstring.
-    srt_sink_passphrase = srt_sink.read_config()["passphrase"] or None
     payload = {
         "app_version": read_app_version(),
         "os_version": read_os_version(),
         "architecture": read_architecture(),
         "cpu_temp_c": read_cpu_temp_c(),
-        "srt_sink_passphrase": srt_sink_passphrase,
-        # Full LAN Video Receiver settings + the last web-side revision
-        # applied — see srt_sink.py's SERVER_EDITABLE_FIELDS for the sync.
-        "srt_sink_config": srt_sink.report(),
         # Reported every heartbeat (cheap, and can change on a
-        # slideannouncer.yaml hostname override + reboot) so the fleet
-        # dashboard can build the same "Connect With" srt:// URL the
-        # device's own Settings > Video Receiver screen shows — see
-        # srt_sink.py's connect_url().
+        # slideannouncer.yaml hostname override + reboot) so the management
+        # UI can show how to reach this device on its LAN.
         "hostname": socket.gethostname(),
+        # Product data riding on the core heartbeat (docs/DEVICE_CONTRACT.md,
+        # "Extensions") — core keys above always win a name collision.
+        **{k: v for k, v in product.get().heartbeat_payload().items() if k not in _CORE_KEYS},
     }
 
     # A language picked on this device and not yet acknowledged — sent with
@@ -134,7 +130,7 @@ async def send_once() -> None:
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
-                f"{server_url}/api/slide-announcers/heartbeat",
+                pairing.api_url("heartbeat"),
                 json=payload,
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -175,15 +171,8 @@ async def send_once() -> None:
     pairing.apply_server_language(
         response.get("language"), response.get("language_revision"), sent_language
     )
-    # Fleet-wide force-disable switch for SRT Sink (admin dashboard) — an
-    # explicit false always overrides this device's own local Settings
-    # toggle; see srt_sink.py's effective_enabled(). Missing key (older
-    # server) or true both mean "no restriction."
-    srt_sink.set_server_allows(response.get("srt_sink_enabled", True) is not False)
-    # Receiver settings edited on the web page (no-op unless newer than the
-    # last revision applied) — the slide sync's response carries the same
-    # push, so this usually arrives there first.
-    srt_sink.apply_server_config(response.get("srt_sink_config"))
+    # Whatever the product keeps in sync through the heartbeat.
+    product.get().on_heartbeat_response(response)
 
     _write_status({
         "last_attempt_at": _now_iso(),

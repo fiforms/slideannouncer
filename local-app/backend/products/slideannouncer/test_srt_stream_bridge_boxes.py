@@ -10,7 +10,7 @@ pin down which trun encoding variant ffmpeg's muxer actually emits —
 these hand-crafted fixtures only prove the parser handles each variant
 ISO/IEC 14496-12 allows, not which one is real.
 """
-import srt_stream_bridge as bridge
+from products.slideannouncer import srt_stream_bridge as bridge
 
 # sample_is_non_sync_sample bit — 0 means "is a sync sample" (a keyframe).
 NON_SYNC = 0x00010000
