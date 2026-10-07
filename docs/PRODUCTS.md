@@ -32,6 +32,22 @@ is a complete minimal product; copy it to start. The signage product is
 The server side is the product's other half:
 [DEVICE_CONTRACT.md](DEVICE_CONTRACT.md) extensions, under `Product.api_base`.
 
+## Per-product identity at build time
+
+- **RAUC `compatible`** is `<product>-rpi4` (override with
+  `RAUC_COMPATIBLE`), stamped into the image's `system.conf` and every
+  bundle manifest, hotfixes included, so a device only installs its own
+  product's bundles. For `slideannouncer` that is the string devices
+  already carry. Existing devices of another product can't be retargeted
+  by update — changing a product's `compatible` means reflashing.
+- **Version suffix**: the local-app version is
+  `<X.Y.Z>-<platform hash>-<product>.<product hash>[-dirty]`, where the
+  product hash is the last commit touching `PRODUCT_ROOT`
+  (`PRODUCT_VERSION_SUFFIX` overrides). It is informational: updates compare
+  only `X.Y.Z`, so a product-only change reaches devices only when
+  `local-app/VERSION` is bumped. Final image/bundle files are named
+  `<product>-<OS version>.*`.
+
 ## Image seams — `<product>/image/`
 
 - `product.env` — shell settings sourced by `kiosk-start.sh`. `KIOSK_URL` is
@@ -92,9 +108,8 @@ allow-list. That's the next phase.
 ## Still signage-flavoured (known leftovers)
 
 - Names: `slide-announcer-*` units, `/opt/slide-announcer`, the
-  `slideannouncer` user, `slideannouncer.yaml`, and the RAUC `compatible`
-  string are shared by every product. A second product needs its own
-  `compatible` so images can't cross-install.
+  `slideannouncer` user and `slideannouncer.yaml` are shared by every
+  product.
 - `locales/en.json` and `es.json` still hold the signage strings (menu,
   SRT, Revelation); products can't yet contribute their own messages.
 - The setup wizard's steps are fixed (Welcome → Network → Name → Pairing →

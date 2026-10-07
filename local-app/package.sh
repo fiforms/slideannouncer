@@ -20,6 +20,9 @@ GIT_HASH="$(git -C "$HERE" rev-parse --short HEAD)"
 # image-builder/build.sh's own version stamp).
 [ -z "$(git -C "$HERE" status --porcelain)" ] || GIT_HASH="${GIT_HASH}-dirty"
 VERSION="${VERSION_BASE}-${GIT_HASH}"
+# What changed in the product alone still shows up in the version string.
+PRODUCT_SUFFIX="$(product_version_suffix)"
+[ -z "$PRODUCT_SUFFIX" ] || VERSION="${VERSION}-${PRODUCT_SUFFIX}"
 
 BUILD="$(mktemp -d)"
 STAGE="$(mktemp -d)"

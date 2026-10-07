@@ -27,12 +27,14 @@ REPO_ROOT="$(cd "${HERE}/.." && pwd)"
 PI_GEN_DIR="${HERE}/pi-gen"
 STAGE_SRC="${HERE}/stage-slide-announcer"
 DEPLOY_DIR="${HERE}/deploy"
-IMG_NAME="slideannouncer"
 # Which product (PRODUCT_ROOT, see docs/PRODUCTS.md) this build layers on the
 # core image. Also read by local-app/package.sh.
 # shellcheck disable=SC1091
 . "${REPO_ROOT}/local-app/product-env.sh"
 PRODUCT_DIR="${PRODUCT_ROOT}/image"
+# pi-gen's own (intermediate) image name, fixed in image-builder/config;
+# the final artifacts are named after PRODUCT instead.
+IMG_NAME="slideannouncer"
 WORK=""
 RAW_IMG_READY=0
 SUDO_KEEPALIVE_PID=""
@@ -260,6 +262,7 @@ rm -rf "$FILES_DIR"
 mkdir -p "$FILES_DIR"
 rsync -a --exclude 'backend/venv' "${REPO_ROOT}/system/" "${FILES_DIR}/system/"
 rsync -a "${PRODUCT_DIR}/" "${FILES_DIR}/product/"
+sed -i "s|@@RAUC_COMPATIBLE@@|${RAUC_COMPATIBLE}|" "${FILES_DIR}/system/rauc/system.conf"
 rsync -a "${REPO_ROOT}/provisioning/" "${FILES_DIR}/provisioning/"
 # Seed the staged network-config's WiFi regulatory-domain from
 # SLIDE_ANNOUNCER_WIFI_COUNTRY (validated above) — see that file's own
@@ -487,7 +490,7 @@ FINAL_IMG="${WORK}/${IMG_NAME}.img"
 echo "==> Repartitioning into boot/rootA/rootB/data (requires root)"
 sudo "${HERE}/repartition.sh" "${WORK}/raw.img" "$FINAL_IMG"
 
-OUT_NAME="${IMG_NAME}-${OS_VERSION}.img.xz"
+OUT_NAME="${PRODUCT}-${OS_VERSION}.img.xz"
 echo "==> Compressing final image"
 xz -6 -T0 -c "$FINAL_IMG" > "${DEPLOY_DIR}/${OUT_NAME}"
 sudo chown "$(id -u):$(id -g)" "${DEPLOY_DIR}/${OUT_NAME}"
@@ -728,7 +731,7 @@ chmod +x "${BUNDLE_DIR}/hook.sh"
 
 cat > "${BUNDLE_DIR}/manifest.raucm" <<EOF
 [update]
-compatible=slideannouncer-rpi4
+compatible=${RAUC_COMPATIBLE}
 version=${IMAGE_VERSION}
 
 # verity, not plain: "rauc install <url>" streams the bundle over HTTP
@@ -756,7 +759,7 @@ filename=bootfiles.tar.gz
 hooks=install
 EOF
 
-BUNDLE_OUT="${DEPLOY_DIR}/${IMG_NAME}-${OS_VERSION}.raucb"
+BUNDLE_OUT="${DEPLOY_DIR}/${PRODUCT}-${OS_VERSION}.raucb"
 echo "==> Building and signing RAUC bundle"
 rauc bundle --cert="$RAUC_CERT_PATH" --key="$RAUC_KEY_PATH" "$BUNDLE_DIR" "$BUNDLE_OUT"
 

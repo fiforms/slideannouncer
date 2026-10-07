@@ -11,7 +11,7 @@
 #   ./make-hotfix-bundle.sh <files-dir> <required-version> <new-version> [script]
 #
 # Output filename encodes both versions:
-# slideannouncer-<new-version>.hotfix.from.<required-version>.raucb —
+# <product>-<new-version>.hotfix.from.<required-version>.raucb —
 # no separate free-text label, since the versions already say what a
 # human needs to know: what this hotfix requires and what it bumps to.
 #
@@ -50,6 +50,9 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="${HERE}/deploy"
+# PRODUCT / RAUC_COMPATIBLE — a hotfix only installs on its own product's devices.
+# shellcheck disable=SC1091
+. "${HERE}/../local-app/product-env.sh"
 
 USAGE="usage: $0 <files-dir> <required-version> <new-version> [script]"
 FILES_DIR="${1:?$USAGE}"
@@ -198,7 +201,7 @@ chmod +x "${BUNDLE_DIR}/hook.sh"
 
 cat > "${BUNDLE_DIR}/manifest.raucm" <<EOF
 [update]
-compatible=slideannouncer-rpi4
+compatible=${RAUC_COMPATIBLE}
 version=${NEW_VERSION}
 
 # verity, not plain — same reasoning as build.sh's main bundle: an
@@ -216,7 +219,7 @@ hooks=install
 EOF
 
 mkdir -p "$DEPLOY_DIR"
-BUNDLE_OUT="${DEPLOY_DIR}/slideannouncer-${NEW_VERSION}.hotfix.from.${REQUIRED_VERSION}.raucb"
+BUNDLE_OUT="${DEPLOY_DIR}/${PRODUCT}-${NEW_VERSION}.hotfix.from.${REQUIRED_VERSION}.raucb"
 echo "==> Building and signing hotfix bundle"
 rauc bundle --cert="$RAUC_CERT_PATH" --key="$RAUC_KEY_PATH" "$BUNDLE_DIR" "$BUNDLE_OUT"
 

@@ -27,6 +27,31 @@ if [ ! -f "${PRODUCT_ROOT}/image/product.env" ]; then
 fi
 export PRODUCT_ROOT PRODUCT
 
+# RAUC `compatible` string: stamped into the image's /etc/rauc/system.conf
+# and into every bundle manifest, so a device only installs bundles built
+# for its own product. Defaults to <product>-rpi4 (for the original
+# slideannouncer product that is the string already in the field); set
+# RAUC_COMPATIBLE to override.
+RAUC_COMPATIBLE="${RAUC_COMPATIBLE:-${PRODUCT}-rpi4}"
+export RAUC_COMPATIBLE
+
+# product_version_suffix: "<product>.<hash>[-dirty]", from the last commit
+# touching PRODUCT_ROOT, so a build that changed only the product still gets
+# a distinct version string. PRODUCT_VERSION_SUFFIX overrides it; empty when
+# PRODUCT_ROOT isn't in a git repo. Informational: updates compare only the
+# leading X.Y.Z (local-app-seed.py's version_core()).
+product_version_suffix() {
+	if [ -n "${PRODUCT_VERSION_SUFFIX:-}" ]; then
+		echo "$PRODUCT_VERSION_SUFFIX"
+		return
+	fi
+	local hash dirty=""
+	hash="$(git -C "$PRODUCT_ROOT" log -1 --format=%h -- . 2>/dev/null)" || true
+	[ -n "$hash" ] || return 0
+	[ -z "$(git -C "$PRODUCT_ROOT" status --porcelain -- . 2>/dev/null)" ] || dirty="-dirty"
+	echo "${PRODUCT}.${hash}${dirty}"
+}
+
 LOCAL_APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # stage_local_app <dest>: <dest>/{backend,frontend} = this repo's core
