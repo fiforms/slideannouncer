@@ -61,3 +61,30 @@ product_version_suffix() {
 	fi
 	echo "$suffix"
 }
+
+LOCAL_APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# stage_local_app <dest>: <dest>/{backend,frontend} = this repo's core
+# sources with the product copied in as backend/products/$PRODUCT and
+# frontend/src/products/$PRODUCT (no node_modules, dist or venv).
+stage_local_app() {
+	local dest="$1"
+	mkdir -p "${dest}/backend/products/${PRODUCT}" "${dest}/frontend/src/products/${PRODUCT}"
+	rsync -a --exclude venv --exclude '__pycache__' "${LOCAL_APP_DIR}/backend/" "${dest}/backend/"
+	rsync -a --exclude '__pycache__' "${PRODUCT_ROOT}/backend/" "${dest}/backend/products/${PRODUCT}/"
+	rsync -a --exclude node_modules --exclude dist "${LOCAL_APP_DIR}/frontend/" "${dest}/frontend/"
+	rsync -a "${PRODUCT_ROOT}/frontend/" "${dest}/frontend/src/products/${PRODUCT}/"
+}
+
+# build_release_tree <build_dir> <release_dir>: builds the frontend inside
+# <build_dir> (from stage_local_app) and assembles the on-device layout
+# (backend/, frontend/, PRODUCT) in <release_dir>. VERSION is the caller's.
+build_release_tree() {
+	local build="$1" release="$2"
+	echo "==> Building the frontend (Vue) for product '${PRODUCT}'"
+	( cd "${build}/frontend" && npm ci && KIOSK_PRODUCT="$PRODUCT" npm run build )
+	mkdir -p "${release}/backend" "${release}/frontend"
+	rsync -a --exclude 'test_*.py' "${build}/backend/" "${release}/backend/"
+	rsync -a "${build}/frontend/dist/" "${release}/frontend/"
+	echo "$PRODUCT" > "${release}/PRODUCT"
+}
