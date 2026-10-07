@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { api } from '../api.js'
+import { product } from '../product.js'
 import { unlock } from '../pinLock.js'
 
 const { t } = useI18n()
@@ -70,8 +70,7 @@ function onKeydown(event) {
 
 onMounted(async () => {
   try {
-    const data = await api.slideshow()
-    pin.value = data.settings?.settings_pin || null
+    pin.value = await product.settingsPin()
   } catch {
     pin.value = null
   }

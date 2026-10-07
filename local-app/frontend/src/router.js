@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Slideshow from './views/Slideshow.vue'
+import { product } from './product.js'
 import PinGate from './views/PinGate.vue'
 import SettingsLayout from './views/settings/SettingsLayout.vue'
 import NetworkStatus from './views/settings/NetworkStatus.vue'
@@ -7,8 +7,6 @@ import WifiList from './views/settings/WifiList.vue'
 import WifiConnect from './views/settings/WifiConnect.vue'
 import System from './views/settings/System.vue'
 import Advanced from './views/settings/Advanced.vue'
-import SrtSink from './views/settings/SrtSink.vue'
-import RevelationPeering from './views/settings/RevelationPeering.vue'
 import Pairing from './views/settings/Pairing.vue'
 import DeviceTools from './views/settings/DeviceTools.vue'
 import KeyDebug from './views/settings/KeyDebug.vue'
@@ -30,7 +28,8 @@ const router = createRouter({
     // with Settings > System, which already surfaces the same status;
     // '/' now just lands on the slideshow directly.
     { path: '/', redirect: '/kiosk' },
-    { path: '/kiosk', component: Slideshow },
+    // The product's main screen — see product.js.
+    { path: '/kiosk', component: product.mainView },
     // Top-level, not nested under /settings — it must render without the
     // rail/chrome SettingsLayout gives every real settings screen, since
     // it's a lock screen, not a settings section of its own.
@@ -59,8 +58,7 @@ const router = createRouter({
           meta: { railPath: '/settings/network', parent: '/settings/network/wifi', networkBase: '/settings/network' },
         },
         { path: 'network/diagnostics', component: NetworkDiagnostics, meta: { railPath: '/settings/network', parent: '/settings/network', networkBase: '/settings/network' } },
-        { path: 'srt-sink', component: SrtSink, meta: { railPath: '/settings/srt-sink' } },
-        { path: 'revelation', component: RevelationPeering, meta: { railPath: '/settings/revelation' } },
+        ...product.settingsRoutes,
         // Pairing lives here (not a standalone top-level route) so an
         // unpaired device's pairing form gets the same rail chrome as
         // every other settings screen.
@@ -122,8 +120,7 @@ router.beforeEach(async (to, from) => {
 
   let pin = null
   try {
-    const data = await api.slideshow()
-    pin = data.settings?.settings_pin || null
+    pin = await product.settingsPin()
   } catch {
     // Can't reach the local backend — fail open rather than stranding
     // someone out of Settings entirely over a fetch hiccup.

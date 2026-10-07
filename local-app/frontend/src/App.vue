@@ -1,8 +1,8 @@
 <script setup>
-import MenuOverlay from './views/MenuOverlay.vue'
+import { product } from './product.js'
 </script>
 
 <template>
   <router-view />
-  <MenuOverlay />
+  <component :is="product.overlay" v-if="product.overlay" />
 </template>

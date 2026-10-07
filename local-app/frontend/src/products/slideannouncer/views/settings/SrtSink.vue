@@ -3,8 +3,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import QRCode from 'qrcode'
 import { api } from '../../api.js'
-import Dropdown from '../../components/Dropdown.vue'
-import ToggleSwitch from '../../components/ToggleSwitch.vue'
+import Dropdown from '@core/components/Dropdown.vue'
+import ToggleSwitch from '@core/components/ToggleSwitch.vue'
 
 const { t } = useI18n()
 

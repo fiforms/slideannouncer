@@ -3,7 +3,7 @@ import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { navZone } from '../../remoteNav.js'
-import { features, loadFeatures } from '../../features.js'
+import { product } from '../../product.js'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -15,18 +15,17 @@ const route = useRoute()
 // category items it browses as focus moves down the rail, and navZone
 // says which pane currently has focus so it can be tinted.
 //
-// Optional features' own pages (`sub`) are listed, indented, under
-// Advanced only while switched on there — see features.js.
+// The product's own entries (`sub` ones are indented under Advanced) come
+// from product.railCategories() — see product.js.
 const categories = computed(() => [
   { path: '/settings/network', label: t('settingsLayout.network') },
   { path: '/settings/pairing', label: t('settingsLayout.pairing') },
   { path: '/settings/system', label: t('settingsLayout.system') },
   { path: '/settings/advanced', label: t('settingsLayout.advanced') },
-  features.revelation && { path: '/settings/revelation', label: t('settingsLayout.revelationPeering'), sub: true },
-  features.srtSink && { path: '/settings/srt-sink', label: t('settingsLayout.videoReceiver'), sub: true },
+  ...product.railCategories(t),
 ].filter(Boolean))
 
-onMounted(loadFeatures)
+onMounted(product.loadSettings)
 </script>
 
 <template>

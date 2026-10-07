@@ -6,7 +6,7 @@
 import { nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { menuOpen, closeMenu } from '../menuOverlay.js'
+import { menuOpen, closeMenu } from '@core/menuOverlay.js'
 import { shows, pinnedShowId, pinShow } from '../slideshowState.js'
 
 const router = useRouter()

@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
-import Dropdown from '../../components/Dropdown.vue'
+import Dropdown from '@core/components/Dropdown.vue'
 
 const { t } = useI18n()
 

@@ -2,8 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
-import { features, loadFeatures, setFeature } from '../../features.js'
-import ToggleSwitch from '../../components/ToggleSwitch.vue'
+import { product } from '../../product.js'
 import Dropdown from '../../components/Dropdown.vue'
 import { setLocale, LANGUAGE_OPTIONS } from '../../i18n.js'
 
@@ -56,28 +55,9 @@ async function selectResolution(value) {
   }
 }
 
-// Optional features — each switch also adds/removes that feature's own
-// page under Advanced in the rail (SettingsLayout.vue reads the same
-// features.js state).
-const featureSaving = ref(null)
-const featureError = ref(null)
-
-async function toggleFeature(name, enabled) {
-  if (featureSaving.value) return
-  featureSaving.value = name
-  featureError.value = null
-  try {
-    await setFeature(name, enabled)
-  } catch (err) {
-    featureError.value = err.message
-  } finally {
-    featureSaving.value = null
-  }
-}
-
 onMounted(() => {
   loadResolution()
-  loadFeatures()
+  product.loadSettings()
 })
 </script>
 
@@ -119,38 +99,7 @@ onMounted(() => {
       <p class="hint note">{{ t('settings.screens.multiMonitorHint') }}</p>
     </section>
 
-    <section class="tile panel">
-      <div class="panel-title"><h2>{{ t('settings.advanced.featuresTitle') }}</h2></div>
-
-      <div class="feature">
-        <div class="feature-text">
-          <span class="feature-name">{{ t('settingsLayout.revelationPeering') }}</span>
-          <span class="hint">{{ t('settings.advanced.revelationHint') }}</span>
-        </div>
-        <ToggleSwitch
-          :model-value="features.revelation"
-          :disabled="!features.loaded || featureSaving === 'revelation'"
-          @update:model-value="toggleFeature('revelation', $event)"
-        />
-      </div>
-
-      <div class="feature">
-        <div class="feature-text">
-          <span class="feature-name">{{ t('settingsLayout.videoReceiver') }}</span>
-          <span class="hint">{{ t('settings.advanced.srtSinkHint') }}</span>
-          <span v-if="features.srtSink && !features.srtSinkServerAllows" class="pill warn">
-            {{ t('settings.srtSink.serverDisabled') }}
-          </span>
-        </div>
-        <ToggleSwitch
-          :model-value="features.srtSink"
-          :disabled="!features.loaded || featureSaving === 'srtSink'"
-          @update:model-value="toggleFeature('srtSink', $event)"
-        />
-      </div>
-
-      <p v-if="featureError" class="pill warn note">{{ featureError }}</p>
-    </section>
+    <component :is="product.advancedSection" v-if="product.advancedSection" />
   </div>
 </template>
 
@@ -175,24 +124,5 @@ onMounted(() => {
   display: flex;
   gap: 1rem;
   margin-top: 0.35rem;
-}
-.feature {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  padding: 0.6rem 0;
-}
-.feature + .feature {
-  border-top: var(--line) solid var(--border);
-}
-.feature-text {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.2rem;
-}
-.feature-name {
-  font-weight: 600;
 }
 </style>
