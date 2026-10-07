@@ -41,12 +41,15 @@ The server side is the product's other half:
   already carry. Existing devices of another product can't be retargeted
   by update — changing a product's `compatible` means reflashing.
 - **Version suffix**: the local-app version is
-  `<X.Y.Z>-<platform hash>-<product>.<product hash>[-dirty]`, where the
-  product hash is the last commit touching `PRODUCT_ROOT`
-  (`PRODUCT_VERSION_SUFFIX` overrides). It is informational: updates compare
-  only `X.Y.Z`, so a product-only change reaches devices only when
-  `local-app/VERSION` is bumped. Final image/bundle files are named
-  `<product>-<OS version>.*`.
+  `<X.Y.Z>-<platform hash>-<product>[-b<backend>][-f<frontend>][-<hash>]`,
+  e.g. `0.3.12-8d50b20-slideannouncer-b0.1.0-f0.1.0-84263dd`. `b`/`f` come
+  from optional `backend/VERSION` and `frontend/VERSION` in `PRODUCT_ROOT`
+  (bump them as the product changes); the hash is the last commit touching
+  `PRODUCT_ROOT`, with `-dirty` for uncommitted changes
+  (`PRODUCT_VERSION_SUFFIX` overrides the whole suffix). It is informational:
+  updates compare only the leading `X.Y.Z`, so a product-only change reaches
+  devices only when `local-app/VERSION` is bumped. Final image/bundle files
+  are named `<product>-<OS version>.*`.
 
 ## Image seams — `<product>/image/`
 

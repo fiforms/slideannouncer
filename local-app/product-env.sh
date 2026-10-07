@@ -35,9 +35,12 @@ export PRODUCT_ROOT PRODUCT
 RAUC_COMPATIBLE="${RAUC_COMPATIBLE:-${PRODUCT}-rpi4}"
 export RAUC_COMPATIBLE
 
-# product_version_suffix: "<product>.<hash>[-dirty]", from the last commit
-# touching PRODUCT_ROOT, so a build that changed only the product still gets
-# a distinct version string. PRODUCT_VERSION_SUFFIX overrides it; empty when
+# product_version_suffix: appended to the local-app version —
+#   <product>[-b<backend VERSION>][-f<frontend VERSION>][-<hash>[-dirty]]
+# where the VERSION files are PRODUCT_ROOT/backend/VERSION and
+# PRODUCT_ROOT/frontend/VERSION (optional; bump them as the product
+# changes) and the hash is the last commit touching PRODUCT_ROOT.
+# PRODUCT_VERSION_SUFFIX overrides the whole thing; the hash is omitted when
 # PRODUCT_ROOT isn't in a git repo. Informational: updates compare only the
 # leading X.Y.Z (local-app-seed.py's version_core()).
 product_version_suffix() {
@@ -45,36 +48,16 @@ product_version_suffix() {
 		echo "$PRODUCT_VERSION_SUFFIX"
 		return
 	fi
-	local hash dirty=""
+	local suffix="$PRODUCT" part hash dirty=""
+	for part in backend:b frontend:f; do
+		if [ -f "${PRODUCT_ROOT}/${part%%:*}/VERSION" ]; then
+			suffix="${suffix}-${part##*:}$(tr -d '[:space:]' < "${PRODUCT_ROOT}/${part%%:*}/VERSION")"
+		fi
+	done
 	hash="$(git -C "$PRODUCT_ROOT" log -1 --format=%h -- . 2>/dev/null)" || true
-	[ -n "$hash" ] || return 0
-	[ -z "$(git -C "$PRODUCT_ROOT" status --porcelain -- . 2>/dev/null)" ] || dirty="-dirty"
-	echo "${PRODUCT}.${hash}${dirty}"
-}
-
-LOCAL_APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# stage_local_app <dest>: <dest>/{backend,frontend} = this repo's core
-# sources with the product copied in as backend/products/$PRODUCT and
-# frontend/src/products/$PRODUCT (no node_modules, dist or venv).
-stage_local_app() {
-	local dest="$1"
-	mkdir -p "${dest}/backend/products/${PRODUCT}" "${dest}/frontend/src/products/${PRODUCT}"
-	rsync -a --exclude venv --exclude '__pycache__' "${LOCAL_APP_DIR}/backend/" "${dest}/backend/"
-	rsync -a --exclude '__pycache__' "${PRODUCT_ROOT}/backend/" "${dest}/backend/products/${PRODUCT}/"
-	rsync -a --exclude node_modules --exclude dist "${LOCAL_APP_DIR}/frontend/" "${dest}/frontend/"
-	rsync -a "${PRODUCT_ROOT}/frontend/" "${dest}/frontend/src/products/${PRODUCT}/"
-}
-
-# build_release_tree <build_dir> <release_dir>: builds the frontend inside
-# <build_dir> (from stage_local_app) and assembles the on-device layout
-# (backend/, frontend/, PRODUCT) in <release_dir>. VERSION is the caller's.
-build_release_tree() {
-	local build="$1" release="$2"
-	echo "==> Building the frontend (Vue) for product '${PRODUCT}'"
-	( cd "${build}/frontend" && npm ci && KIOSK_PRODUCT="$PRODUCT" npm run build )
-	mkdir -p "${release}/backend" "${release}/frontend"
-	rsync -a --exclude 'test_*.py' "${build}/backend/" "${release}/backend/"
-	rsync -a "${build}/frontend/dist/" "${release}/frontend/"
-	echo "$PRODUCT" > "${release}/PRODUCT"
+	if [ -n "$hash" ]; then
+		[ -z "$(git -C "$PRODUCT_ROOT" status --porcelain -- . 2>/dev/null)" ] || dirty="-dirty"
+		suffix="${suffix}-${hash}${dirty}"
+	fi
+	echo "$suffix"
 }
