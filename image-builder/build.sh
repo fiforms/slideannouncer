@@ -28,15 +28,11 @@ PI_GEN_DIR="${HERE}/pi-gen"
 STAGE_SRC="${HERE}/stage-slide-announcer"
 DEPLOY_DIR="${HERE}/deploy"
 IMG_NAME="slideannouncer"
-# Which product (repo-root products/<name>/, see docs/PRODUCTS.md) this build
-# layers on the core image. Also read by local-app/package.sh.
-PRODUCT="${PRODUCT:-slideannouncer}"
-export PRODUCT
-PRODUCT_DIR="${REPO_ROOT}/products/${PRODUCT}"
-if [ ! -f "${PRODUCT_DIR}/product.env" ]; then
-	echo "build.sh: unknown PRODUCT '${PRODUCT}' — no ${PRODUCT_DIR}/product.env" >&2
-	exit 1
-fi
+# Which product (PRODUCT_ROOT, see docs/PRODUCTS.md) this build layers on the
+# core image. Also read by local-app/package.sh.
+# shellcheck disable=SC1091
+. "${REPO_ROOT}/local-app/product-env.sh"
+PRODUCT_DIR="${PRODUCT_ROOT}/image"
 WORK=""
 RAW_IMG_READY=0
 SUDO_KEEPALIVE_PID=""
@@ -381,7 +377,7 @@ rsync -a --delete "${STAGE_SRC}/" "${PI_GEN_DIR}/stage-slide-announcer/"
 # only, so the tracked 00-packages stays product-neutral.
 if [ -f "${PRODUCT_DIR}/packages" ]; then
 	grep -v '^[[:space:]]*\(#\|$\)' "${PRODUCT_DIR}/packages" \
-		>> "${PI_GEN_DIR}/stage-slide-announcer/01-system-files/00-packages"
+		>> "${PI_GEN_DIR}/stage-slide-announcer/01-system-files/00-packages" || true
 fi
 
 # A local account always gets created with a random per-build password

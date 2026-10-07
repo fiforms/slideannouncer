@@ -34,21 +34,15 @@ if [ "${2:-}" = "--restart-kiosk" ]; then
 	RESTART_KIOSK=true
 fi
 
-# Same product choice as package.sh / image-builder/build.sh (docs/PRODUCTS.md).
-PRODUCT="${PRODUCT:-slideannouncer}"
+# Same product (PRODUCT_ROOT) as package.sh / image-builder/build.sh (docs/PRODUCTS.md).
+# shellcheck disable=SC1091
+. "${HERE}/product-env.sh"
 
-echo "==> Building local-app/frontend (Vue)"
-( cd "${HERE}/frontend" && npm ci && KIOSK_PRODUCT="$PRODUCT" npm run build )
-
+BUILD="$(mktemp -d)"
 STAGE="$(mktemp -d)"
-trap 'rm -rf "$STAGE"' EXIT
-
-mkdir -p "${STAGE}/backend" "${STAGE}/frontend"
-rsync -a --exclude venv --exclude '__pycache__' --exclude 'products/*' "${HERE}/backend/" "${STAGE}/backend/"
-rsync -a --exclude '__pycache__' --exclude 'test_*.py' "${HERE}/backend/products/${PRODUCT}/" "${STAGE}/backend/products/${PRODUCT}/"
-cp "${HERE}/backend/products/__init__.py" "${STAGE}/backend/products/__init__.py"
-echo "$PRODUCT" > "${STAGE}/PRODUCT"
-rsync -a "${HERE}/frontend/dist/" "${STAGE}/frontend/"
+trap 'rm -rf "$BUILD" "$STAGE"' EXIT
+stage_local_app "$BUILD"
+build_release_tree "$BUILD" "$STAGE"
 # Must start with a real X.Y.Z — local-app-seed.py's version_core() runs on
 # every boot (not just once at push time) and re-seeds /data/local-app from
 # this OS image's own embedded release whenever it can't parse `current`'s

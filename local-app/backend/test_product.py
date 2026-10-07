@@ -9,10 +9,11 @@ import pairing
 import product
 
 
-def test_default_product_is_slideannouncer(monkeypatch):
+def test_no_product_configured_is_an_error(monkeypatch):
     monkeypatch.delenv("KIOSK_PRODUCT", raising=False)
     monkeypatch.setattr(product, "PRODUCT_FILE", product.PRODUCT_FILE.with_name("no-such-PRODUCT"))
-    assert product.product_name() == "slideannouncer"
+    with pytest.raises(RuntimeError, match="No product configured"):
+        product.product_name()
 
 
 def test_product_file_and_env_selection(tmp_path, monkeypatch):
@@ -26,9 +27,10 @@ def test_product_file_and_env_selection(tmp_path, monkeypatch):
 
 
 def test_api_url_joins_server_prefix_and_path(monkeypatch):
+    monkeypatch.setattr(product, "_loaded", product.Product(name="fake", api_base="/api/devices"))
     monkeypatch.setattr(pairing, "read_server_url", lambda: "https://example.test")
-    assert pairing.api_url("heartbeat") == "https://example.test/api/slide-announcers/heartbeat"
-    assert pairing.api_url("/shows") == "https://example.test/api/slide-announcers/shows"
+    assert pairing.api_url("heartbeat") == "https://example.test/api/devices/heartbeat"
+    assert pairing.api_url("/shows") == "https://example.test/api/devices/shows"
 
 
 @pytest.fixture

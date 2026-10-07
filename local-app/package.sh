@@ -8,13 +8,10 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="${HERE}/deploy"
-# Which backend/products/<name> and frontend/src/products/<name> ship — the
-# same choice image-builder/build.sh makes (docs/PRODUCTS.md).
-PRODUCT="${PRODUCT:-slideannouncer}"
-if [ ! -d "${HERE}/backend/products/${PRODUCT}" ] || [ ! -d "${HERE}/frontend/src/products/${PRODUCT}" ]; then
-	echo "package.sh: unknown PRODUCT '${PRODUCT}'" >&2
-	exit 1
-fi
+# Which product ships — the same PRODUCT_ROOT image-builder/build.sh uses
+# (docs/PRODUCTS.md).
+# shellcheck disable=SC1091
+. "${HERE}/product-env.sh"
 
 VERSION_BASE="$(cat "${HERE}/VERSION")"
 GIT_HASH="$(git -C "$HERE" rev-parse --short HEAD)"
@@ -24,18 +21,11 @@ GIT_HASH="$(git -C "$HERE" rev-parse --short HEAD)"
 [ -z "$(git -C "$HERE" status --porcelain)" ] || GIT_HASH="${GIT_HASH}-dirty"
 VERSION="${VERSION_BASE}-${GIT_HASH}"
 
-echo "==> Building local-app/frontend (Vue)"
-( cd "${HERE}/frontend" && npm ci && KIOSK_PRODUCT="$PRODUCT" npm run build )
-
+BUILD="$(mktemp -d)"
 STAGE="$(mktemp -d)"
-trap 'rm -rf "$STAGE"' EXIT
-
-mkdir -p "${STAGE}/backend" "${STAGE}/frontend"
-rsync -a --exclude venv --exclude '__pycache__' --exclude 'products/*' "${HERE}/backend/" "${STAGE}/backend/"
-rsync -a --exclude '__pycache__' --exclude 'test_*.py' "${HERE}/backend/products/${PRODUCT}/" "${STAGE}/backend/products/${PRODUCT}/"
-cp "${HERE}/backend/products/__init__.py" "${STAGE}/backend/products/__init__.py"
-echo "$PRODUCT" > "${STAGE}/PRODUCT"
-rsync -a "${HERE}/frontend/dist/" "${STAGE}/frontend/"
+trap 'rm -rf "$BUILD" "$STAGE"' EXIT
+stage_local_app "$BUILD"
+build_release_tree "$BUILD" "$STAGE"
 # Read by the (not yet built) updater to compare against a candidate
 # download, and by system/scripts/local-app-seed.py to decide whether the
 # image's embedded release is newer than what's already on /data. Only the

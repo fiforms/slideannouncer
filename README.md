@@ -73,8 +73,8 @@ to, and the rationale behind each architectural choice below.
   symlink-swap deploys, independent of the OS-level OTA tier).
 - [`provisioning/`](provisioning/) — first-boot and AP-mode WiFi setup
   scripts.
-- [`products/`](products/) — per-product image settings, packages and units (`PRODUCT=<name>`);
-  see [`docs/PRODUCTS.md`](docs/PRODUCTS.md) for how a second kiosk product plugs in.
+- [`examples/portal/`](examples/portal/) — a minimal example product; real products live outside
+  this repo and are built with `PRODUCT_ROOT=…` (see [`docs/PRODUCTS.md`](docs/PRODUCTS.md)).
 - [`docs/`](docs/) — device-repo-specific documentation.
 
 ## Update tiers

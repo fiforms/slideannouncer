@@ -6,7 +6,7 @@ A product is a package at `products/<name>/` whose `__init__.py` exposes a
 module-level `product = Product(...)`. Which one runs is decided at package
 time: package.sh writes the name into the release's `PRODUCT` file, which
 `load()` reads (the `KIOSK_PRODUCT` env var overrides it, for local runs
-and tests; with neither, the original `slideannouncer` product).
+and tests). With neither, get() raises: there is no built-in product.
 
 Core modules must not import a product at module level — products import
 core (pairing, system_control, …), so that would be circular. They call
@@ -19,7 +19,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable
 
-DEFAULT_PRODUCT = "slideannouncer"
 PRODUCT_FILE = Path(__file__).resolve().parent.parent / "PRODUCT"
 
 
@@ -57,7 +56,12 @@ def product_name() -> str:
     name = os.environ.get("KIOSK_PRODUCT")
     if not name and PRODUCT_FILE.exists():
         name = PRODUCT_FILE.read_text().strip()
-    return name or DEFAULT_PRODUCT
+    if not name:
+        raise RuntimeError(
+            "No product configured: expected a PRODUCT file next to backend/ "
+            "(written by package.sh) or the KIOSK_PRODUCT environment variable."
+        )
+    return name
 
 
 def get() -> Product:

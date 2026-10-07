@@ -5,19 +5,34 @@ first-run setup, pairing, heartbeat, and two-tier updates — with the
 signage behavior layered on as a **product**. A different kiosk (a point of
 sale pointed at a remote web app, say) reuses everything but the product.
 
-Product = a directory in four places, all named by the same `<name>`:
+Product = one directory, **outside this repo**, named by `PRODUCT_ROOT`:
 
-| What | Where | Selected by |
-|---|---|---|
-| Image: settings, packages, units, daemons | `products/<name>/` (repo root) | `PRODUCT=<name> image-builder/build.sh` |
-| Backend: routers, background tasks, heartbeat data | `local-app/backend/products/<name>/` | the release's `PRODUCT` file (`KIOSK_PRODUCT` overrides) |
-| Frontend: main view, settings pages, overlay | `local-app/frontend/src/products/<name>/` | `KIOSK_PRODUCT` at `npm run build` |
-| Server contract | [DEVICE_CONTRACT.md](DEVICE_CONTRACT.md) extensions | `Product.api_base` |
+```
+<product>/
+  image/      product.env, packages, enable, system/      → the OS image
+  backend/    a Python package exposing `product`          → backend/products/<name>/
+  frontend/   index.js + the product's Vue code            → src/products/<name>/
+```
 
-`package.sh`, `dev-deploy.sh` and `build.sh` all take `PRODUCT=<name>`
-(default `slideannouncer`) and ship only that product's code.
+The name is `PRODUCT` if set, else the directory's basename. Build with:
 
-## Image seams — `products/<name>/`
+```bash
+PRODUCT_ROOT=/path/to/my-product image-builder/build.sh        # OS image + RAUC bundle
+PRODUCT_ROOT=/path/to/my-product local-app/package.sh         # local-app release only
+PRODUCT_ROOT=/path/to/my-product local-app/dev-deploy.sh user@host
+PRODUCT_ROOT=/path/to/my-product local-app/run-tests.sh       # core + product backend tests
+```
+
+The scripts (via `local-app/product-env.sh`) copy this repo's sources and
+the product into a throwaway build tree, so this repo — typically a pinned
+submodule of the product's own repo — is never modified. `examples/portal/`
+is a complete minimal product; copy it to start. The signage product is
+`kiosk-products/slideannouncer/` in the AnnouncementSlides repo.
+
+The server side is the product's other half:
+[DEVICE_CONTRACT.md](DEVICE_CONTRACT.md) extensions, under `Product.api_base`.
+
+## Image seams — `<product>/image/`
 
 - `product.env` — shell settings sourced by `kiosk-start.sh`. `KIOSK_URL` is
   what Chromium opens: `http://localhost/kiosk` (the local app) or a remote
@@ -34,7 +49,7 @@ overlay).
 
 ## Backend seam — `product.py`
 
-`products/<name>/__init__.py` exposes `product = Product(...)`:
+`<product>/backend/__init__.py` exposes `product = Product(...)`:
 
 | field | purpose |
 |---|---|
@@ -45,12 +60,12 @@ overlay).
 | `heartbeat_payload()`, `on_heartbeat_response()` | the contract's extension points |
 | `wipe_paths` | state wiped on unpair/revocation |
 
-Core modules must call `product.get()` at the point of use, never import a
+The release's `PRODUCT` file picks the product at run time. Core modules must call `product.get()` at the point of use, never import a
 product at module level (products import core).
 
 ## Frontend seam — `src/product.js`
 
-`src/products/<name>/index.js` default-exports:
+`<product>/frontend/index.js` default-exports:
 
 | field | purpose |
 |---|---|
