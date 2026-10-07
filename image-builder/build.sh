@@ -28,6 +28,15 @@ PI_GEN_DIR="${HERE}/pi-gen"
 STAGE_SRC="${HERE}/stage-slide-announcer"
 DEPLOY_DIR="${HERE}/deploy"
 IMG_NAME="slideannouncer"
+# Which product (repo-root products/<name>/, see docs/PRODUCTS.md) this build
+# layers on the core image. Also read by local-app/package.sh.
+PRODUCT="${PRODUCT:-slideannouncer}"
+export PRODUCT
+PRODUCT_DIR="${REPO_ROOT}/products/${PRODUCT}"
+if [ ! -f "${PRODUCT_DIR}/product.env" ]; then
+	echo "build.sh: unknown PRODUCT '${PRODUCT}' — no ${PRODUCT_DIR}/product.env" >&2
+	exit 1
+fi
 WORK=""
 RAW_IMG_READY=0
 SUDO_KEEPALIVE_PID=""
@@ -254,6 +263,7 @@ FILES_DIR="${STAGE_SRC}/01-system-files/files"
 rm -rf "$FILES_DIR"
 mkdir -p "$FILES_DIR"
 rsync -a --exclude 'backend/venv' "${REPO_ROOT}/system/" "${FILES_DIR}/system/"
+rsync -a "${PRODUCT_DIR}/" "${FILES_DIR}/product/"
 rsync -a "${REPO_ROOT}/provisioning/" "${FILES_DIR}/provisioning/"
 # Seed the staged network-config's WiFi regulatory-domain from
 # SLIDE_ANNOUNCER_WIFI_COUNTRY (validated above) — see that file's own
@@ -335,6 +345,7 @@ cp "${REPO_ROOT}/local-app/backend/requirements.txt" "${FILES_DIR}/local-app-rel
 {
 	echo "OS_VERSION=${OS_VERSION}"
 	echo "BUILD_DATE=${BUILD_DATE}"
+	echo "PRODUCT=${PRODUCT}"
 	echo "GIT_HASH=${GIT_HASH}"
 } > "${FILES_DIR}/BUILD_INFO"
 echo "==> Building slideannouncer ${OS_VERSION} (provenance: date=${BUILD_DATE} git=${GIT_HASH})"
@@ -366,6 +377,12 @@ fi
 
 echo "==> Copying the custom stage into pi-gen (Docker build context = pi-gen/ only)"
 rsync -a --delete "${STAGE_SRC}/" "${PI_GEN_DIR}/stage-slide-announcer/"
+# Product packages go on the end of the (core) apt list in the pi-gen copy
+# only, so the tracked 00-packages stays product-neutral.
+if [ -f "${PRODUCT_DIR}/packages" ]; then
+	grep -v '^[[:space:]]*\(#\|$\)' "${PRODUCT_DIR}/packages" \
+		>> "${PI_GEN_DIR}/stage-slide-announcer/01-system-files/00-packages"
+fi
 
 # A local account always gets created with a random per-build password
 # (never just deferred to Raspberry Pi OS's interactive first-boot wizard —

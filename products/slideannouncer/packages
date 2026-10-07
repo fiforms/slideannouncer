@@ -1,0 +1,4 @@
+# Product-specific apt packages, appended to image-builder/stage-slide-announcer/01-system-files/00-packages at build time.
+# LAN video receiver (backend/products/slideannouncer/srt_*.py)
+mpv
+ffmpeg

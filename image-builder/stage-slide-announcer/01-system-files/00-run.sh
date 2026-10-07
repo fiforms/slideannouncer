@@ -37,6 +37,21 @@ echo "${OS_VERSION:?}" > "${ROOTFS_DIR}/opt/slide-announcer/VERSION"
 
 install -m 644 files/system/*.service files/system/*.timer "${ROOTFS_DIR}/etc/systemd/system/"
 install -d "${ROOTFS_DIR}/usr/local/sbin" "${ROOTFS_DIR}/usr/local/bin"
+
+# The product layered on this core (repo-root products/<name>/, staged to
+# files/product/ by build.sh — see docs/PRODUCTS.md): its settings, units
+# and daemons. Scripts install under their own file names; the units named
+# in `enable` are enabled below, after the core ones.
+install -m 644 files/product/product.env "${ROOTFS_DIR}/opt/slide-announcer/product.env"
+echo "${PRODUCT:?}" > "${ROOTFS_DIR}/opt/slide-announcer/PRODUCT"
+if [ -d files/product/system ]; then
+	for unit in files/product/system/*.service files/product/system/*.timer; do
+		[ -e "$unit" ] && install -m 644 "$unit" "${ROOTFS_DIR}/etc/systemd/system/"
+	done
+	for script in files/product/system/scripts/*; do
+		[ -e "$script" ] && install -m 755 "$script" "${ROOTFS_DIR}/usr/local/sbin/"
+	done
+fi
 install -m 755 files/system/scripts/data-resize.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-data-resize.sh"
 install -m 755 files/system/scripts/kiosk-start.sh "${ROOTFS_DIR}/usr/local/bin/slide-announcer-kiosk-start.sh"
 install -m 755 files/system/scripts/rauc-update.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-update"
@@ -53,7 +68,6 @@ install -m 755 files/system/scripts/display-power.py "${ROOTFS_DIR}/usr/local/sb
 install -m 755 files/system/scripts/apply-audio-output.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-audio-output"
 install -m 755 files/system/scripts/apply-screen-resolution.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-screen-resolution"
 install -m 755 files/system/scripts/volume-key-monitor.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-volume-key-monitor"
-install -m 755 files/system/scripts/revelation-peer-daemon.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-revelation-peer"
 install -m 755 files/system/scripts/paint-debug.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-paint-debug"
 
 # HandlePowerKey=ignore: without it, systemd-logind's own default power-key
@@ -511,7 +525,6 @@ systemctl enable slide-announcer-kiosk.service
 systemctl enable slide-announcer-power-button-dirs.service
 systemctl enable slide-announcer-power-button.service
 systemctl enable slide-announcer-volume-key.service
-systemctl enable slide-announcer-revelation-peer.service
 systemctl enable slide-announcer-tryboot-check.service
 systemctl enable slide-announcer-local-app-updater.timer
 systemctl enable slide-announcer-os-updater.timer
@@ -519,6 +532,13 @@ systemctl enable rauc.service
 systemctl enable nginx.service
 systemctl enable seatd.service
 EOF
+
+# The product's own units (products/<name>/enable, one unit per line).
+if [ -f files/product/enable ]; then
+	grep -v '^[[:space:]]*\(#\|$\)' files/product/enable | while read -r unit; do
+		echo "systemctl enable ${unit}" | on_chroot
+	done
+fi
 
 # rc.xml content for the labwc config dir created above — mode 644 is
 # world-readable, so root ownership here (this script itself runs as

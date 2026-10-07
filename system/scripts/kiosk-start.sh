@@ -4,6 +4,13 @@
 # `slideannouncer` user via seatd (no logind session/graphical login involved).
 set -euo pipefail
 
+# Per-product settings (baked into the image from products/<name>/product.env).
+# KIOSK_URL is what the browser opens: this device's own local app, or — for
+# a product that is a remote web portal — that site.
+KIOSK_URL="http://localhost/kiosk"
+# shellcheck disable=SC1091
+[ -f /opt/slide-announcer/product.env ] && . /opt/slide-announcer/product.env
+
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
@@ -93,7 +100,7 @@ CHROMIUM_CMD=(
 	# reach the port at all (no --remote-debugging-address), so widening
 	# this to any origin costs nothing extra.
 	--remote-allow-origins=*
-	--app=http://localhost/kiosk
+	"--app=${KIOSK_URL}"
 )
 
 # wlr-randr (apply-screen-resolution.sh) needs a live compositor to talk

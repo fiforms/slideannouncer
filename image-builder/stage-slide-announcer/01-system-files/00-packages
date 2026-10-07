@@ -20,6 +20,4 @@ parted
 e2fsprogs
 cloud-guest-utils
 rauc
-mpv
 librsvg2-bin
-ffmpeg

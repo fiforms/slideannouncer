@@ -34,14 +34,20 @@ if [ "${2:-}" = "--restart-kiosk" ]; then
 	RESTART_KIOSK=true
 fi
 
+# Same product choice as package.sh / image-builder/build.sh (docs/PRODUCTS.md).
+PRODUCT="${PRODUCT:-slideannouncer}"
+
 echo "==> Building local-app/frontend (Vue)"
-( cd "${HERE}/frontend" && npm ci && npm run build )
+( cd "${HERE}/frontend" && npm ci && KIOSK_PRODUCT="$PRODUCT" npm run build )
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
 mkdir -p "${STAGE}/backend" "${STAGE}/frontend"
-rsync -a --exclude venv --exclude '__pycache__' "${HERE}/backend/" "${STAGE}/backend/"
+rsync -a --exclude venv --exclude '__pycache__' --exclude 'products/*' "${HERE}/backend/" "${STAGE}/backend/"
+rsync -a --exclude '__pycache__' --exclude 'test_*.py' "${HERE}/backend/products/${PRODUCT}/" "${STAGE}/backend/products/${PRODUCT}/"
+cp "${HERE}/backend/products/__init__.py" "${STAGE}/backend/products/__init__.py"
+echo "$PRODUCT" > "${STAGE}/PRODUCT"
 rsync -a "${HERE}/frontend/dist/" "${STAGE}/frontend/"
 # Must start with a real X.Y.Z — local-app-seed.py's version_core() runs on
 # every boot (not just once at push time) and re-seeds /data/local-app from
