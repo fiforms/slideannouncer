@@ -26,7 +26,15 @@ image, deployed via atomic symlink-swap rather than A/B partitioning (see
     reports NetworkManager's own connectivity check result), and
     `POST /api/local/network/forget` (`{ssid}` — deletes the saved
     connection profile). These back the real on-device WiFi/network
-    settings menu described below.
+    settings menu described below. A failed connect returns HTTP 400 with
+    `{detail, reason, raw, log, log_restricted}` — a reason code the UI
+    translates, nmcli's own message, and the NetworkManager/wpa_supplicant
+    journal lines from the attempt. `POST /api/local/network/portal/sign-in`
+    starts captive-portal sign-in (see `captive_portal.py`), and
+    `GET /api/local/network/diagnostics[?rescan=true]` returns the full
+    report behind Settings > Network > Diagnostics (see
+    `network_diagnostics.py`; reading the journal needs the service's
+    `systemd-journal` group, an OS-image change).
   - `system_control.py` — reboot, OTA update-check, and factory reset,
     triggered from the Settings > System screen. See "Privileged operations
     from the web UI," below, for how this works without the backend ever

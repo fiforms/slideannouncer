@@ -8,10 +8,13 @@ import { openCaptivePortal } from '../../captivePortal.js'
 const props = defineProps({ ssid: { type: String, required: true } })
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const { t, te } = useI18n()
 const networkBase = route.meta.networkBase || '/settings/network'
 
 const secured = route.query.secured !== '0'
+// Set by WifiList for 802.1X ("company login") and WEP networks, which this
+// screen has no way to join — say so instead of offering a doomed password.
+const unsupportedKind = route.query.unsupported || null
 const password = ref('')
 const showPassword = ref(false)
 
@@ -19,6 +22,10 @@ const showPassword = ref(false)
 const state = ref('idle')
 const errorMessage = ref(null)
 const connectivity = ref(null)
+// What the backend knew about a failed join (see network.ConnectError):
+// a reason code to translate, nmcli's raw message and the journal lines.
+const failure = ref(null)
+const showDetails = ref(false)
 
 // Full internet = the happy path: a big confirmation, then back to the
 // Network page on its own after REDIRECT_SECONDS. Connected-but-limited
@@ -32,15 +39,24 @@ let redirectTimer = null
 async function connect() {
   state.value = 'connecting'
   errorMessage.value = null
+  failure.value = null
+  showDetails.value = false
   try {
     const result = await api.networkConnect(props.ssid, secured ? password.value : null)
     connectivity.value = result.connectivity
     state.value = 'success'
     if (online.value) startRedirect()
   } catch (err) {
-    errorMessage.value = err.message
+    const body = err.body
+    const key = `settings.wifiConnect.failure.${body?.reason}`
+    errorMessage.value = body?.reason && te(key) ? t(key) : err.message
+    failure.value = body?.reason ? body : null
     state.value = 'error'
   }
+}
+
+function goToDiagnostics() {
+  router.push(`${networkBase}/diagnostics`)
 }
 
 function startRedirect() {
@@ -79,7 +95,11 @@ const connectivityLabel = computed(() =>
   <div>
     <h1 v-if="state !== 'success'">{{ ssid }}</h1>
 
-    <form v-if="state === 'idle' || state === 'error'" class="form" @submit.prevent="connect">
+    <div v-if="unsupportedKind" class="status-block">
+      <p class="pill warn">{{ t('settings.wifiConnect.unsupported', { kind: t(`settings.wifiList.kind.${unsupportedKind}`) }) }}</p>
+    </div>
+
+    <form v-else-if="state === 'idle' || state === 'error'" class="form" @submit.prevent="connect">
       <label v-if="secured" class="field">
         <span>{{ t('settings.wifiConnect.password') }}</span>
         <div class="password-row">
@@ -97,6 +117,19 @@ const connectivityLabel = computed(() =>
       <p v-else class="hint">{{ t('settings.wifiConnect.openNetworkHint') }}</p>
 
       <p v-if="state === 'error'" class="pill warn">{{ errorMessage }}</p>
+      <div v-if="state === 'error'" class="failure-actions">
+        <button v-if="failure" type="button" class="tile toggle" @click="showDetails = !showDetails">
+          {{ showDetails ? t('settings.wifiConnect.hideDetails') : t('settings.wifiConnect.showDetails') }}
+        </button>
+        <button type="button" class="tile toggle" @click="goToDiagnostics">{{ t('settings.network.diagnostics') }}</button>
+      </div>
+      <div v-if="showDetails && failure" class="details">
+        <p class="hint">{{ t('settings.wifiConnect.rawError') }}</p>
+        <code>{{ failure.raw }}</code>
+        <p v-if="failure.log?.length" class="hint">{{ t('settings.wifiConnect.logLines') }}</p>
+        <pre v-if="failure.log?.length">{{ failure.log.join('\n') }}</pre>
+        <p v-else-if="failure.log_restricted" class="hint">{{ t('settings.diagnostics.logRestricted') }}</p>
+      </div>
 
       <button type="submit" class="tile action" :disabled="secured && !password">
         {{ t('settings.wifiConnect.connect') }}
@@ -125,6 +158,14 @@ const connectivityLabel = computed(() =>
           @click="signInToPortal"
         >
           {{ t('settings.network.portalSignIn') }}
+        </button>
+        <button
+          v-else-if="connectivity === 'limited'"
+          class="tile action"
+          :disabled="openingPortal"
+          @click="signInToPortal"
+        >
+          {{ t('settings.network.portalTryAnyway') }}
         </button>
         <button class="tile action" @click="done">{{ t('settings.wifiConnect.done') }}</button>
       </div>
@@ -156,7 +197,10 @@ h1 { margin-top: 0; word-break: break-word; }
 }
 .password-row input { flex: 1; }
 .toggle { padding: 0.6rem 1rem; }
-.hint { color: var(--text-dim); }
+.hint { color: var(--text-dim); margin: 0.4rem 0; }
+.failure-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+.details { max-width: 40rem; font-size: 0.85rem; }
+.details code, .details pre { display: block; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .action {
   align-self: flex-start;
   padding: 0.9rem 1.8rem;

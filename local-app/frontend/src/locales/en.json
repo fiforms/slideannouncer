@@ -200,7 +200,9 @@
                 "error": "Server error",
                 "unreachable": "Unreachable",
                 "unconfigured": "Not configured"
-            }
+            },
+            "portalTryAnyway": "Try Sign-In Page",
+            "diagnostics": "Diagnostics"
         },
         "wifiList": {
             "title": "Set Up Wi-Fi",
@@ -208,7 +210,18 @@
             "scanning": "Scanning…",
             "scanningForNetworks": "Scanning for networks…",
             "noNetworksFound": "No networks found nearby.",
-            "connected": "Connected"
+            "connected": "Connected",
+            "kind": {
+                "open": "Open",
+                "owe": "Open (encrypted)",
+                "wep": "WEP (not supported)",
+                "wpa": "WPA",
+                "wpa2": "WPA2",
+                "wpa3": "WPA3",
+                "wpa2_wpa3": "WPA2/WPA3",
+                "enterprise": "Company login (not supported)",
+                "unknown": "Unknown"
+            }
         },
         "wifiConnect": {
             "password": "Password",
@@ -222,7 +235,23 @@
             "successDetail": "Connected to {ssid}, and the internet is reachable.",
             "limitedTitle": "Connected, but no internet",
             "limitedDetail": "Joined {ssid}, but the internet check says: {connectivity}.",
-            "returning": "Returning to Network settings in {seconds}…"
+            "returning": "Returning to Network settings in {seconds}…",
+            "unsupported": "This is a {kind} network. This device can only join open networks and ones with a password (WPA2/WPA3), so it can't connect to this one.",
+            "showDetails": "Technical Details",
+            "hideDetails": "Hide Details",
+            "rawError": "Error from the network manager:",
+            "logLines": "Wi-Fi log from this attempt:",
+            "failure": {
+                "wrong_password": "The password was rejected. Check it and try again — passwords are case-sensitive.",
+                "not_found": "That network wasn't found. It may be out of range, or on a channel this device can't use.",
+                "ap_full": "The router refused the connection — it may have too many devices connected.",
+                "auth_rejected": "The router rejected this device's connection request. It may only allow approved devices (MAC filtering) or use a security setting this device can't negotiate.",
+                "dhcp_failed": "Connected to the router, but it never gave this device an address. Try again, or restart the router.",
+                "timeout": "The connection took too long and was abandoned. The signal may be too weak.",
+                "radio_off": "The Wi-Fi radio is switched off or blocked.",
+                "unsupported": "This network uses a company login or WEP security, which this device can't join.",
+                "unknown": "The connection failed for an unrecognized reason. Technical Details may say more."
+            }
         },
         "deviceTools": {
             "title": "Device Restart, Reset & Debugging",
@@ -257,6 +286,87 @@
             "revelationHint": "Let a Revelation presenter on your network take over this display for a live presentation.",
             "srtSinkHint": "Receive a live video feed (OBS, vMix, etc.) from your church network over SRT.",
             "featureOffHint": "This feature is turned off — switch it on in Settings > Advanced."
+        },
+        "diagnostics": {
+            "title": "Network Diagnostics",
+            "running": "Checking…",
+            "rerun": "Run Again",
+            "rescan": "Rescan Wi-Fi",
+            "summary": "Summary",
+            "allGood": "No problems found.",
+            "severity": {
+                "error": "Problem",
+                "warn": "Warning",
+                "info": "Note"
+            },
+            "radio": "Wi-Fi Adapter & Software",
+            "path": "Connection Path",
+            "nearby": "Nearby Networks",
+            "profiles": "Saved Networks",
+            "attempts": "Recent Connection Attempts",
+            "log": "Wi-Fi Log",
+            "adapter": "Adapter",
+            "firmware": "Firmware",
+            "state": "State",
+            "bands": "Bands",
+            "link": "Current link",
+            "accessPoint": "Access point",
+            "country": "Wi-Fi country",
+            "rfkill": "Radio switch",
+            "blocked": "Blocked",
+            "unblocked": "Not blocked",
+            "wpa3": "WPA3 (software)",
+            "supported": "Supported",
+            "notSupported": "Too old",
+            "clock": "Clock",
+            "synced": "Synced",
+            "notSynced": "Not synced",
+            "notConnected": "Not connected to a network.",
+            "fail": "Fail",
+            "loss": "{pct}% loss",
+            "httpPortal": "Intercepted by a sign-in page (HTTP {status})",
+            "step": {
+                "gateway": "Router",
+                "internetIp": "Internet (by address)",
+                "dns": "Name lookup (DNS)",
+                "http": "Web request",
+                "server": "Slide server"
+            },
+            "ssid": "Network",
+            "security": "Security",
+            "channels": "Channels",
+            "hidden": "{n} hidden network(s) not listed.",
+            "keyMgmt": "Security",
+            "autoconnect": "Auto-join",
+            "yes": "Yes",
+            "no": "No",
+            "broken": "Incomplete",
+            "noProfiles": "No saved Wi-Fi networks.",
+            "noAttempts": "No connection attempts since the device started.",
+            "logRestricted": "The Wi-Fi log can't be read yet — it needs a system update on this device.",
+            "logUnavailable": "The Wi-Fi log isn't available on this device.",
+            "logEmpty": "Nothing logged recently.",
+            "finding": {
+                "networkmanager_unreachable": "The network service isn't responding ({detail}).",
+                "no_wifi_device": "No Wi-Fi adapter was found.",
+                "radio_blocked": "The Wi-Fi radio is blocked (rfkill). It must be unblocked before connecting.",
+                "wifi_disabled": "Wi-Fi is turned off.",
+                "regdomain_unset": "No Wi-Fi country is set, so the radio is limited to a restricted set of channels. Networks on many 5 GHz channels may not appear or connect.",
+                "broken_profile": "A saved network is incomplete and can't connect: {names}. Joining it again replaces it.",
+                "last_connect_failed": "The last attempt to join “{ssid}” failed. {reason}",
+                "not_connected": "Not connected to any network.",
+                "weak_signal": "The signal is weak ({signal}%). Move the device or the router closer, or use a network cable.",
+                "captive_portal": "This network wants a sign-in on a web page before it allows internet access. Use “Sign In to Network”.",
+                "gateway_unreachable": "The router ({gateway}) isn't answering, though Wi-Fi is connected. Move closer or restart the router.",
+                "no_route_to_internet": "The router answers, but nothing gets through to the internet. Check the router's own internet connection, or whether this network blocks new devices.",
+                "dns_failing": "The internet answers by address, but names don't resolve — a DNS problem on this network.",
+                "http_blocked": "The internet answers and names resolve, but web requests are blocked ({error}). A firewall or an unfinished sign-in is likely — try “Sign In to Network”.",
+                "no_dns_servers": "The router didn't provide any DNS servers.",
+                "server_unreachable": "The internet works, but the AnnouncementSlides server can't be reached ({detail}).",
+                "clock_unsynced": "The device's clock isn't synchronized, which makes secure (HTTPS) connections fail.",
+                "wpa3_software_old": "The installed network software (NetworkManager {networkmanager}, wpa_supplicant {wpa_supplicant}) is too old for WPA3 networks.",
+                "unsupported_networks_nearby": "Some nearby networks use a company login or WEP security, which this device can't join: {names}."
+            }
         }
     },
     "setup": {

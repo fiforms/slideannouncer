@@ -200,7 +200,9 @@
                 "error": "Error del servidor",
                 "unreachable": "Inaccesible",
                 "unconfigured": "No configurado"
-            }
+            },
+            "portalTryAnyway": "Probar Página de Inicio de Sesión",
+            "diagnostics": "Diagnóstico"
         },
         "wifiList": {
             "title": "Configurar Wi-Fi",
@@ -208,7 +210,18 @@
             "scanning": "Buscando…",
             "scanningForNetworks": "Buscando redes…",
             "noNetworksFound": "No se encontraron redes cercanas.",
-            "connected": "Conectado"
+            "connected": "Conectado",
+            "kind": {
+                "open": "Abierta",
+                "owe": "Abierta (cifrada)",
+                "wep": "WEP (no compatible)",
+                "wpa": "WPA",
+                "wpa2": "WPA2",
+                "wpa3": "WPA3",
+                "wpa2_wpa3": "WPA2/WPA3",
+                "enterprise": "Inicio de sesión corporativo (no compatible)",
+                "unknown": "Desconocida"
+            }
         },
         "wifiConnect": {
             "password": "Contraseña",
@@ -222,7 +235,23 @@
             "successDetail": "Conectado a {ssid}, y hay acceso a internet.",
             "limitedTitle": "Conectado, pero sin internet",
             "limitedDetail": "Se unió a {ssid}, pero la verificación de internet indica: {connectivity}.",
-            "returning": "Volviendo a la configuración de Red en {seconds}…"
+            "returning": "Volviendo a la configuración de Red en {seconds}…",
+            "unsupported": "Esta es una red {kind}. Este dispositivo solo puede unirse a redes abiertas o con contraseña (WPA2/WPA3), así que no puede conectarse a esta.",
+            "showDetails": "Detalles Técnicos",
+            "hideDetails": "Ocultar Detalles",
+            "rawError": "Error del administrador de red:",
+            "logLines": "Registro de WiFi de este intento:",
+            "failure": {
+                "wrong_password": "Se rechazó la contraseña. Revísela e inténtelo de nuevo — distingue mayúsculas de minúsculas.",
+                "not_found": "No se encontró esa red. Puede estar fuera de alcance o en un canal que este dispositivo no puede usar.",
+                "ap_full": "El router rechazó la conexión — puede que tenga demasiados dispositivos conectados.",
+                "auth_rejected": "El router rechazó la solicitud de conexión de este dispositivo. Puede que solo permita dispositivos aprobados (filtro MAC) o que use una configuración de seguridad que este dispositivo no puede negociar.",
+                "dhcp_failed": "Se conectó al router, pero nunca le dio una dirección a este dispositivo. Inténtelo de nuevo o reinicie el router.",
+                "timeout": "La conexión tardó demasiado y se abandonó. Puede que la señal sea muy débil.",
+                "radio_off": "La radio WiFi está apagada o bloqueada.",
+                "unsupported": "Esta red usa inicio de sesión corporativo o seguridad WEP, a las que este dispositivo no puede unirse.",
+                "unknown": "La conexión falló por un motivo desconocido. Los Detalles Técnicos pueden dar más información."
+            }
         },
         "deviceTools": {
             "title": "Reiniciar, restablecer y depurar el dispositivo",
@@ -257,6 +286,87 @@
             "revelationHint": "Permite que un presentador de Revelation en su red tome esta pantalla para una presentación en vivo.",
             "srtSinkHint": "Recibe una transmisión de video en vivo (OBS, vMix, etc.) desde la red de su iglesia mediante SRT.",
             "featureOffHint": "Esta función está desactivada — actívela en Configuración > Avanzado."
+        },
+        "diagnostics": {
+            "title": "Diagnóstico de Red",
+            "running": "Comprobando…",
+            "rerun": "Ejecutar de Nuevo",
+            "rescan": "Buscar Redes de Nuevo",
+            "summary": "Resumen",
+            "allGood": "No se encontraron problemas.",
+            "severity": {
+                "error": "Problema",
+                "warn": "Aviso",
+                "info": "Nota"
+            },
+            "radio": "Adaptador y Software WiFi",
+            "path": "Ruta de Conexión",
+            "nearby": "Redes Cercanas",
+            "profiles": "Redes Guardadas",
+            "attempts": "Intentos de Conexión Recientes",
+            "log": "Registro de WiFi",
+            "adapter": "Adaptador",
+            "firmware": "Firmware",
+            "state": "Estado",
+            "bands": "Bandas",
+            "link": "Enlace actual",
+            "accessPoint": "Punto de acceso",
+            "country": "País de WiFi",
+            "rfkill": "Interruptor de radio",
+            "blocked": "Bloqueada",
+            "unblocked": "No bloqueada",
+            "wpa3": "WPA3 (software)",
+            "supported": "Compatible",
+            "notSupported": "Demasiado antiguo",
+            "clock": "Reloj",
+            "synced": "Sincronizado",
+            "notSynced": "Sin sincronizar",
+            "notConnected": "No está conectado a una red.",
+            "fail": "Falla",
+            "loss": "{pct}% de pérdida",
+            "httpPortal": "Interceptado por una página de inicio de sesión (HTTP {status})",
+            "step": {
+                "gateway": "Router",
+                "internetIp": "Internet (por dirección)",
+                "dns": "Búsqueda de nombres (DNS)",
+                "http": "Solicitud web",
+                "server": "Servidor de diapositivas"
+            },
+            "ssid": "Red",
+            "security": "Seguridad",
+            "channels": "Canales",
+            "hidden": "{n} red(es) oculta(s) no mostrada(s).",
+            "keyMgmt": "Seguridad",
+            "autoconnect": "Unión automática",
+            "yes": "Sí",
+            "no": "No",
+            "broken": "Incompleta",
+            "noProfiles": "No hay redes WiFi guardadas.",
+            "noAttempts": "No ha habido intentos de conexión desde que arrancó el dispositivo.",
+            "logRestricted": "Aún no se puede leer el registro de WiFi — requiere una actualización del sistema en este dispositivo.",
+            "logUnavailable": "El registro de WiFi no está disponible en este dispositivo.",
+            "logEmpty": "No hay nada registrado recientemente.",
+            "finding": {
+                "networkmanager_unreachable": "El servicio de red no responde ({detail}).",
+                "no_wifi_device": "No se encontró ningún adaptador WiFi.",
+                "radio_blocked": "La radio WiFi está bloqueada (rfkill). Debe desbloquearse antes de conectar.",
+                "wifi_disabled": "El WiFi está apagado.",
+                "regdomain_unset": "No hay un país de WiFi configurado, por lo que la radio se limita a un conjunto restringido de canales. Es posible que las redes en muchos canales de 5 GHz no aparezcan ni se conecten.",
+                "broken_profile": "Una red guardada está incompleta y no puede conectarse: {names}. Al unirse de nuevo se reemplaza.",
+                "last_connect_failed": "El último intento de unirse a «{ssid}» falló. {reason}",
+                "not_connected": "No está conectado a ninguna red.",
+                "weak_signal": "La señal es débil ({signal}%). Acerque el dispositivo o el router, o use un cable de red.",
+                "captive_portal": "Esta red requiere iniciar sesión en una página web antes de permitir el acceso a internet. Use «Iniciar Sesión en la Red».",
+                "gateway_unreachable": "El router ({gateway}) no responde, aunque el WiFi está conectado. Acérquese o reinicie el router.",
+                "no_route_to_internet": "El router responde, pero nada llega a internet. Revise la conexión a internet del propio router, o si esta red bloquea dispositivos nuevos.",
+                "dns_failing": "Internet responde por dirección, pero los nombres no se resuelven — un problema de DNS en esta red.",
+                "http_blocked": "Internet responde y los nombres se resuelven, pero las solicitudes web están bloqueadas ({error}). Probablemente sea un firewall o un inicio de sesión sin terminar — pruebe «Iniciar Sesión en la Red».",
+                "no_dns_servers": "El router no proporcionó ningún servidor DNS.",
+                "server_unreachable": "Internet funciona, pero no se puede llegar al servidor de AnnouncementSlides ({detail}).",
+                "clock_unsynced": "El reloj del dispositivo no está sincronizado, lo que hace fallar las conexiones seguras (HTTPS).",
+                "wpa3_software_old": "El software de red instalado (NetworkManager {networkmanager}, wpa_supplicant {wpa_supplicant}) es demasiado antiguo para redes WPA3.",
+                "unsupported_networks_nearby": "Algunas redes cercanas usan inicio de sesión corporativo o seguridad WEP, a las que este dispositivo no puede unirse: {names}."
+            }
         }
     },
     "setup": {

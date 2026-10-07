@@ -7,7 +7,11 @@ async function request(path, options) {
     // no JSON body (e.g. a network-level failure page) — fall through
   }
   if (!res.ok) {
-    throw new Error(body?.detail || `${path} failed (${res.status})`)
+    const err = new Error(body?.detail || `${path} failed (${res.status})`)
+    // Endpoints that explain themselves (e.g. a failed WiFi join's reason
+    // code and log) send more than `detail`; keep it for the caller.
+    err.body = body
+    throw err
   }
   return body
 }
@@ -91,6 +95,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
     }),
+  networkDiagnostics: (rescan = false) => request(`/api/local/network/diagnostics${rescan ? '?rescan=true' : ''}`),
   networkServerCheck: () => request('/api/local/network/server-check'),
   networkPortalSignIn: (returnPath) =>
     request('/api/local/network/portal/sign-in', {

@@ -9,6 +9,12 @@ itself instead: a plain-HTTP request to a URL whose real answer is a bare
 (its Location is the portal page) or a 200 with the portal's own HTML —
 means "portal"; no answer at all means no internet.
 
+Some portals drop everything (DNS included) until sign-in, so the probe
+gets no answer at all and looks like plain "no internet". start_sign_in()
+therefore falls back to the router's own address — where the great majority
+of portals are served — and the UI offers sign-in for "limited" networks
+too, not just detected portals.
+
 Sign-in: the kiosk is a single Chromium tab, so start_sign_in() hands the
 frontend the portal URL to navigate that tab to, and starts a background
 watcher that re-probes every few seconds. Once the probe comes back clean
@@ -41,25 +47,34 @@ _watch_task: asyncio.Task | None = None
 
 
 async def probe(attempts: int = 2) -> dict:
-    """{"state": "full" | "portal" | "none", "portal_url": str | None}.
+    """{"state": "full" | "portal" | "none", "portal_url": str | None,
+    "http_status": int | None, "error": str | None, "elapsed_ms": int}.
     A transport failure is retried once — right after joining a network,
     DNS commonly isn't answering for the first second or so."""
+    started = time.monotonic()
+
+    def result(state, portal_url=None, status=None, error=None):
+        return {"state": state, "portal_url": portal_url, "http_status": status,
+                "error": error, "elapsed_ms": round((time.monotonic() - started) * 1000)}
+
+    error = None
     for attempt in range(attempts):
         try:
             async with httpx.AsyncClient(follow_redirects=False, timeout=PROBE_TIMEOUT_SECONDS) as client:
                 resp = await client.get(PROBE_URL)
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            error = type(exc).__name__
             if attempt + 1 < attempts:
                 await asyncio.sleep(1)
                 continue
-            return {"state": "none", "portal_url": None}
+            return result("none", error=error)
         if resp.status_code == 204 and not resp.content:
-            return {"state": "full", "portal_url": None}
+            return result("full", status=resp.status_code)
         location = resp.headers.get("location")
         # No redirect means the portal served its page in place of the
         # probe's own response — loading the probe URL in a browser shows it.
-        return {"state": "portal", "portal_url": urljoin(PROBE_URL, location) if location else PROBE_URL}
-    return {"state": "none", "portal_url": None}
+        return result("portal", urljoin(PROBE_URL, location) if location else PROBE_URL, resp.status_code)
+    return result("none", error=error)
 
 
 def _kiosk_page() -> dict | None:
@@ -125,10 +140,12 @@ async def _watch(return_url: str) -> None:
         return
 
 
-async def start_sign_in(return_path: str | None = None) -> str:
+async def start_sign_in(return_path: str | None = None, gateway: str | None = None) -> str:
     """Portal URL for the kiosk tab to open, with the return watcher
-    (re)started. Falls back to the probe URL itself, which any portal
-    still intercepting traffic will answer with its sign-in page.
+    (re)started. Preference: the portal's own redirect target; else, when
+    the probe got no answer at all (portal blocking DNS/HTTP), the router's
+    address; else the probe URL itself, which any portal still
+    intercepting traffic will answer with its sign-in page.
     `return_path` is the kiosk page to come back to — only a local path,
     so this can't be pointed off-device."""
     global _watch_task
@@ -138,4 +155,8 @@ async def start_sign_in(return_path: str | None = None) -> str:
     if _watch_task and not _watch_task.done():
         _watch_task.cancel()
     _watch_task = asyncio.create_task(_watch(f"{KIOSK_ORIGIN}{return_path}"))
-    return result["portal_url"] or PROBE_URL
+    if result["portal_url"]:
+        return result["portal_url"]
+    if result["state"] == "none" and gateway:
+        return f"http://{gateway}/"
+    return PROBE_URL

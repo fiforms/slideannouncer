@@ -85,6 +85,10 @@ function goToWifiSetup() {
   router.push(`${networkBase}/wifi`)
 }
 
+function goToDiagnostics() {
+  router.push(`${networkBase}/diagnostics`)
+}
+
 async function forgetNetwork() {
   if (!status.value?.ssid) return
   forgetting.value = true
@@ -178,6 +182,18 @@ function connectivityLabel(connectivity) {
         >
           {{ forgetting ? t('settings.network.forgetting') : t('settings.network.forgetNetwork') }}
         </button>
+        <!-- Connected with a route but no way out: a portal that blocks
+             everything until sign-in looks exactly like this, and the
+             probe can't tell — so offer its sign-in page regardless. -->
+        <button
+          v-if="status?.connectivity === 'limited' && status?.connection_type === 'wifi'"
+          class="tile action"
+          :disabled="openingPortal"
+          @click="signInToPortal"
+        >
+          {{ t('settings.network.portalTryAnyway') }}
+        </button>
+        <button class="tile action" @click="goToDiagnostics">{{ t('settings.network.diagnostics') }}</button>
         <button v-if="status" class="tile action" :class="{ active: showAdvanced }" @click="showAdvanced = !showAdvanced">
           {{ showAdvanced ? t('settings.network.hideAdvanced') : t('settings.network.showAdvanced') }}
         </button>

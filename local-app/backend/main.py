@@ -20,6 +20,7 @@ from pydantic import BaseModel
 import captive_portal
 import heartbeat
 import network
+import network_diagnostics
 import pairing
 import pinning
 import revelation
@@ -247,6 +248,13 @@ class ConnectRequest(BaseModel):
 async def network_connect(body: ConnectRequest):
     try:
         await network.connect(body.ssid, body.password)
+    except network.ConnectError as exc:
+        # Same `detail` shape as every other error, plus what the
+        # WifiConnect screen needs to explain the failure.
+        return JSONResponse(status_code=400, content={
+            "detail": str(exc), "reason": exc.reason, "raw": exc.raw,
+            "log": exc.log, "log_restricted": exc.log_restricted,
+        })
     except network.NetworkCommandError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -256,6 +264,13 @@ async def network_connect(body: ConnectRequest):
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     return {"connectivity": status.connectivity, "status": status}
+
+
+@app.get("/api/local/network/diagnostics")
+async def network_diagnostics_report(rescan: bool = False):
+    # Slow (pings, DNS, a portal probe, the journal) — the page fetches it
+    # on demand rather than as part of /network/status.
+    return await network_diagnostics.collect(rescan=rescan)
 
 
 @app.get("/api/local/network/server-check")
@@ -274,7 +289,11 @@ async def network_portal_sign_in(body: PortalSignInRequest | None = None):
     # Frontend navigates the kiosk tab to this URL; captive_portal's
     # watcher brings it back to the Network page it came from (Settings or
     # the setup wizard) once online.
-    return {"url": await captive_portal.start_sign_in(body.return_path if body else None)}
+    try:
+        gateway = (await network.get_status()).gateway
+    except network.NetworkCommandError:
+        gateway = None
+    return {"url": await captive_portal.start_sign_in(body.return_path if body else None, gateway)}
 
 
 class ForgetRequest(BaseModel):

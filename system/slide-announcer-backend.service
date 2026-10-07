@@ -7,6 +7,11 @@ Requires=slide-announcer-firstboot.service slide-announcer-local-app-seed.servic
 Type=simple
 User=slideannouncer
 Group=slideannouncer
+# Read-only access to the journal: network.py / network_diagnostics.py pull
+# wpa_supplicant's own log lines (WRONG_KEY, ASSOC-REJECT status codes, …)
+# to explain a failed WiFi join. Without it they just report "log not
+# readable" — nothing else depends on it.
+SupplementaryGroups=systemd-journal
 # /data/local-app/current is the symlink slide-announcer-local-app-seed.service
 # maintains (seeded from the OS image, later swapped by the updater) — the
 # venv is fixed OS-image infra instead, independent of which app release is

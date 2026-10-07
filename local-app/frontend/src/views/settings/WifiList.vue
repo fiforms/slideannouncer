@@ -30,7 +30,7 @@ onMounted(scan)
 function select(ap) {
   router.push({
     path: `${networkBase}/wifi/${encodeURIComponent(ap.ssid)}`,
-    query: { secured: ap.security ? '1' : '0' },
+    query: { secured: ap.needs_password ? '1' : '0', ...(ap.supported ? {} : { unsupported: ap.kind }) },
   })
 }
 </script>
@@ -61,7 +61,10 @@ function select(ap) {
         <span class="ssid">{{ ap.ssid }}</span>
         <span class="meta">
           <span v-if="ap.in_use" class="pill ok">{{ t('settings.wifiList.connected') }}</span>
-          <span v-if="ap.security">🔒</span>
+          <span v-if="ap.kind === 'wpa3' || ap.kind === 'wpa2_wpa3' || !ap.supported" class="pill" :class="{ warn: !ap.supported }">
+            {{ t(`settings.wifiList.kind.${ap.kind}`) }}
+          </span>
+          <span v-if="ap.needs_password">🔒</span>
           {{ ap.signal }}%
         </span>
       </li>
