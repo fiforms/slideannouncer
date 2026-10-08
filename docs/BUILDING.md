@@ -40,11 +40,10 @@ radio is soft rfkill-blocked by the kernel until a country is set (this is
 true regardless of NetworkManager config — nothing on the device side can
 work around it), so if devices deploy somewhere other than the US, set
 this before building or Settings > Network's WiFi scan won't find
-anything. This is seeded at build time into the boot partition's
-`network-config` (its `regulatory-domain` key, applied by cloud-init/
-netplan on first boot) rather than baked into rootfs — edit
-`network-config` directly on an already-imaged, not-yet-booted card if you
-need to change it without a rebuild:
+anything. This is seeded at build time into the kernel command line
+(`cfg80211.ieee80211_regdom=` in `cmdline.txt`, so it also rides along in
+every OTA bundle). To change it on an already-imaged card without a
+rebuild, edit that token in `slotA/cmdline.txt` (or the active slot's) on the boot partition:
 
 ```bash
 # edit .env: SLIDE_ANNOUNCER_WIFI_COUNTRY=US

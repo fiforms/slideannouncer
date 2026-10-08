@@ -21,10 +21,7 @@
 
 # An example WiFi configuration (DHCP) is commented out below
 # Uncomment and change "Local_WiFi_SSID" and "secret_password_123"
-# to your actual values. If you do, merge its "wifis:" key into the live
-# "network:" block below (which sets the WiFi regulatory domain) instead of
-# adding a second "network:"/"version:" pair — cloud-init/netplan only
-# honors one "network:" key per file.
+# to your actual values. If you do, uncomment the whole block.
 
 # network:
 #  version: 2
@@ -54,8 +51,6 @@
 #      nameservers:
 #        addresses: [192.168.1.1, 8.8.8.8]
 
-# WiFi regulatory domain (ISO 3166-1 alpha-2) — image-builder/build.sh
-# appends the live block below, seeded from SLIDE_ANNOUNCER_WIFI_COUNTRY (see
-# image-builder/.env.example). The Pi's WiFi radio ships soft rfkill-blocked
-# by the kernel until this is set, so this stays live (not commented out)
-# even on an otherwise untouched card.
+# WiFi regulatory domain: set via the kernel cmdline (cfg80211.ieee80211_regdom=
+# in cmdline.txt, seeded from SLIDE_ANNOUNCER_WIFI_COUNTRY at build time), not
+# here — netplan's regulatory-domain doesn't take effect under NetworkManager.

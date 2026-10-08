@@ -347,6 +347,13 @@ sed -i -E 's/ resize\b//' "$CMDLINE"
 # the very first mount read-only; the fstab entry only matters afterward if
 # systemd-remount-fs.service re-evaluates the options.
 sed -i 's/$/ ro quiet loglevel=3 logo.nologo vt.global_cursor_default=0/' "$CMDLINE"
+# WiFi regulatory domain (from SLIDE_ANNOUNCER_WIFI_COUNTRY via build.sh).
+# Set on the kernel cmdline so cfg80211 comes up with the country already
+# applied, on every boot and every RAUC slot (cmdline.txt ships in each
+# bundle's bootfiles) — no dependence on cloud-init/netplan, which doesn't
+# apply it under the NetworkManager renderer.
+WIFI_COUNTRY="$(tr -d '[:space:]' < files/WIFI_COUNTRY)"
+sed -i "s/\$/ cfg80211.ieee80211_regdom=${WIFI_COUNTRY}/" "$CMDLINE"
 # ...and disable the early rainbow test-pattern splash (shown by the GPU
 # firmware before Linux even loads) for a solid black screen instead.
 printf '\n[all]\ndisable_splash=1\n' >> "${ROOTFS_DIR}/boot/firmware/config.txt"
@@ -412,8 +419,7 @@ fi
 # into NetworkManager.state whenever WPA_COUNTRY is unset (a
 # NetworkManager-level radio-off flag; build.sh deliberately leaves
 # WPA_COUNTRY unset now that the WiFi regulatory domain is set via
-# network-config's regulatory-domain instead — see that file's own
-# comment). Force it back to true unconditionally here regardless. /var is
+# the kernel cmdline's cfg80211.ieee80211_regdom instead — see below). Force it back to true unconditionally here regardless. /var is
 # a tmpfs overlay reset every boot (see read-only-root, above), so
 # whatever's baked into this real file is what every single boot actually
 # gets — a live `nmcli radio wifi on` on a running device never survives a

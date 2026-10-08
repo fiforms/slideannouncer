@@ -113,9 +113,8 @@ fi
 # requirement, not something nmcli/NetworkManager can work around from the
 # device side), so without this every device would need someone at the
 # console running raspi-config by hand before Settings > Network's WiFi
-# scan could ever see anything. Seeded into the staged network-config's
-# regulatory-domain below (applied by cloud-init/netplan at first boot), not
-# baked in via raspi-config at build time. Optional, defaults to US — this
+# scan could ever see anything. Seeded onto the kernel cmdline (see the
+# WIFI_COUNTRY staging below), not baked in via raspi-config. Optional, defaults to US — this
 # fleet's deployment target — since getting a device on WiFi at all matters
 # more here than failing the build over a missing regulatory code.
 SLIDE_ANNOUNCER_WIFI_COUNTRY="${SLIDE_ANNOUNCER_WIFI_COUNTRY:-US}"
@@ -268,19 +267,13 @@ rsync -a --exclude 'backend/venv' "${REPO_ROOT}/system/" "${FILES_DIR}/system/"
 rsync -a "${PRODUCT_DIR}/" "${FILES_DIR}/product/"
 sed -i "s|@@RAUC_COMPATIBLE@@|${RAUC_COMPATIBLE}|" "${FILES_DIR}/system/rauc/system.conf"
 rsync -a "${REPO_ROOT}/provisioning/" "${FILES_DIR}/provisioning/"
-# Seed the staged network-config's WiFi regulatory-domain from
-# SLIDE_ANNOUNCER_WIFI_COUNTRY (validated above) — see that file's own
-# comment for why this block is live rather than commented out. Netplan
-# applies "regulatory-domain" itself (an "iw reg set" at cloud-init's first
-# boot), independent of NetworkManager handling the actual WiFi connection,
-# so this doesn't conflict with the rest of that file's NetworkManager-era
-# examples.
-{
-	echo ""
-	echo "network:"
-	echo "  version: 2"
-	echo "  regulatory-domain: ${SLIDE_ANNOUNCER_WIFI_COUNTRY}"
-} >> "${FILES_DIR}/system/cloud-init/network-config"
+# The WiFi regulatory domain is applied via the kernel cmdline
+# (cfg80211.ieee80211_regdom=, added by 00-run.sh from this file), NOT via
+# network-config: netplan's "regulatory-domain" is a per-wifi-device key
+# (a top-level one is ignored) and is never applied under the
+# NetworkManager renderer, so `iw reg get` stayed at "00" (world) and
+# Network Diagnostics warned that no country was set.
+printf '%s\n' "$SLIDE_ANNOUNCER_WIFI_COUNTRY" > "${FILES_DIR}/WIFI_COUNTRY"
 # SSH is now always `systemctl enable`d at the image level
 # (image-builder/config's ENABLE_SSH=1) and password authentication is
 # always disabled globally (system/ssh/pubkey-only.conf, unconditionally
@@ -415,7 +408,7 @@ cat "${HERE}/config" > "$CONFIG_FILE"
 	echo "DISABLE_FIRST_BOOT_USER_RENAME=1"
 	echo "FIRST_USER_PASS=${USER_PASS}"
 	# WPA_COUNTRY deliberately left unset: the WiFi regulatory domain is now
-	# set via network-config's regulatory-domain (seeded above from
+	# set via the kernel cmdline (seeded above from
 	# SLIDE_ANNOUNCER_WIFI_COUNTRY), not pi-gen's own stage2/02-net-tweaks/
 	# 01-run.sh. With WPA_COUNTRY unset, that stock stage instead bakes
 	# WirelessEnabled=false into /var/lib/NetworkManager/NetworkManager.state
