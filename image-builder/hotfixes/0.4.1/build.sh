@@ -19,8 +19,8 @@
 # This is also the hotfix that moves devices to the pair-versioned OS
 # identity: /opt/slide-announcer/VERSION goes from the plain 0.4.0 to
 # 0.4.1_<product image version> (here the product's image/VERSION, 0.1.0 —
-# build with PRODUCT_ROOT set, e.g. from the outer repo's
-# `PRODUCT_ROOT=$PWD/kiosk-products/slideannouncer`). From here on a hotfix
+# build with PRODUCT_ROOT set — from the outer repo,
+# `npm run hotfix:build:core 0.4.1` does). From here on a hotfix
 # gates on, and bumps, the pair exactly: 0.4.1_0.1.0 -> 0.4.1_0.1.1 for a
 # product-only change, 0.4.1_0.1.0 -> 0.4.2_0.1.0 for a platform-only one.
 #
