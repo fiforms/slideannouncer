@@ -57,8 +57,6 @@ export const api = {  localStatus: () => request('/api/local/status'),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ value }),
     }),
-  // Partial update — mode, passphrase, multicast_group/port/passphrase,
-  // rist_buffer_ms, rist_encryption_bits (see backend srt_sink.update_settings).
   networkDiagnostics: (rescan = false) => request(`/api/local/network/diagnostics${rescan ? '?rescan=true' : ''}`),
   networkServerCheck: () => request('/api/local/network/server-check'),
   networkPortalSignIn: (returnPath) =>

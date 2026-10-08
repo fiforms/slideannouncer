@@ -51,8 +51,8 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   since every device otherwise boots with the identical hostname baked in
   at image-build time. mDNS (`avahi-daemon`, already
   `publish-workstation=yes`) then makes `<hostname>.local` resolvable,
-  which is how the SRT sink daemon (below) is addressed from Windows/
-  macOS.
+  which is how other machines on the LAN (Windows/macOS included) can
+  address the device by name.
 - `slide-announcer-local-app-seed.service` + `scripts/local-app-seed.py` —
   runs every boot, before the backend/kiosk services: extracts the
   local-app release tarball baked into this image at
@@ -107,11 +107,7 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   always starts awake on boot). Deliberately a standalone CLI, not logic
   embedded in whatever happens to trigger it, so every trigger (today,
   just the remote's power key; later, a schedule or a web UI menu button)
-  shares one mechanism instead of each re-implementing it. (An earlier
-  `takeover` action existed for the old mpv-based SRT sink, which stopped
-  the kiosk to take the display for external video — retired along with
-  that daemon; the SRT sink now plays inline in the kiosk page itself, see
-  below, so the kiosk is never stopped for it.) Callable
+  shares one mechanism instead of each re-implementing it. Callable
   directly, without sudo, as root, `slideannouncer`, or `slideadmin` — the
   `systemctl`/`vcgencmd` calls it makes are already permitted for all
   three (see the script's own docstring for exactly why: the existing
@@ -140,25 +136,10 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   behavior gets out of the way of `slide-announcer-power-button.service`
   above entirely. Only takes effect once `systemd-logind`
   restarts/reboots.
-- On-demand SRT video-sink: **not** a separate systemd unit — it's
-  `local-app/backend/srt_stream_bridge.py`, an in-process asyncio task
-  started from the backend's own `lifespan()` (same pattern as
-  `heartbeat.py`/`sync.py`), replacing an earlier standalone
-  `slide-announcer-srt-sink.service` + mpv/DRM-takeover daemon. Polls UDP
-  port 7002 (a plain bound socket — nothing normally listens there, so
-  this has to hold one itself to see any traffic at all) using the
-  configured passphrase from Settings > SRT Sink
-  (`local-app/backend/srt_sink.py`, `/data/status/srt-sink.json`), and on
-  any datagram, hands off to a real ffmpeg listener that remuxes the
-  still-encoded H.264 (`-c copy`, no decode/re-encode) into fragmented MP4
-  and forwards it to the kiosk page over `/api/local/srt-sink/stream`
-  (WebSocket), which plays it inline via MediaSource Extensions. Chromium
-  never stops being the active kiosk process for this, so no display
-  takeover/kiosk restart is involved at all.
 - `nginx-slide-announcer.conf` — serves `/data/local-app/current/frontend`
   (the Vue SPA, following the `current` symlink at request time — see
   `../local-app/README.md`) and reverse-proxies `/api/*` to the backend on
-  loopback only (including the WebSocket route above, upgrade-header
+  loopback only (including any product WebSocket routes, upgrade-header
   aware). `nginx-websocket-upgrade.conf` (installed to
   `/etc/nginx/conf.d/`, http-scope, since `map` isn't valid inside that
   server block) is the `$connection_upgrade` map this needs so plain

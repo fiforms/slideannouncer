@@ -1,0 +1,115 @@
+openapi: 3.0.3
+info:
+  title: Device management contract (core)
+  version: "1"
+  description: |
+    Machine-readable form of docs/DEVICE_CONTRACT.md — identity, pairing,
+    heartbeat and update offers only. Product-specific endpoints and fields
+    are extensions and not described here. The prose document is normative
+    for behavior (re-pairing, release resolution, language revisions).
+servers:
+  - url: https://example.org/api/slide-announcers
+    description: "{server_url}{api_base}; api_base is per product"
+paths:
+  /pair:
+    post:
+      summary: Exchange a 6-digit pairing code for a device token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PairRequest" }
+      responses:
+        "201":
+          description: Paired (200 is also accepted by devices)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PairResponse" }
+        "422": { description: Invalid, expired or already-used code }
+        "429": { description: Rate limited }
+  /heartbeat:
+    post:
+      summary: Report status; receive settings and update offers
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HeartbeatRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HeartbeatResponse" }
+        "401":
+          description: Device revoked — the device wipes its pairing and reboots into setup
+        "403":
+          description: Token does not belong to a device
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  schemas:
+    PairRequest:
+      type: object
+      required: [code, device_name]
+      additionalProperties: true
+      properties:
+        code: { type: string, minLength: 6, maxLength: 6 }
+        device_name: { type: string, maxLength: 255 }
+        mac_address: { type: string, maxLength: 255, nullable: true }
+        device_uuid: { type: string, maxLength: 255, nullable: true }
+        language: { type: string, maxLength: 10, nullable: true, description: "Hint only; seeds the language if unset" }
+    PairResponse:
+      type: object
+      required: [token]
+      additionalProperties: true
+      properties:
+        device_id: { description: "Server id of the device. Legacy name slide_announcer_id is what the reference server sends today.", oneOf: [{ type: integer }, { type: string }] }
+        slide_announcer_id: { description: "Legacy alias of device_id", oneOf: [{ type: integer }, { type: string }] }
+        entity_id: { oneOf: [{ type: integer }, { type: string }] }
+        entity_name: { type: string }
+        token: { type: string }
+        sibling_hostnames: { type: array, items: { type: string } }
+        language: { type: string, nullable: true }
+        language_revision: { type: integer, minimum: 0 }
+    HeartbeatRequest:
+      type: object
+      additionalProperties: true
+      description: Extension fields (product-namespaced keys) may be present alongside the core ones.
+      properties:
+        app_version: { type: string, nullable: true }
+        os_version: { type: string, nullable: true }
+        architecture: { type: string, nullable: true, description: "platform.machine() verbatim" }
+        cpu_temp_c: { type: number, nullable: true }
+        hostname: { type: string, nullable: true }
+        language_change:
+          type: object
+          required: [code, base_revision]
+          properties:
+            code: { type: string, maxLength: 10 }
+            base_revision: { type: integer, minimum: 0 }
+    HeartbeatResponse:
+      type: object
+      required: [ok, device_name, entity_name]
+      additionalProperties: true
+      description: Extension fields may be present alongside the core ones.
+      properties:
+        ok: { type: boolean }
+        device_name: { type: string, description: Server-authoritative }
+        entity_name: { type: string, description: Server-authoritative }
+        language: { type: string, nullable: true }
+        language_revision: { type: integer, minimum: 0 }
+        latest_app_version: { type: string, nullable: true }
+        app_update_available: { type: boolean }
+        app_download_url: { type: string, format: uri, nullable: true, description: "Unauthenticated GET; non-null only when app_update_available" }
+        app_sha256: { type: string, nullable: true, pattern: "^[0-9a-fA-F]{64}$" }
+        latest_os_version: { type: string, nullable: true }
+        os_update_available: { type: boolean }
+        os_bundle_url: { type: string, format: uri, nullable: true, description: "RAUC bundle; needs HTTP range support" }
+        os_bundle_sha256: { type: string, nullable: true, pattern: "^[0-9a-fA-F]{64}$" }
+        os_release_type: { type: string, nullable: true, enum: [full, hotfix, null] }
+        os_auto_update_enabled: { type: boolean }
