@@ -13,7 +13,8 @@ DEPLOY_DIR="${HERE}/deploy"
 # shellcheck disable=SC1091
 . "${HERE}/product-env.sh"
 
-VERSION_BASE="$(cat "${HERE}/VERSION")"
+# <platform>_<product>: local-app/VERSION plus the product's own VERSION.
+VERSION_BASE="$(compose_version "$(cat "${HERE}/VERSION")" "$(product_app_version)")"
 GIT_HASH="$(git -C "$HERE" rev-parse --short HEAD)"
 # `git diff --quiet` alone would miss untracked files — status --porcelain
 # catches untracked/staged/unstaged all at once (same check as
@@ -32,7 +33,8 @@ build_release_tree "$BUILD" "$STAGE"
 # Read by the (not yet built) updater to compare against a candidate
 # download, and by system/scripts/local-app-seed.py to decide whether the
 # image's embedded release is newer than what's already on /data. Only the
-# leading X.Y.Z is ever compared — see that script's version_core() for why
+# leading <platform>_<product> pair is ever compared — see that script's
+# version_core() for why
 # a rebuild without bumping VERSION is deliberately not treated as newer.
 echo "$VERSION" > "${STAGE}/VERSION"
 

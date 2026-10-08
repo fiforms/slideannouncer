@@ -24,6 +24,10 @@ if [ -z "${PYTHON:-}" ]; then
 	PYTHON="${VENV}/bin/python"
 fi
 
+# The platform checkout, for tests of scripts that live outside the backend
+# (system/scripts, updater) and so are not in the staged copy below.
+export PLATFORM_ROOT="$(cd "${HERE}/.." && pwd)"
+
 BUILD="$(mktemp -d)"
 trap 'rm -rf "$BUILD"' EXIT
 stage_local_app "$BUILD"

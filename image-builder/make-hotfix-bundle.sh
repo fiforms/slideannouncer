@@ -25,6 +25,10 @@
 # just adding another ephemeral/tmpfs (/var) or /data-backed (/etc) upper
 # layer on top, the way a plain live file push would.
 #
+# Versions are the pair <platform>_<product> (e.g. 0.4.1_0.1.0), or a plain
+# X.Y.Z on a device from before pairs existed — see docs/PRODUCTS.md. They are
+# compared as exact strings, so the pair is what a hotfix gates on.
+#
 # <required-version>/<new-version> guard against applying a surgical,
 # untested-by-RAUC's-own-A/B-safety-net fix to the wrong base image, and
 # against reapplying the same hotfix twice: the on-device hook refuses to

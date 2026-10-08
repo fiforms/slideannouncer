@@ -40,16 +40,35 @@ The server side is the product's other half:
   product's bundles. For `slideannouncer` that is the string devices
   already carry. Existing devices of another product can't be retargeted
   by update — changing a product's `compatible` means reflashing.
-- **Version suffix**: the local-app version is
-  `<X.Y.Z>-<platform hash>-<product>[-b<backend>][-f<frontend>][-<hash>]`,
-  e.g. `0.3.12-8d50b20-slideannouncer-b0.1.0-f0.1.0-84263dd`. `b`/`f` come
-  from optional `backend/VERSION` and `frontend/VERSION` in `PRODUCT_ROOT`
-  (bump them as the product changes); the hash is the last commit touching
-  `PRODUCT_ROOT`, with `-dirty` for uncommitted changes
-  (`PRODUCT_VERSION_SUFFIX` overrides the whole suffix). It is informational:
-  updates compare only the leading `X.Y.Z`, so a product-only change reaches
-  devices only when `local-app/VERSION` is bumped. Final image/bundle files
-  are named `<product>-<OS version>.*`.
+- **Versions are pairs, `<platform>_<product>`.** A product has two optional
+  version files, tracked separately:
+  - `PRODUCT_ROOT/VERSION` — the product's **app** (its backend and frontend).
+  - `PRODUCT_ROOT/image/VERSION` — the product's **OS-level** files
+    (the `image/` seam: units, scripts, nginx, packages).
+
+  The platform has its own pair of files, and each pipeline pairs like with
+  like:
+
+  | Artifact | Version | Example |
+  |---|---|---|
+  | Local app (tarball, `/data/local-app/current/VERSION`) | `local-app/VERSION` + product `VERSION` | `0.4.0_0.1.1` |
+  | OS image, bundle, hotfix (`/opt/slide-announcer/VERSION`) | `image-builder/VERSION` + product `image/VERSION` | `0.4.1_0.1.0` |
+
+  So a product-only change is its own version (`0.4.0_0.1.0` →
+  `0.4.0_0.1.1`, nothing changes in the platform) and so is a platform-only
+  change (`0.4.0_0.1.0` → `0.4.1_0.1.0`). The separator is an underscore so
+  the string is safe in file names and URLs. A product with no version file
+  has a plain platform version. A device from before pairs existed reports a
+  plain `X.Y.Z`, which counts as product `0.0.0`.
+- **App version string**: `<platform>_<product>-<platform hash>-<product>[-<hash>]`,
+  e.g. `0.4.0_0.1.1-8066cfc-slideannouncer-e4b6392`, where the hash is the last
+  commit touching `PRODUCT_ROOT` (`-dirty` for uncommitted changes;
+  `PRODUCT_VERSION_SUFFIX` overrides the part after the pair). Only the
+  leading pair is compared — platform first, then product — by the device
+  (`local-app-seed.py`, `updater/local_app_updater.py`) and by the server
+  (`SlideAnnouncerRelease::compareVersions`). OS versions are matched
+  **exactly** (hotfix gating, `os-updater.py`). Final image/bundle files are
+  named `<product>-<OS version>.*`, e.g. `slideannouncer-0.4.1_0.1.0.raucb`.
 
 ## Image seams — `<product>/image/`
 

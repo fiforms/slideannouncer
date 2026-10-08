@@ -43,17 +43,17 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "$BUILD" "$STAGE"' EXIT
 stage_local_app "$BUILD"
 build_release_tree "$BUILD" "$STAGE"
-# Must start with a real X.Y.Z — local-app-seed.py's version_core() runs on
+# Must start with a real <platform>_<product> pair — local-app-seed.py's version_core() runs on
 # every boot (not just once at push time) and re-seeds /data/local-app from
 # this OS image's own embedded release whenever it can't parse `current`'s
 # VERSION as X.Y.Z. A plain "dev-<timestamp>" (this script's first attempt)
 # fails that parse, so every reboot silently discarded the dev push and
 # fell back to whatever's embedded in the image — confirmed on real
-# hardware. Using local-app/VERSION's own X.Y.Z as the core, with the
+# hardware. Using this checkout's own <platform>_<product> pair as the core, with the
 # timestamp only as a trailing, ignored-by-the-parser suffix (same shape
 # package.sh's <base>-<git-hash> already uses), reads as "already current
 # or newer" instead, so a reboot leaves it alone.
-VERSION_BASE="$(cat "${HERE}/VERSION")"
+VERSION_BASE="$(compose_version "$(cat "${HERE}/VERSION")" "$(product_app_version)")"
 echo "${VERSION_BASE}-dev-$(date +%Y%m%d-%H%M%S)" > "${STAGE}/VERSION"
 
 echo "==> Pushing to ${TARGET}:/data/local-app/releases/dev"

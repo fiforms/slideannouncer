@@ -231,7 +231,11 @@ SUDO_KEEPALIVE_PID=$!
 # log, no longer part of any filename or the on-device VERSION stamp) so
 # OTA bundles/hotfixes can name themselves after, and gate on, a clean,
 # human-meaningful version instead of a build fingerprint.
-OS_VERSION="$(cat "${HERE}/VERSION")"
+# The device's version is the pair <platform>_<product> (e.g. 0.4.0_0.1.0):
+# image-builder/VERSION plus the product's image/VERSION, so a change to
+# either side is its own version, and a hotfix gates on (and bumps) the pair
+# exactly. A product with no image/VERSION keeps the plain platform version.
+OS_VERSION="$(compose_version "$(cat "${HERE}/VERSION")" "$(product_image_version)")"
 
 # Build provenance (log/debugging only — see OS_VERSION above for what
 # actually names files and gets written to /opt/slide-announcer/VERSION).

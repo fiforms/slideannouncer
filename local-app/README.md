@@ -86,14 +86,16 @@ image, deployed via atomic symlink-swap rather than A/B partitioning (see
 
 ## Versioning
 
-`VERSION` (plain text, e.g. `0.1.0`) is the local-app release's semantic
-version — bump it by hand for every release that should actually install
-over whatever's already on a device (see "Installation on the device,"
-below, for why only this X.Y.Z is ever compared). `package.sh` appends the
-build's short git commit hash (and `-dirty` if the working tree wasn't
-clean) to produce the full version string, e.g. `0.1.0-a1b2c3d`, the same
-`<base>-<git-hash>[-dirty]` shape `image-builder/build.sh` uses for the OS
-image's own version stamp.
+`VERSION` (plain text, e.g. `0.4.0`) is the platform's local-app version. A
+release's version is the pair `<platform>_<product>`: this file plus the
+product's own `VERSION` (`PRODUCT_ROOT/VERSION`), e.g. `0.4.0_0.1.1` — bump
+whichever side changed, by hand, for every release that should actually
+install over whatever's already on a device (see "Installation on the
+device," below, for why only this pair is ever compared). `package.sh`
+appends the build's short git commit hash and the product name (and `-dirty`
+if the working tree wasn't clean) to produce the full version string, e.g.
+`0.4.0_0.1.1-a1b2c3d-slideannouncer-e4b6392`. See `docs/PRODUCTS.md`,
+"Versions are pairs".
 
 ## Building a release
 
@@ -145,11 +147,12 @@ covers two cases with one mechanism:
   must never silently regress it back down — hence "never downgrades," not
   just "sync to whatever the image has."
 
-Only the release's `X.Y.Z` (leading digits of `VERSION`, ignoring the
-git-hash suffix) is ever compared — see `version_core()` in
-`local-app-seed.py`. That means rebuilding the image without bumping
-`local-app/VERSION` is correctly treated as "not newer," not re-extracted
-on every single boot.
+Only the release's leading version pair (`<platform>_<product>`, ignoring the
+git-hash suffix) is ever compared, platform first, then product, with a
+missing product part counting as `0.0.0` — see `version_core()` in
+`local-app-seed.py`. That means rebuilding the image without bumping either
+version is correctly treated as "not newer," not re-extracted on every single
+boot, while a product-only bump is.
 
 The Python venv the backend runs in (`/opt/slide-announcer/venv`) is
 **fixed OS-image infrastructure**, built once at image-build time from the

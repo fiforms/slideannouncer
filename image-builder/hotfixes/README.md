@@ -4,6 +4,18 @@ Source tree for individual hotfix bundles (see `../make-hotfix-bundle.sh`
 for what a hotfix actually is and its safety constraints — required-version
 gating, root-owned files, live-rootfs bind-mount write-through, etc.).
 
+## Versions are pairs
+
+A device's OS version is `<platform>_<product>` (e.g. `0.4.1_0.1.0`: this
+repo's `image-builder/VERSION` plus the product's `image/VERSION`, see
+`docs/PRODUCTS.md`), and a hotfix gates on, and bumps, that pair exactly. A
+platform change is `0.4.1_0.1.0` -> `0.4.2_0.1.0`; a product-only change is
+`0.4.1_0.1.0` -> `0.4.1_0.1.1` (and lives in the product, see its
+`hotfixes/`). Devices from before pairs report a plain `0.4.0`, so the
+`0.4.1` hotfix below is built from `0.4.0`. Build platform hotfixes with
+`PRODUCT_ROOT` set (they read the product's `image/VERSION` for the pair), and
+name the directory after the platform part of the version it bumps *to*.
+
 One subdirectory per hotfix, named after the version it bumps *to*:
 
 ```

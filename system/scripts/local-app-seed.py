@@ -14,9 +14,12 @@ backend/kiosk services start:
   RAUC OS update never clobber a newer app version a live device already
   picked up from the (not yet built) OTA app updater.
 
-Only local-app's own X.Y.Z (local-app/VERSION) is ever compared — not the
-git-hash suffix — so rebuilding the image without bumping that file is
-correctly treated as "not newer," not re-seeded on every single boot.
+Only the release's version *pair* is ever compared — the platform's
+local-app/VERSION and the product's own app VERSION, written
+<platform X.Y.Z>_<product X.Y.Z> (e.g. 0.4.0_0.1.1) — not the git-hash
+suffix after it, so rebuilding the image without bumping either file is
+correctly treated as "not newer," not re-seeded on every single boot. A
+plain X.Y.Z from before the product part existed counts as product 0.0.0.
 """
 import re
 import shutil
@@ -36,11 +39,18 @@ def log(msg: str) -> None:
     print(f"local-app-seed: {msg}", flush=True)
 
 
-def version_core(version: str) -> tuple[int, int, int] | None:
-    match = re.match(r"^(\d+)\.(\d+)\.(\d+)", version)
+def version_core(version: str) -> tuple[int, ...] | None:
+    """(platform X, Y, Z, product X, Y, Z) from the leading
+    <platform>[_<product>] of a version string, whatever follows it; the
+    product part is 0.0.0 when absent (a release from before products had
+    their own version). Tuples compare in the right order: platform first,
+    then product. Kept identical to updater/local_app_updater.py's copy."""
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:_(\d+)\.(\d+)\.(\d+))?", version)
     if not match:
         return None
-    return tuple(int(part) for part in match.groups())
+    platform = tuple(int(part) for part in match.groups()[:3])
+    product = tuple(int(part) for part in match.groups()[3:]) if match.group(4) is not None else (0, 0, 0)
+    return platform + product
 
 
 def installed_version() -> str | None:
@@ -97,7 +107,7 @@ def main() -> int:
     embedded_version = RELEASE_VERSION_FILE.read_text().strip()
     embedded_core = version_core(embedded_version)
     if embedded_core is None:
-        log(f"embedded VERSION '{embedded_version}' doesn't parse as X.Y.Z[-...] — refusing to seed")
+        log(f"embedded VERSION '{embedded_version}' doesn't parse as X.Y.Z[_X.Y.Z][-...] — refusing to seed")
         return 1
 
     # Explicit chmod, not just mkdir's mode= (which is filtered through

@@ -74,22 +74,27 @@ def log(msg: str) -> None:
     print(f"local-app-updater: {msg}", flush=True)
 
 
-def version_core(version: str) -> tuple[int, int, int] | None:
-    """Same as system/scripts/local-app-seed.py's own version_core() (kept
-    duplicated rather than shared — this script and that one run in
-    different contexts, one as this project's own on-device Python, the
-    other from image-builder's build environment). local-app/package.sh
-    always stamps <base-version>-<git-hash>[-dirty] into a release
-    tarball's own VERSION file, never the plain X.Y.Z a server admin
-    enters when publishing a release — so any comparison against a
-    server-declared version must go through this, not a direct string
-    match, or no release built by this project's own tooling could ever
-    pass.
+def version_core(version: str) -> tuple[int, ...] | None:
+    """(platform X, Y, Z, product X, Y, Z) from the leading
+    <platform>[_<product>] of a version string. Same as
+    system/scripts/local-app-seed.py's own version_core() (kept duplicated
+    rather than shared — this script and that one run in different
+    contexts, one as this project's own on-device Python, the other from
+    image-builder's build environment). local-app/package.sh always stamps
+    <platform>_<product>-<git-hash>... into a release tarball's own VERSION
+    file, never the plain <platform>_<product> a server admin enters when
+    publishing a release — so any comparison against a server-declared
+    version must go through this, not a direct string match, or no release
+    built by this project's own tooling could ever pass. The product part is
+    0.0.0 when absent (a release from before products had their own
+    version), and tuples compare platform first, then product.
     """
-    match = re.match(r"^(\d+)\.(\d+)\.(\d+)", version)
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:_(\d+)\.(\d+)\.(\d+))?", version)
     if not match:
         return None
-    return tuple(int(part) for part in match.groups())
+    platform = tuple(int(part) for part in match.groups()[:3])
+    product = tuple(int(part) for part in match.groups()[3:]) if match.group(4) is not None else (0, 0, 0)
+    return platform + product
 
 
 def _now_iso() -> str:

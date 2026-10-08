@@ -35,25 +35,38 @@ export PRODUCT_ROOT PRODUCT
 RAUC_COMPATIBLE="${RAUC_COMPATIBLE:-${PRODUCT}-rpi4}"
 export RAUC_COMPATIBLE
 
-# product_version_suffix: appended to the local-app version —
-#   <product>[-b<backend VERSION>][-f<frontend VERSION>][-<hash>[-dirty]]
-# where the VERSION files are PRODUCT_ROOT/backend/VERSION and
-# PRODUCT_ROOT/frontend/VERSION (optional; bump them as the product
-# changes) and the hash is the last commit touching PRODUCT_ROOT.
+# Product versions (docs/PRODUCTS.md). Two optional files, tracked separately:
+#   PRODUCT_ROOT/VERSION         the product's app: its backend + frontend
+#   PRODUCT_ROOT/image/VERSION   the product's OS-level files (image/ seam)
+# A device's version is the pair <platform>_<product> (e.g. 0.4.0_0.1.1): the
+# local app is local-app/VERSION + the product's VERSION, the OS image is
+# image-builder/VERSION + the product's image/VERSION. A product with no such
+# file has a plain platform version, as before.
+_read_version() {
+	[ -f "$1" ] && tr -d '[:space:]' < "$1" || true
+}
+product_app_version() { _read_version "${PRODUCT_ROOT}/VERSION"; }
+product_image_version() { _read_version "${PRODUCT_ROOT}/image/VERSION"; }
+
+# compose_version <platform version> <product version>: <platform>_<product>,
+# or just the platform version when the product has none.
+compose_version() {
+	if [ -n "${2:-}" ]; then echo "${1}_${2}"; else echo "$1"; fi
+}
+
+# product_version_suffix: appended to the local-app version after the
+# <platform>_<product> pair —
+#   <product>[-<hash>[-dirty]]
+# where the hash is the last commit touching PRODUCT_ROOT.
 # PRODUCT_VERSION_SUFFIX overrides the whole thing; the hash is omitted when
 # PRODUCT_ROOT isn't in a git repo. Informational: updates compare only the
-# leading X.Y.Z (local-app-seed.py's version_core()).
+# leading <platform>_<product> pair (local-app-seed.py's version_core()).
 product_version_suffix() {
 	if [ -n "${PRODUCT_VERSION_SUFFIX:-}" ]; then
 		echo "$PRODUCT_VERSION_SUFFIX"
 		return
 	fi
-	local suffix="$PRODUCT" part hash dirty=""
-	for part in backend:b frontend:f; do
-		if [ -f "${PRODUCT_ROOT}/${part%%:*}/VERSION" ]; then
-			suffix="${suffix}-${part##*:}$(tr -d '[:space:]' < "${PRODUCT_ROOT}/${part%%:*}/VERSION")"
-		fi
-	done
+	local suffix="$PRODUCT" hash dirty=""
 	hash="$(git -C "$PRODUCT_ROOT" log -1 --format=%h -- . 2>/dev/null)" || true
 	if [ -n "$hash" ]; then
 		[ -z "$(git -C "$PRODUCT_ROOT" status --porcelain -- . 2>/dev/null)" ] || dirty="-dirty"
