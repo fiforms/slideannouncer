@@ -52,3 +52,27 @@ Every file under a hotfix's `files/` lands on-device owned by `root:root`
 regardless of who built the bundle — `make-hotfix-bundle.sh` forces this at
 tar time (`--owner=0 --group=0 --numeric-owner`), since the on-device hook
 always extracts as root onto a root-owned rootfs.
+
+## Never change `/`'s mode (the `./` tar entry)
+
+The bundle's `files.tar.gz` is built from `<files-dir>` as `tar -C … .`, so it
+contains a `./` entry, and the on-device hook extracts it onto `/`. Whatever
+mode that entry has becomes the **device's root directory mode**. If it is
+`0700` (what `mktemp -d` creates, and what `cp -a dir/. stage/` copies onto
+the stage dir), every non-root service — dbus-daemon, timesyncd, avahi,
+bluetooth — can no longer traverse `/`. The device then boots to a wall of
+`[FAILED] Failed to start dbus.service`, `systemd-timesyncd`, `logind`,
+`rauc`, and all the slide-announcer units with `[DEPEND]` failures, even though
+`e2fsck` reports the slot clean. The first 0.4.1 hotfix did exactly this.
+
+Rules:
+- `make-hotfix-bundle.sh` now does `chmod 755` on its staging copy and aborts
+  if the tarball's `./` entry isn't `drwxr-xr-x`. Don't remove either.
+- If a `build.sh` stages files in a `mktemp -d`, `chmod 755` it first.
+- Don't ship any other top-level directory entry with an unusual mode
+  (`/usr`, `/opt`, `/etc` ...): create intermediate dirs with `install -D` or
+  `mkdir -p` (0755), and check `tar -tvzf` on the built bundle's files.tar.gz
+  before deploying.
+- Recovery if it happens: mount the affected slot's rootfs on another machine
+  and `chmod 755` its top directory. The other A/B slot is untouched, since a
+  hotfix only patches the booted slot.

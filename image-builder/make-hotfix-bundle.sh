@@ -105,6 +105,15 @@ STAGE_DIR="${WORK}/files"
 mkdir -p "$STAGE_DIR"
 cp -a "${FILES_DIR}/." "$STAGE_DIR/"
 
+# The tar below includes STAGE_DIR itself as the "./" entry, and on the
+# device that entry is extracted onto / — so its mode becomes the device's
+# root directory mode. `cp -a .../.` copies FILES_DIR's own mode onto
+# STAGE_DIR, and a caller that staged in `mktemp -d` (0700) or a checkout
+# with an odd umask would otherwise ship / as 0700 (or 0775...), which
+# stops every non-root service (dbus, timesyncd, ...) from booting. This is
+# what bricked the first 0.4.1 hotfix; see hotfixes/README.md. Pin it.
+chmod 755 "$STAGE_DIR"
+
 # --owner/--group/--numeric-owner: these files land on the device's rootfs,
 # which is root-owned throughout (see build.sh's pi-gen image, produced
 # inside Docker as root). Force root:root here regardless of whoever's
@@ -113,6 +122,13 @@ cp -a "${FILES_DIR}/." "$STAGE_DIR/"
 # without this a hotfix's file ownership would depend on who ran this
 # script instead of being deterministic.
 tar --owner=0 --group=0 --numeric-owner -C "$STAGE_DIR" -czf "${BUNDLE_DIR}/files.tar.gz" .
+
+# Belt and braces: refuse to ship a bundle whose "./" entry isn't 0755.
+if ! tar -tvzf "${BUNDLE_DIR}/files.tar.gz" | head -n1 | grep -q '^drwxr-xr-x .* \./$'; then
+	echo "make-hotfix-bundle.sh: files.tar.gz's './' entry is not drwxr-xr-x — it would change / on the device" >&2
+	tar -tvzf "${BUNDLE_DIR}/files.tar.gz" | head -n1 >&2
+	exit 1
+fi
 
 # Copied into the bundle directory (not referenced from its original path)
 # so it's self-contained inside the .raucb the same way files.tar.gz is —

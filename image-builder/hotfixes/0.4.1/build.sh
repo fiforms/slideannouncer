@@ -43,6 +43,8 @@ NEW_VERSION="$(compose_version 0.4.1 "$(product_image_version)")"
 # Staged in a temp dir (not committed): the shipped copies always come
 # straight from the source of truth, as the 0.3.10 hotfix did.
 STAGE="$(mktemp -d)"
+# mktemp -d is 0700; make-hotfix-bundle.sh also pins this, but be explicit.
+chmod 755 "$STAGE"
 trap 'rm -rf "$STAGE"' EXIT
 install -D -m 755 "${REPO_ROOT}/system/scripts/local-app-seed.py" \
 	"${STAGE}/usr/local/sbin/slide-announcer-local-app-seed"
