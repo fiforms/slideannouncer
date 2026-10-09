@@ -1,4 +1,7 @@
 [Unit]
+# Skipped on a virt (UEFI/VM test) image — no tryboot/A-B there. See
+# image-builder/make-virt-image.sh.
+ConditionPathExists=!/opt/slide-announcer/VIRT_IMAGE
 Description=Periodic trigger for slide-announcer-os-updater.service
 
 [Timer]

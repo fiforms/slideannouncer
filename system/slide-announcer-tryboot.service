@@ -1,4 +1,7 @@
 [Unit]
+# Skipped on a virt (UEFI/VM test) image — no tryboot/A-B there. See
+# image-builder/make-virt-image.sh.
+ConditionPathExists=!/opt/slide-announcer/VIRT_IMAGE
 Description=Slide Announcer tryboot reboot (triggered on demand — see slide-announcer-update's tryboot subcommand)
 # On-demand only, like slide-announcer-update-check.service — never
 # WantedBy anything, never enabled at boot. Exists so that reboot's raw

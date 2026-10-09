@@ -93,6 +93,10 @@ out. Output — two artifacts, same version stamp:
   on-device A/B activation is still a stub (see
   `image-builder/README.md`) — this covers building/signing/transferring
   bundles, not yet installing them.
+- `image-builder/deploy/<product>-<version>-virt.img` — only with
+  `./build.sh --virt`: a raw UEFI disk image for testing in an arm64 VM
+  (QEMU). Not for devices. See "Virt (UEFI/VM) test image" in
+  `image-builder/README.md` for how to build and run it.
 
 The same `<kernel-version>-<build-date>-<git-hash>` string is baked into the
 image at `/opt/slide-announcer/VERSION`, surfaced by the local backend's

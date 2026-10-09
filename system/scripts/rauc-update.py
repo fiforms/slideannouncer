@@ -132,6 +132,15 @@ def cmd_check(args):
     return data
 
 
+# Stamped into the rootfs by image-builder/make-virt-image.sh.
+VIRT_IMAGE_MARKER = Path("/opt/slide-announcer/VIRT_IMAGE")
+
+
+def refuse_on_virt_image():
+    if VIRT_IMAGE_MARKER.exists():
+        sys.exit("This is a virt (UEFI/VM test) image: it has no A/B slots or tryboot, so OS updates are disabled.")
+
+
 def run_rauc(*args):
     try:
         print(f"+ rauc {' '.join(args)}")
@@ -141,6 +150,7 @@ def run_rauc(*args):
 
 
 def cmd_install(args):
+    refuse_on_virt_image()
     bundle = args.bundle
     if not bundle:
         data = cmd_check(args)
@@ -165,6 +175,7 @@ def cmd_install(args):
 
 
 def cmd_tryboot(args):
+    refuse_on_virt_image()
     if not args.yes:
         sys.exit(
             "This reboots the device right now, into whatever slot the "

@@ -10,6 +10,10 @@
 #                               there is no password-over-SSH option, dev
 #                               or otherwise; password auth is disabled
 #                               globally in every image, unconditionally.
+#   ./build.sh --virt          after the normal .img.xz/.raucb, also build a
+#                               <product>-<version>-virt.img for testing under
+#                               UEFI on an arm64 VM (no A/B, tryboot or OTA —
+#                               see make-virt-image.sh). Needs network (apt).
 #   RESUME_WORK=<dir> ./build.sh
 #                               skip the pi-gen/Docker build and reuse an
 #                               already-decompressed raw.img from a previous
@@ -24,6 +28,16 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/.." && pwd)"
+BUILD_VIRT=0
+for arg in "$@"; do
+	case "$arg" in
+		--virt) BUILD_VIRT=1 ;;
+		*)
+			echo "build.sh: unknown argument: ${arg} (supported: --virt)" >&2
+			exit 1
+			;;
+	esac
+done
 PI_GEN_DIR="${HERE}/pi-gen"
 STAGE_SRC="${HERE}/stage-slide-announcer"
 DEPLOY_DIR="${HERE}/deploy"
@@ -769,6 +783,15 @@ else
 	# this run — the account was already provisioned in the earlier build
 	# raw.img came from, and that password was only ever printed there.
 	echo "==> RESUME_WORK build: 'slideadmin' password unchanged from the original build (see its output)"
+fi
+
+# --- optional virt (UEFI/VM) test image, built from the same raw.img --------
+if [ "$BUILD_VIRT" = 1 ]; then
+	VIRT_OUT="${DEPLOY_DIR}/${PRODUCT}-${OS_VERSION}-virt.img"
+	echo "==> Building the virt (UEFI/VM) test image (requires root + network)"
+	sudo "${HERE}/make-virt-image.sh" "${WORK}/raw.img" "$VIRT_OUT"
+	sudo chown "$(id -u):$(id -g)" "$VIRT_OUT"
+	echo "==> Done: ${VIRT_OUT}"
 fi
 
 # pi-gen/deploy accumulates one dated .img.xz (+ .info) per run and is never

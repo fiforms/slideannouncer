@@ -66,6 +66,9 @@ PROGRESS_FILE = Path("/data/status/update-progress.json")
 # already underway.
 LOCK_FILE = Path("/data/status/update.lock")
 VERSION_FILE = Path("/opt/slide-announcer/VERSION")
+# Stamped into the rootfs by image-builder/make-virt-image.sh: a VM test
+# image has no A/B slots/tryboot, so OS updates must never run on it.
+VIRT_IMAGE_MARKER = Path("/opt/slide-announcer/VIRT_IMAGE")
 
 IDLE_WINDOW_START_HOUR = 2  # 02:00 local — same window as the app-tier updater
 IDLE_WINDOW_END_HOUR = 5  # 05:00 local
@@ -225,6 +228,10 @@ def start_tryboot() -> bool:
 
 
 def main(force: bool = False) -> int:
+    if VIRT_IMAGE_MARKER.exists():
+        log("virt image (no A/B slots or tryboot) — OS updates are disabled")
+        return 0
+
     info = read_heartbeat_update_info(prefer_fresh_check=force)
     if not info:
         log("no heartbeat status yet — nothing to check against")

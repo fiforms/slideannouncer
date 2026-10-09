@@ -62,8 +62,13 @@ if [ -z "$DISK" ] || [ -z "$PART_NUM" ]; then
 	exit 0
 fi
 
-if [ "$PART_NUM" != "4" ]; then
-	echo "slide-announcer-data-resize: /data is partition ${PART_NUM}, not 4 as expected — refusing to touch partition table" >&2
+# /data must be the LAST partition on the disk (growpart can only extend into
+# free space after it). That is partition 4 on the Pi image (boot/rootA/rootB/
+# data) and partition 3 on the virt image (no rootB) — so check position, not
+# a hard-coded number.
+LAST_PART_NUM="$(cat /sys/class/block/"$(basename "$DISK")"/*/partition 2>/dev/null | sort -n | tail -n1)"
+if [ "$PART_NUM" != "$LAST_PART_NUM" ]; then
+	echo "slide-announcer-data-resize: /data is partition ${PART_NUM} but the last partition on ${DISK} is ${LAST_PART_NUM:-unknown} — refusing to touch partition table" >&2
 	exit 1
 fi
 

@@ -72,6 +72,9 @@ commit branch — no real failure has ever been forced through it. See
     apt cache/logs/tmp. Never touches a RAUC signing key — there isn't one
     yet, and even once there is, only the public verification cert belongs
     in the image.
+- `make-virt-image.sh` — optional (`build.sh --virt`) post-processing pass
+  that builds a UEFI/arm64-VM test image from the same raw `.img` (see
+  "Virt (UEFI/VM) test image" below).
 - `repartition.sh` — post-processing pass over pi-gen's raw (boot + root)
   `.img` output. pi-gen only ever produces a 2-partition image sized
   tightly to content; this repartitions it into the 4-partition layout
@@ -191,6 +194,73 @@ For a real fleet image that still needs remote SSH access, set both
 `slideadmin`'s `~/.ssh/authorized_keys` and disables SSH password
 authentication globally, so key-based login is the only way in. Leaving
 either one unset keeps SSH entirely disabled.
+
+### Virt (UEFI/VM) test image — `./build.sh --virt`
+
+After the normal artifacts, `--virt` also writes
+`deploy/<product>-<version>-virt.img`, a raw GPT disk (ESP + rootA + data, no
+rootB) that boots under UEFI on an **arm64** VM: QEMU `-M virt` with AAVMF,
+Proxmox with an emulated arm64 guest, or VirtualBox on an arm64 host (it
+can't emulate arm64 on x86). `make-virt-image.sh` does the work from the
+same pi-gen `raw.img`: installs Debian's generic arm64 kernel + initramfs
+(the Pi kernels lack virtio drivers) and a GRUB `BOOTAA64.EFI`, and removes
+the Raspberry Pi firmware/kernel/dtb/config.txt files. It needs network (apt
+inside a chroot). A/B, tryboot and OTA are disabled by the
+`/opt/slide-announcer/VIRT_IMAGE` marker. It is for testing only, and doesn't
+exercise vc4/vcgencmd/WiFi/hardware video or the real boot path. Verified
+end-to-end in QEMU: boots, first-boot `/data` format/grow, kiosk display,
+pairing and slide playback all work. Convert for
+VirtualBox with `VBoxManage convertfromraw`.
+
+#### Build requirements
+
+`--virt` runs apt inside an aarch64 chroot, so the build host needs network
+and aarch64 user-mode emulation with binfmt (`qemu-user-binfmt` +
+`qemu-user` on Ubuntu/Debian — the `-hwe` variants if you use the `-hwe`
+system packages). Note that installing the `qemu-system-*-hwe` packages can
+remove the non-hwe `qemu-user*` ones; if the build then fails with `Exec
+format error`, install `qemu-user-hwe qemu-user-binfmt-hwe`. pi-gen needs the
+same emulation for the normal build.
+
+#### Running it in QEMU
+
+Host requirements: `qemu-system-aarch64` (`qemu-system-arm`, or
+`qemu-system-arm-hwe`) and the arm64 UEFI firmware (`qemu-efi-aarch64`, which
+provides `/usr/share/AAVMF/`). On an x86 host the arm64 CPU is software-
+emulated (no KVM), so the first boot takes several minutes.
+
+```bash
+cd image-builder/deploy
+
+# Scratch copy so the built image stays pristine; the extra space is what
+# /data grows into on first boot.
+cp --sparse=always "<product>-<version>-virt.img" /tmp/virt-test.img
+qemu-img resize -f raw /tmp/virt-test.img 8G
+
+# Writable UEFI variable store (the firmware needs its own copy)
+cp /usr/share/AAVMF/AAVMF_VARS.fd /tmp/virt-vars.fd
+
+qemu-system-aarch64 \
+  -M virt -cpu cortex-a72 -smp 4 -m 4G \
+  -drive if=pflash,format=raw,readonly=on,file=/usr/share/AAVMF/AAVMF_CODE.fd \
+  -drive if=pflash,format=raw,file=/tmp/virt-vars.fd \
+  -drive file=/tmp/virt-test.img,format=raw,if=virtio \
+  -device virtio-gpu-pci -display gtk \
+  -device qemu-xhci -device usb-kbd -device usb-mouse \
+  -nic user,hostfwd=tcp::8080-:80,hostfwd=tcp::2222-:22 \
+  -serial mon:stdio
+```
+
+- Kernel/initramfs/systemd output and the login prompt are on the terminal
+  (serial console); the QEMU window is the kiosk display. Log in as
+  `slideadmin` with the password the build printed.
+- The web UI is at `http://localhost:8080`; SSH (if enabled in the build)
+  at `localhost:2222`.
+- Quit with `Ctrl-A` then `X` in the terminal.
+- `/data` is partition 3 here (no rootB), not 4 as on the Pi image;
+  `data-resize.sh` only requires it to be the *last* partition.
+- For a throwaway run that never writes the image, skip the copy and add
+  `snapshot=on` to the `-drive file=...` option instead.
 
 Output — two artifacts, same version stamp:
 - `image-builder/deploy/slideannouncer-<build-date>-<git-hash>.img.xz` — the

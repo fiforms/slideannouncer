@@ -1,4 +1,7 @@
 [Unit]
+# Skipped on a virt (UEFI/VM test) image — no tryboot/A-B there. See
+# image-builder/make-virt-image.sh.
+ConditionPathExists=!/opt/slide-announcer/VIRT_IMAGE
 Description=Slide Announcer RAUC tryboot commit check (Tier 1 OTA)
 # Ordered after the backend service — reaching this point is today's
 # placeholder health check (see rpi-tryboot-commit.sh and

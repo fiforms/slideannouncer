@@ -32,7 +32,7 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   enabled at boot) unit the backend starts via the polkit rule below: sets
   `/boot/firmware/FACTORY_RESET` and reboots.
 - `slide-announcer-data-resize.service` + `scripts/data-resize.sh` — grows
-  the `/data` partition (partition 4) to fill the real SD card on first
+  the `/data` partition (the last partition — 4 on the Pi image, 3 on the virt image) to fill the real SD card on first
   boot via `growpart`/`resize2fs`, since it's created as a small
   placeholder inside the built `.img` (see `../image-builder/repartition.sh`
   — "rest of the card" is only known once it's on real hardware). Runs
