@@ -791,7 +791,12 @@ if [ "$BUILD_VIRT" = 1 ]; then
 	echo "==> Building the virt (UEFI/VM) test image (requires root + network)"
 	sudo "${HERE}/make-virt-image.sh" "${WORK}/raw.img" "$VIRT_OUT"
 	sudo chown "$(id -u):$(id -g)" "$VIRT_OUT"
-	echo "==> Done: ${VIRT_OUT}"
+	echo "==> Done: ${VIRT_OUT} (sparse; ${VIRT_DISK_SIZE_MB:-8192}MiB)"
+	# Same raw disk, compressed with plain xz for download/transfer (the
+	# image is mostly zeros, so this is small). Keep the raw .img too.
+	echo "==> Compressing the virt image"
+	xz -6 -T0 -k -f "$VIRT_OUT"
+	echo "==> Done: ${VIRT_OUT}.xz"
 fi
 
 # pi-gen/deploy accumulates one dated .img.xz (+ .info) per run and is never

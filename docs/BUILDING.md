@@ -94,8 +94,8 @@ out. Output — two artifacts, same version stamp:
   `image-builder/README.md`) — this covers building/signing/transferring
   bundles, not yet installing them.
 - `image-builder/deploy/<product>-<version>-virt.img` — only with
-  `./build.sh --virt`: a raw UEFI disk image for testing in an arm64 VM
-  (QEMU). Not for devices. See "Virt (UEFI/VM) test image" in
+  `./build.sh --virt`: a raw (sparse, 8 GiB) UEFI disk image, plus a
+  `.img.xz` of it, for testing in an arm64 VM (QEMU). Not for devices. See "Virt (UEFI/VM) test image" in
   `image-builder/README.md` for how to build and run it.
 
 The same `<kernel-version>-<build-date>-<git-hash>` string is baked into the

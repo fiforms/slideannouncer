@@ -198,7 +198,9 @@ either one unset keeps SSH entirely disabled.
 ### Virt (UEFI/VM) test image — `./build.sh --virt`
 
 After the normal artifacts, `--virt` also writes
-`deploy/<product>-<version>-virt.img`, a raw GPT disk (ESP + rootA + data, no
+`deploy/<product>-<version>-virt.img` (plus a plain `xz` of it,
+`.img.xz`, for download — the raw file is a sparse 8 GiB file, mostly zeros),
+a raw GPT disk (ESP + rootA + data, no
 rootB) that boots under UEFI on an **arm64** VM: QEMU `-M virt` with AAVMF,
 Proxmox with an emulated arm64 guest, or VirtualBox on an arm64 host (it
 can't emulate arm64 on x86). `make-virt-image.sh` does the work from the
@@ -232,10 +234,12 @@ emulated (no KVM), so the first boot takes several minutes.
 ```bash
 cd image-builder/deploy
 
-# Scratch copy so the built image stays pristine; the extra space is what
-# /data grows into on first boot.
+# The image is already a full 8 GiB disk (sparse), with /data filling the
+# end of it — no resize needed. Work on a scratch copy so the built image
+# stays pristine. From the compressed download, decompress sparsely:
+#   xz -dc "<product>-<version>-virt.img.xz" | cp --sparse=always /dev/stdin /tmp/virt-test.img
+# or from the raw file:
 cp --sparse=always "<product>-<version>-virt.img" /tmp/virt-test.img
-qemu-img resize -f raw /tmp/virt-test.img 8G
 
 # Writable UEFI variable store (the firmware needs its own copy)
 cp /usr/share/AAVMF/AAVMF_VARS.fd /tmp/virt-vars.fd
@@ -257,6 +261,9 @@ qemu-system-aarch64 \
 - The web UI is at `http://localhost:8080`; SSH (if enabled in the build)
   at `localhost:2222`.
 - Quit with `Ctrl-A` then `X` in the terminal.
+- Disk size is 8 GiB by default (`VIRT_DISK_SIZE_MB` to change it when
+  building); `/data` takes whatever ESP + rootA leave. To enlarge a
+  copy later, `qemu-img resize -f raw` it — the first boot grows `/data`.
 - `/data` is partition 3 here (no rootB), not 4 as on the Pi image;
   `data-resize.sh` only requires it to be the *last* partition.
 - For a throwaway run that never writes the image, skip the copy and add

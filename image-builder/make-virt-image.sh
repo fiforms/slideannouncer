@@ -20,10 +20,11 @@
 #   p2  rootA   ext4   the rootfs, plus Debian's generic arm64 kernel (the
 #                      Raspberry Pi kernels are purged — they lack the
 #                      virtio drivers a VM needs) and an initramfs.
-#   p3  data    ext4   partition-table entry only, formatted on first boot
-#                      by the FACTORY_RESET flag and then grown to fill the
-#                      disk, exactly as on the Pi image. Keep it LAST so
-#                      growing the VM disk and rebooting just works.
+#   p3  data    ext4   partition-table entry only (no bytes in the file),
+#                      formatted on first boot by the FACTORY_RESET flag.
+#                      Fills the rest of the disk (VIRT_DISK_SIZE_MB, default
+#                      8192). Keep it LAST so enlarging the VM disk later and
+#                      rebooting still grows it, as on the Pi image.
 #
 # A/B/tryboot/RAUC updates can't work here: /opt/slide-announcer/VIRT_IMAGE
 # is stamped into the rootfs, which the update units/scripts check (see
@@ -42,7 +43,11 @@ ESP_SIZE_MB="${VIRT_ESP_SIZE_MB:-256}"
 # rootA = pi-gen's root content plus room for the generic kernel, its
 # modules and the initramfs (the Pi kernels are purged, so this is generous).
 ROOT_HEADROOM_MB="${VIRT_ROOT_HEADROOM_MB:-1536}"
-DATA_SIZE_MB="${DATA_PLACEHOLDER_SIZE_MB:-128}"
+# Total disk size. /data takes whatever is left after ESP + rootA, so the image
+# ships already "grown" (data-resize/factory-reset find nothing to extend) and
+# needs no qemu-img resize before use. The file is sparse; compress it with
+# xz (build.sh does) for distribution.
+DISK_SIZE_MB="${VIRT_DISK_SIZE_MB:-8192}"
 
 if [ "$(id -u)" != "0" ]; then
 	echo "make-virt-image.sh must run as root (loop devices, mount, chroot)" >&2
@@ -85,11 +90,15 @@ ROOT_SIZE_MB=$(( (ROOT_SIZE_ACTUAL + 1024 * 1024 - 1) / (1024 * 1024) + ROOT_HEA
 ESP_START_MB=1
 ROOT_START_MB=$((ESP_START_MB + ESP_SIZE_MB))
 DATA_START_MB=$((ROOT_START_MB + ROOT_SIZE_MB))
-DATA_END_MB=$((DATA_START_MB + DATA_SIZE_MB))
-# +1MiB tail for the GPT backup header/entries.
-DISK_SIZE_MB=$((DATA_END_MB + 1))
+# -1MiB tail for the GPT backup header/entries.
+DATA_END_MB=$((DISK_SIZE_MB - 1))
+DATA_SIZE_MB=$((DATA_END_MB - DATA_START_MB))
+if [ "$DATA_SIZE_MB" -lt 512 ]; then
+	echo "make-virt-image.sh: VIRT_DISK_SIZE_MB=${DISK_SIZE_MB} leaves only ${DATA_SIZE_MB}MiB for /data after the ESP and rootA (${ROOT_SIZE_MB}MiB) — raise it" >&2
+	exit 1
+fi
 
-echo "make-virt-image.sh: esp=${ESP_SIZE_MB}MiB rootA=${ROOT_SIZE_MB}MiB data(placeholder)=${DATA_SIZE_MB}MiB total=${DISK_SIZE_MB}MiB"
+echo "make-virt-image.sh: esp=${ESP_SIZE_MB}MiB rootA=${ROOT_SIZE_MB}MiB data=${DATA_SIZE_MB}MiB total=${DISK_SIZE_MB}MiB"
 
 rm -f "$OUT_IMG"
 truncate -s "${DISK_SIZE_MB}MiB" "$OUT_IMG"
@@ -277,7 +286,7 @@ SRC_LOOP=""
 echo "make-virt-image.sh: wrote ${OUT_IMG} (kernel ${KVER})"
 echo "  esp   PARTUUID=${ESP_PARTUUID}  label bootfs"
 echo "  rootA PARTUUID=${ROOTA_PARTUUID}"
-echo "  data  PARTUUID=${DATA_PARTUUID}  (formatted on first boot, then grows with the disk)"
+echo "  data  PARTUUID=${DATA_PARTUUID}  (formatted on first boot; fills the rest of the ${DISK_SIZE_MB}MiB disk)"
 echo "  boot with UEFI firmware (arm64), e.g.:"
 echo "    qemu-system-aarch64 -M virt -cpu cortex-a72 -m 4G -smp 4 -bios /usr/share/AAVMF/AAVMF_CODE.fd \\"
 echo "      -drive file=${OUT_IMG},format=raw,if=virtio -device virtio-gpu-pci -device qemu-xhci -device usb-kbd -nic user"
