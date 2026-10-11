@@ -10,24 +10,10 @@
         "prompt": "Ingrese el PIN de configuración",
         "countdown": "Volviendo a la presentación en {seconds}s…"
     },
-    "menu": {
-        "mainShow": "Programa Principal",
-        "playing": "Reproduciendo",
-        "settings": "Configuración…"
-    },
-    "slideshow": {
-        "notPaired": "Aún no emparejado. Use Menú o la tecla Escape para abrir Configuración.",
-        "waiting": "Esperando diapositivas…",
-        "needsAttention": "Requiere atención — revise Configuración",
-        "paused": "En pausa",
-        "muted": "Silenciado"
-    },
     "settingsLayout": {
         "backToSlideshow": "← Volver a la presentación",
         "system": "Sistema",
         "network": "Red",
-        "videoReceiver": "Receptor de Video LAN",
-        "revelationPeering": "Emparejamiento Revelation",
         "pairing": "Emparejamiento",
         "advanced": "Avanzado"
     },
@@ -74,61 +60,6 @@
             "resolution1080p": "1080p",
             "multiMonitor": "Varios monitores",
             "multiMonitorHint": "Si se conecta una segunda pantalla HDMI, refleja automáticamente la primera — todavía no hay una opción separada para eso."
-        },
-        "srtSink": {
-            "serverDisabled": "Activado aquí, pero desactivado para toda la flota desde el panel de administración — contacte al administrador de AnnouncementSlides de su iglesia.",
-            "passphrase": "Frase de contraseña",
-            "regenerate": "Regenerar",
-            "regenerating": "Regenerando…",
-            "connectWith": "Conectar con",
-            "displayQrCode": "Mostrar Código QR",
-            "close": "Cerrar",
-            "latencyTitle": "Latencia SRT",
-            "latencyHint": "Bájela para menos retraso en una red cableada limpia; súbala si la imagen se entrecorta.",
-            "debugOverlayTitle": "Superposición de Depuración",
-            "debugOverlayHint": "Muestra estadísticas de reproducción sobre el video.",
-            "intro": "Recibe una transmisión de video en vivo (OBS, vMix, etc.) desde su red local mediante SRT o RIST y la muestra en pantalla completa.",
-            "playbackTitle": "Reproducción",
-            "mode": "Modo",
-            "modeSrt": "SRT",
-            "modeRistUnicast": "RIST Unicast",
-            "modeRistMulticast": "RIST Multicast",
-            "edit": "Editar",
-            "multicastGroup": "IP Multicast",
-            "port": "Puerto",
-            "multicastPassphraseHint": "Debe coincidir con el del emisor",
-            "senderUrl": "URL del emisor",
-            "ristBufferTitle": "Búfer RIST",
-            "multicastWifiWarning": "⚠ Este dispositivo está en WiFi. No se recomienda video multicast por WiFi — habrá cortes y saltos. Use una conexión Ethernet por cable."
-        },
-        "revelation": {
-            "default": "Predeterminado",
-            "variant_normal": "Normal",
-            "variant_notes": "Notas (Vista Dividida)",
-            "variant_confidence": "Monitor de Confianza",
-            "variant_lowerthirds": "Tercios Inferiores",
-            "variant_remotepreview": "Notas (Vista Previa de Diapositiva)",
-            "variant_notesteleprompter": "Notas (Teleprompter)",
-            "language_en": "English",
-            "language_es": "Español",
-            "pairedTitle": "Emparejado",
-            "noPeers": "Aún no está emparejado con ninguna instancia de Revelation.",
-            "connected": "Conectado",
-            "notConnected": "No conectado",
-            "needsRepair": "Requiere volver a emparejar — desempareje y empareje de nuevo",
-            "unpair": "Desemparejar",
-            "nearbyTitle": "Instancias de Revelation Cercanas",
-            "rescan": "Volver a buscar",
-            "scanning": "Buscando…",
-            "noneFound": "No se encontraron instancias de Revelation en esta red.",
-            "paired": "Emparejado",
-            "pairWith": "Emparejar con {name}",
-            "pin": "PIN de emparejamiento",
-            "pair": "Emparejar",
-            "pairing": "Emparejando…",
-            "intro": "Se conecta como par al software Revelation Snapshot Presenter (snapshots.vrbm.org).",
-            "variantLabel": "Variante de Pantalla de Revelation",
-            "languageLabel": "Variante de Idioma"
         },
         "pairing": {
             "title": "Emparejamiento",
@@ -281,11 +212,7 @@
         },
         "advanced": {
             "languageTitle": "Idioma",
-            "languageHint": "Se usa para esta pantalla y las diapositivas que muestra. También cambia el idioma en el sitio web y sigue los cambios hechos allí.",
-            "featuresTitle": "Funciones Opcionales",
-            "revelationHint": "Permite que un presentador de Revelation en su red tome esta pantalla para una presentación en vivo.",
-            "srtSinkHint": "Recibe una transmisión de video en vivo (OBS, vMix, etc.) desde la red de su iglesia mediante SRT.",
-            "featureOffHint": "Esta función está desactivada — actívela en Configuración > Avanzado."
+            "languageHint": "Se usa para esta pantalla y las diapositivas que muestra. También cambia el idioma en el sitio web y sigue los cambios hechos allí."
         },
         "diagnostics": {
             "title": "Diagnóstico de Red",

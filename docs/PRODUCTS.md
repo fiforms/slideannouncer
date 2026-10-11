@@ -114,6 +114,7 @@ product at module level (products import core).
 | `advancedSection` | component at the bottom of Settings > Advanced |
 | `loadSettings()` | refresh product state when Settings opens |
 | `settingsPin()` | the Settings PIN, or `null` |
+| `messages` | `{ en, es }` UI strings, deep-merged over the core `locales/*.json` (product wins on conflict) |
 
 Product code imports core through the `@core/` alias (`@core/api.js`,
 `@core/components/…`); the product's own `api.js` extends the core `api`.
@@ -132,8 +133,6 @@ allow-list. That's the next phase.
 - Names: `slide-announcer-*` units, `/opt/slide-announcer`, the
   `slideannouncer` user and `slideannouncer.yaml` are shared by every
   product.
-- `locales/en.json` and `es.json` still hold the signage strings (menu,
-  SRT, Revelation); products can't yet contribute their own messages.
 - The setup wizard's steps are fixed (Welcome → Network → Name → Pairing →
   Done); the pairing step assumes the contract above.
 - `firstboot.py` keeps its own copy of the pairing wipe list (it runs

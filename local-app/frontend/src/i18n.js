@@ -21,6 +21,16 @@ export const i18n = createI18n({
   messages: { en, es },
 })
 
+// Merges a product's own strings (its index.js `messages`, shaped like
+// { en: {...}, es: {...} }) over the core ones, deep, so a product can add
+// keys — or override a core one — without touching locales/*.json here.
+// product.js calls this when the product is loaded.
+export function addMessages(messages = {}) {
+  for (const [code, strings] of Object.entries(messages)) {
+    i18n.global.mergeLocaleMessage(code, strings)
+  }
+}
+
 // Called at boot with the device's effective language (see
 // pairing.read_effective_language(), surfaced as `language` on
 // GET /api/local/status) and again every time Slideshow.vue's status poll

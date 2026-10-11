@@ -2,6 +2,7 @@
 // (vite.config.js) points at, with defaults filled in so a product only
 // supplies what it has. See docs/PRODUCTS.md, "Frontend seams", for the shape.
 import definition from '@product'
+import { addMessages } from './i18n.js'
 
 export const product = {
   name: '',
@@ -14,3 +15,6 @@ export const product = {
   settingsPin: async () => null,
   ...definition,
 }
+
+// The product's strings (`messages`) join the core ones in vue-i18n.
+addMessages(definition.messages)

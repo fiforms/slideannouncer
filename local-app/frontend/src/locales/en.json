@@ -10,24 +10,10 @@
         "prompt": "Enter Settings PIN",
         "countdown": "Returning to slideshow in {seconds}s…"
     },
-    "menu": {
-        "mainShow": "Main Show",
-        "playing": "Playing",
-        "settings": "Settings…"
-    },
-    "slideshow": {
-        "notPaired": "Not yet paired. Use Menu or Escape key to open Settings.",
-        "waiting": "Waiting for slides…",
-        "needsAttention": "Needs attention — check Settings",
-        "paused": "Paused",
-        "muted": "Muted"
-    },
     "settingsLayout": {
         "backToSlideshow": "← Back to slideshow",
         "system": "System",
         "network": "Network",
-        "videoReceiver": "LAN Video Receiver",
-        "revelationPeering": "Revelation Peering",
         "pairing": "Pairing",
         "advanced": "Advanced"
     },
@@ -74,61 +60,6 @@
             "resolution1080p": "1080p",
             "multiMonitor": "Multiple Monitors",
             "multiMonitorHint": "If a second HDMI display is connected, it mirrors the first automatically — there's no separate setting for it yet."
-        },
-        "srtSink": {
-            "serverDisabled": "Turned on here, but disabled fleet-wide from the admin dashboard — contact your church's AnnouncementSlides admin.",
-            "passphrase": "Passphrase",
-            "regenerate": "Regenerate",
-            "regenerating": "Regenerating…",
-            "connectWith": "Connect with",
-            "displayQrCode": "Display QR Code",
-            "close": "Close",
-            "latencyTitle": "SRT Latency",
-            "latencyHint": "Lower for less delay on a clean wired network; raise it if the picture stutters.",
-            "debugOverlayTitle": "Debug Overlay",
-            "debugOverlayHint": "Shows playback stats on top of the video.",
-            "intro": "Receives a live video feed (OBS, vMix, etc.) from your local network over SRT or RIST and plays it full screen.",
-            "playbackTitle": "Playback",
-            "mode": "Mode",
-            "modeSrt": "SRT",
-            "modeRistUnicast": "RIST Unicast",
-            "modeRistMulticast": "RIST Multicast",
-            "edit": "Edit",
-            "multicastGroup": "Multicast IP",
-            "port": "Port",
-            "multicastPassphraseHint": "Must match the sender's",
-            "senderUrl": "Sender URL",
-            "ristBufferTitle": "RIST Buffer",
-            "multicastWifiWarning": "⚠ This device is on WiFi. Multicast video over WiFi is not recommended — expect dropouts and stutter. Use a wired Ethernet connection."
-        },
-        "revelation": {
-            "default": "Default",
-            "variant_normal": "Normal",
-            "variant_notes": "Notes (Split View)",
-            "variant_confidence": "Confidence Monitor",
-            "variant_lowerthirds": "Lower Thirds",
-            "variant_remotepreview": "Notes (Slide Preview)",
-            "variant_notesteleprompter": "Notes (Teleprompter)",
-            "language_en": "English",
-            "language_es": "Español",
-            "pairedTitle": "Paired",
-            "noPeers": "Not paired with any Revelation instance yet.",
-            "connected": "Connected",
-            "notConnected": "Not connected",
-            "needsRepair": "Needs re-pairing — unpair, then pair again",
-            "unpair": "Unpair",
-            "nearbyTitle": "Nearby Revelation Instances",
-            "rescan": "Rescan",
-            "scanning": "Scanning…",
-            "noneFound": "No Revelation instances found on this network.",
-            "paired": "Paired",
-            "pairWith": "Pair with {name}",
-            "pin": "Pairing PIN",
-            "pair": "Pair",
-            "pairing": "Pairing…",
-            "intro": "Connects as a peer to Revelation Snapshot Presenter software (snapshots.vrbm.org).",
-            "variantLabel": "Revelation Screen Variant",
-            "languageLabel": "Language Variant"
         },
         "pairing": {
             "title": "Pairing",
@@ -281,11 +212,7 @@
         },
         "advanced": {
             "languageTitle": "Language",
-            "languageHint": "Used for this screen and the slides shown on it. Also changes the language on the website, and follows changes made there.",
-            "featuresTitle": "Optional Features",
-            "revelationHint": "Let a Revelation presenter on your network take over this display for a live presentation.",
-            "srtSinkHint": "Receive a live video feed (OBS, vMix, etc.) from your church network over SRT.",
-            "featureOffHint": "This feature is turned off — switch it on in Settings > Advanced."
+            "languageHint": "Used for this screen and the slides shown on it. Also changes the language on the website, and follows changes made there."
         },
         "diagnostics": {
             "title": "Network Diagnostics",
