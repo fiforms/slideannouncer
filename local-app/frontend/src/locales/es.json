@@ -212,7 +212,10 @@
         },
         "advanced": {
             "languageTitle": "Idioma",
-            "languageHint": "Se usa para esta pantalla y las diapositivas que muestra. También cambia el idioma en el sitio web y sigue los cambios hechos allí."
+            "languageHint": "Se usa para esta pantalla y las diapositivas que muestra. También cambia el idioma en el sitio web y sigue los cambios hechos allí.",
+            "timezoneTitle": "Zona horaria",
+            "timezoneCurrent": "Zona horaria actual: {zone}",
+            "timezoneHint": "Define la zona horaria de las horas que muestra este dispositivo. Elija una región y luego un lugar. Un restablecimiento de fábrica la devuelve al valor con que se creó este dispositivo."
         },
         "diagnostics": {
             "title": "Diagnóstico de Red",

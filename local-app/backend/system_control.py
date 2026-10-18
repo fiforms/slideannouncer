@@ -104,6 +104,30 @@ async def apply_screen_resolution() -> None:
     await proc.wait()
 
 
+async def current_timezone() -> str | None:
+    """The zone the system is in right now (what `date` uses)."""
+    proc = await asyncio.create_subprocess_exec(
+        "timedatectl", "show", "-p", "Timezone", "--value",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+    stdout, _ = await proc.communicate()
+    value = stdout.decode().strip()
+    return value if proc.returncode == 0 and value else None
+
+
+async def apply_timezone(name: str) -> None:
+    """Switches the running system to `name` via timedatectl. Needs the polkit
+    rule for org.freedesktop.timedate1.set-timezone (system/polkit/
+    50-slide-announcer-system.rules). The choice is already saved by the caller,
+    and provisioning/firstboot.py re-applies it every boot, so a failure here
+    only means "not until the next restart"."""
+    proc = await asyncio.create_subprocess_exec(
+        "timedatectl", "set-timezone", name,
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise SystemCommandError(stderr.decode().strip() or f"timedatectl exited {proc.returncode}")
+
+
 async def trigger_update_check() -> dict | None:
     proc = await asyncio.create_subprocess_exec(
         "systemctl", "start", "slide-announcer-update-check.service",

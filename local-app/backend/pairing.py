@@ -17,6 +17,7 @@ CLI's own docstring.
 import json
 import re
 import shutil
+import zoneinfo
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -98,6 +99,13 @@ LOCAL_LANGUAGE_FILE = Path("/data/status/language-local")
 # removes it. system/scripts/rauc-update.py reads the same file (its own copy
 # of the logic — keep the two in step).
 SERVER_URL_FILE = Path("/data/status/server-url")
+# The device's timezone once somebody has picked one on the device (Settings >
+# Advanced). Wins over the boot yaml's `timezone`, which from then on is only
+# the default; absent, the image's build-time zone stands. Applied at boot by
+# provisioning/firstboot.py (its own copy of this precedence — keep the two in
+# step) and immediately by system_control.apply_timezone(). Not in WIPE_PATHS:
+# it describes where the device is, not its pairing.
+TIMEZONE_FILE = Path("/data/status/timezone")
 # Present once the first-run setup wizard has been finished (or skipped
 # through). See is_setup_complete(). Not in WIPE_PATHS either: an unpair
 # drops the device back to an unpaired slideshow, not back into the
@@ -216,6 +224,78 @@ def read_server_url() -> str:
     if not server_url:
         raise PairingError(f"server_url is not set in {BOOT_YAML}.")
     return server_url
+
+
+class TimezoneError(ValueError):
+    pass
+
+
+# The areas the tz database groups real places under; plus UTC. Excludes the
+# legacy aliases (US/Eastern, Etc/GMT+5, ...) so the Settings pickers stay short.
+TIMEZONE_AREAS = ("Africa", "America", "Antarctica", "Arctic", "Asia", "Atlantic", "Australia", "Europe", "Indian", "Pacific")
+_TIMEZONE_NAME = re.compile(r"^[A-Za-z0-9_+\-]+(/[A-Za-z0-9_+\-]+){0,2}$")
+
+
+def validate_timezone(name: str) -> str:
+    """The tz database name, tidied, or TimezoneError. Checked against the
+    shape first so a hostile value never reaches a path or a command line."""
+    name = (name or "").strip()
+    if not _TIMEZONE_NAME.match(name):
+        raise TimezoneError("That isn't a valid timezone name.")
+    try:
+        zoneinfo.ZoneInfo(name)
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError, OSError):
+        raise TimezoneError("That timezone isn't known to this device.") from None
+    return name
+
+
+def list_timezones() -> list[str]:
+    """Selectable timezones: `Area/Place` names plus UTC, sorted."""
+    names = {n for n in zoneinfo.available_timezones() if n.split("/")[0] in TIMEZONE_AREAS and _TIMEZONE_NAME.match(n)}
+    if "UTC" in zoneinfo.available_timezones():
+        names.add("UTC")
+    return sorted(names)
+
+
+def read_device_timezone() -> str | None:
+    """The zone picked on this device (TIMEZONE_FILE), or None."""
+    try:
+        return TIMEZONE_FILE.read_text().strip() or None
+    except OSError:
+        return None
+
+
+def read_boot_timezone() -> str | None:
+    """The boot yaml's `timezone`, or None if absent — the default for a
+    device nobody has picked a zone on."""
+    try:
+        data = yaml.safe_load(BOOT_YAML.read_text()) or {}
+    except (OSError, yaml.YAMLError):
+        return None
+    value = data.get("timezone") if isinstance(data, dict) else None
+    return str(value).strip() or None if value else None
+
+
+def read_timezone() -> tuple[str, str] | None:
+    """(zone, source) the device is meant to be in — source is "device" (picked
+    here) or "boot" (the yaml's default) — or None when neither is set, in which
+    case the image's own build-time zone stands."""
+    picked = read_device_timezone()
+    if picked:
+        return picked, "device"
+    boot = read_boot_timezone()
+    if boot:
+        return boot, "boot"
+    return None
+
+
+def write_timezone(name: str) -> None:
+    """Persists an already-validated zone as this device's timezone."""
+    TIMEZONE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = TIMEZONE_FILE.with_name(TIMEZONE_FILE.name + ".tmp")
+    tmp.write_text(name + "\n")
+    tmp.chmod(0o644)
+    tmp.replace(TIMEZONE_FILE)
 
 
 def write_server_url(url: str) -> None:

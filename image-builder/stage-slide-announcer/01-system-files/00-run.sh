@@ -434,6 +434,15 @@ if [ -f files/boot-seed/server_url ]; then
 		"${ROOTFS_DIR}/boot/firmware/slideannouncer.yaml"
 fi
 
+# The build's default timezone (build.sh, SLIDE_ANNOUNCER_TIMEZONE), boot
+# partition's copy only like the server address above. firstboot.py applies it
+# every boot unless a zone has been picked on the device.
+if [ -f files/boot-seed/timezone ]; then
+	SEED_TIMEZONE="$(sed 's/[&|\\]/\\&/g' files/boot-seed/timezone)"
+	sed -i "s|^# timezone: .*|timezone: ${SEED_TIMEZONE}|" \
+		"${ROOTFS_DIR}/boot/firmware/slideannouncer.yaml"
+fi
+
 # Root password — debugging/development only (see .env.example and
 # build.sh, which only stages this file when ROOT_DEV_PASSWORD is set).
 # Exported (not just a shell variable) so it's visible inside on_chroot's

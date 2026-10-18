@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
 import { product } from '../../product.js'
@@ -55,8 +55,60 @@ async function selectResolution(value) {
   }
 }
 
+// Timezone — two pickers (area, then place) rather than one list of ~400 names,
+// which the remote couldn't scroll sensibly. UTC has no place, so picking it as
+// an "area" saves straight away.
+const timezone = ref(null)
+const timezoneSource = ref(null)
+const timezoneList = ref([])
+const area = ref(null)
+const timezoneSaving = ref(false)
+const timezoneError = ref(null)
+
+const splitZone = (name) => (name.includes('/') ? [name.slice(0, name.indexOf('/')), name.slice(name.indexOf('/') + 1)] : [name, null])
+const areaOptions = computed(() =>
+  [...new Set(timezoneList.value.map((name) => splitZone(name)[0]))].map((value) => ({ value, label: value })))
+const placeOptions = computed(() =>
+  timezoneList.value
+    .map(splitZone)
+    .filter(([a, place]) => a === area.value && place)
+    .map(([a, place]) => ({ value: `${a}/${place}`, label: place.replaceAll('_', ' ') })))
+
+async function loadTimezone() {
+  try {
+    const data = await api.timezoneStatus()
+    timezone.value = data.timezone
+    timezoneSource.value = data.source
+    timezoneList.value = data.timezones
+    area.value = data.timezone ? splitZone(data.timezone)[0] : null
+  } catch {
+    // leave blank rather than erroring out the page
+  }
+}
+
+async function saveTimezone(value) {
+  if (value === timezone.value || timezoneSaving.value) return
+  timezoneSaving.value = true
+  timezoneError.value = null
+  try {
+    const data = await api.setTimezone(value)
+    timezone.value = data.timezone
+    timezoneSource.value = data.source
+  } catch (err) {
+    timezoneError.value = err.message
+  } finally {
+    timezoneSaving.value = false
+  }
+}
+
+function selectArea(value) {
+  area.value = value
+  if (!splitZone(value)[1] && timezoneList.value.includes(value)) saveTimezone(value)
+}
+
 onMounted(() => {
   loadResolution()
+  loadTimezone()
   product.loadSettings()
 })
 </script>
@@ -99,6 +151,23 @@ onMounted(() => {
       <p class="hint note">{{ t('settings.screens.multiMonitorHint') }}</p>
     </section>
 
+    <section v-if="timezoneList.length" class="tile panel">
+      <div class="panel-title"><h2>{{ t('settings.advanced.timezoneTitle') }}</h2></div>
+      <p class="current">{{ t('settings.advanced.timezoneCurrent', { zone: timezone ?? '—' }) }}</p>
+      <div class="actions">
+        <Dropdown :model-value="area" :options="areaOptions" :disabled="timezoneSaving" @update:model-value="selectArea" />
+        <Dropdown
+          v-if="placeOptions.length"
+          :model-value="timezone"
+          :options="placeOptions"
+          :disabled="timezoneSaving"
+          @update:model-value="saveTimezone"
+        />
+      </div>
+      <p v-if="timezoneError" class="pill warn note">{{ timezoneError }}</p>
+      <p class="hint note">{{ t('settings.advanced.timezoneHint') }}</p>
+    </section>
+
     <component :is="product.advancedSection" v-if="product.advancedSection" />
   </div>
 </template>
@@ -108,6 +177,9 @@ onMounted(() => {
   color: var(--text-dim);
   margin: 0;
   font-size: 0.9rem;
+}
+.current {
+  margin: 0 0 0.5rem;
 }
 .note {
   margin: 0.6rem 0 0;

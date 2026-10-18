@@ -38,6 +38,15 @@ cp .env.example .env
 # optionally edit .env: SLIDE_ANNOUNCER_SERVER_URL=https://your-server.example.org
 ```
 
+**Timezone** — optional; `SLIDE_ANNOUNCER_TIMEZONE` (a tz database name such
+as `America/Chicago`) seeds `timezone:` in the boot partition's
+`slideannouncer.yaml`, the same way the server URL is seeded. Left blank, the
+image keeps its own default (`TIMEZONE_DEFAULT` in `image-builder/config`,
+America/New_York). It is only a default: a timezone picked on the device
+(Settings > Advanced) is saved to `/data/status/timezone` and wins from then on,
+and a factory reset brings the seeded one back. `provisioning/firstboot.py`
+applies whichever applies on every boot.
+
 **WiFi regulatory domain** — optional, defaults to `US`. The Pi's WiFi
 radio is soft rfkill-blocked by the kernel until a country is set (this is
 true regardless of NetworkManager config — nothing on the device side can
