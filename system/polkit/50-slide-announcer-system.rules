@@ -29,6 +29,12 @@ polkit.addRule(function(action, subject) {
 		return polkit.Result.YES;
 	}
 
+	// Setting the timezone (Settings > Advanced; system_control.apply_timezone())
+	// — this one action, not the rest of timedated (clock, NTP).
+	if (action.id === "org.freedesktop.timedate1.set-timezone") {
+		return polkit.Result.YES;
+	}
+
 	// systemd's "start/stop/restart any unit" action, narrowed here to
 	// only our own on-demand unit names via the "unit" detail systemd
 	// attaches to the action — never arbitrary system units. New

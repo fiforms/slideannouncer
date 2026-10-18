@@ -57,6 +57,13 @@ export const api = {  localStatus: () => request('/api/local/status'),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ value }),
     }),
+  timezoneStatus: () => request('/api/local/timezone'),
+  setTimezone: (value) =>
+    request('/api/local/timezone', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value }),
+    }),
   networkDiagnostics: (rescan = false) => request(`/api/local/network/diagnostics${rescan ? '?rescan=true' : ''}`),
   networkServerCheck: () => request('/api/local/network/server-check'),
   networkPortalSignIn: (returnPath) =>

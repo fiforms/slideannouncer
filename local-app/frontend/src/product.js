@@ -11,6 +11,8 @@ export const product = {
   settingsRoutes: [],
   // Extra first-run wizard steps — see setupFlow.js.
   setupSteps: [],
+  // Optional component shown on the wizard's Done screen, under the status text.
+  setupDoneNote: null,
   railCategories: () => [],
   advancedSection: null,
   loadSettings: async () => {},

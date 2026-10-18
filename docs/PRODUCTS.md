@@ -127,6 +127,7 @@ product at module level (products import core).
 | `railCategories(t)` | extra settings rail entries |
 | `advancedSection` | component at the bottom of Settings > Advanced |
 | `setupSteps` | extra first-run wizard steps, `{ key, after, path, component }` (`setupFlow.js`; `SERVER_URL.md`) |
+| `setupDoneNote` | component shown on the wizard's Done screen (e.g. the R Station's escape-key hint) |
 | `loadSettings()` | refresh product state when Settings opens |
 | `settingsPin()` | the Settings PIN, or `null` |
 | `messages` | `{ en, es }` UI strings, deep-merged over the core `locales/*.json` (product wins on conflict) |

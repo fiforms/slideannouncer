@@ -32,6 +32,8 @@ FIRSTBOOT_MARKER = Path("/data/.firstboot-complete")
 STATUS_DIR = Path("/data/status")
 SETUP_MODE_STATUS = STATUS_DIR / "setup-mode.json"
 LANGUAGE_BOOT_HINT_STATUS = STATUS_DIR / "language-boot-hint.json"
+TIMEZONE_STATUS_FILE = STATUS_DIR / "timezone"
+ZONEINFO_DIR = Path("/usr/share/zoneinfo")
 BACKEND_GROUP = "slideannouncer"
 SSH_ADMIN_USER = "slideadmin"
 SSH_AUTHORIZED_KEYS_PATH = Path("/home/slideadmin/.ssh/authorized_keys")
@@ -236,6 +238,44 @@ def set_hostname() -> None:
 
     subprocess.run(["systemctl", "restart", "avahi-daemon"], check=False)
     log(f"hostname set to {target}")
+
+
+def desired_timezone() -> str | None:
+    """The zone this device should be in: the one picked on the device
+    (/data/status/timezone, written by Settings > Advanced) if any, otherwise
+    the boot yaml's `timezone`, otherwise None — leave the image's build-time
+    zone alone. Same precedence as pairing.read_timezone() (this runs
+    standalone as root, so it keeps its own copy — keep the two in step).
+    A name that isn't a real zone file is ignored rather than trusted."""
+    candidates = []
+    if TIMEZONE_STATUS_FILE.exists():
+        candidates.append(TIMEZONE_STATUS_FILE.read_text().strip())
+    candidates.append(str(load_boot_config().get("timezone") or "").strip())
+    for name in candidates:
+        if name and re.fullmatch(r"[A-Za-z0-9_+\-]+(/[A-Za-z0-9_+\-]+){0,2}", name) and (ZONEINFO_DIR / name).is_file():
+            return name
+    return None
+
+
+def set_timezone() -> None:
+    """Applies desired_timezone() every boot, like set_hostname(), so a zone
+    picked in Settings or seeded in the boot yaml survives anything that resets
+    /etc, and a freshly flashed device picks up the build's SLIDE_ANNOUNCER_TIMEZONE.
+    Never fatal: the kiosk waits on this service, and a wrong clock zone is not
+    worth a device that won't start."""
+    try:
+        target = desired_timezone()
+        if not target:
+            return
+        shown = subprocess.run(
+            ["timedatectl", "show", "-p", "Timezone", "--value"], capture_output=True, text=True, timeout=10
+        ).stdout.strip()
+        if shown == target:
+            return
+        subprocess.run(["timedatectl", "set-timezone", target], check=True, timeout=15)
+        log(f"timezone set to {target}")
+    except (OSError, subprocess.SubprocessError) as exc:
+        log(f"couldn't set the timezone: {exc}")
 
 
 def compute_check(identity_key: bytes, device_uuid: str, mac: str) -> str:
@@ -489,6 +529,7 @@ def main() -> int:
     run_once_setup()
     ensure_identity()
     set_hostname()
+    set_timezone()
     detect_setup_mode(wait=False)
     refresh_setup_mode_later()
     write_language_boot_hint()

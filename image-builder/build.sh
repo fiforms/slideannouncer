@@ -142,6 +142,20 @@ if ! [[ "$SLIDE_ANNOUNCER_WIFI_COUNTRY" =~ ^[A-Z]{2}$ ]]; then
 fi
 echo "==> WiFi regulatory domain: ${SLIDE_ANNOUNCER_WIFI_COUNTRY}"
 
+# Default timezone (a tz database name, e.g. America/Chicago) — seeded into the
+# boot partition's slideannouncer.yaml like the server URL below. Only a default:
+# a timezone picked on the device (Settings > Advanced) wins over it. Optional;
+# unset leaves the image's own TIMEZONE_DEFAULT (./config) in force.
+SLIDE_ANNOUNCER_TIMEZONE="${SLIDE_ANNOUNCER_TIMEZONE:-}"
+if [ -n "$SLIDE_ANNOUNCER_TIMEZONE" ]; then
+	if ! [[ "$SLIDE_ANNOUNCER_TIMEZONE" =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){0,2}$ ]] \
+		|| [ -d "/usr/share/zoneinfo" -a ! -f "/usr/share/zoneinfo/${SLIDE_ANNOUNCER_TIMEZONE}" ]; then
+		echo "build.sh: SLIDE_ANNOUNCER_TIMEZONE is not a known timezone name (e.g. America/New_York): ${SLIDE_ANNOUNCER_TIMEZONE}" >&2
+		exit 1
+	fi
+	echo "==> Default timezone: ${SLIDE_ANNOUNCER_TIMEZONE}"
+fi
+
 # Extra config.txt lines for hardware this fleet needs that a stock image
 # doesn't set — e.g. a fan control overlay. Optional, free-form (one or
 # more raw config.txt lines — see .env.example), appended under their own
@@ -352,6 +366,10 @@ fi
 if [ -n "$SLIDE_ANNOUNCER_SERVER_URL" ]; then
 	mkdir -p "${FILES_DIR}/boot-seed"
 	printf '%s\n' "$SLIDE_ANNOUNCER_SERVER_URL" > "${FILES_DIR}/boot-seed/server_url"
+fi
+if [ -n "$SLIDE_ANNOUNCER_TIMEZONE" ]; then
+	mkdir -p "${FILES_DIR}/boot-seed"
+	printf '%s\n' "$SLIDE_ANNOUNCER_TIMEZONE" > "${FILES_DIR}/boot-seed/timezone"
 fi
 # Comment block identifying the image, for whoever mounts the boot partition
 # offline: the product's image/BOOT_COMMENT (free text, optional) plus the

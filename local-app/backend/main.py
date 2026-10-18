@@ -328,6 +328,38 @@ async def screen_resolution_set(body: ScreenResolutionRequest):
     return {"ok": True, "screen_resolution": body.value}
 
 
+@app.get("/api/local/timezone")
+async def timezone_status():
+    """`timezone` is the zone the device is in now; `source` says where it came
+    from — "device" (picked in Settings), "boot" (slideannouncer.yaml's default)
+    or "image" (neither; the build-time zone)."""
+    configured = pairing.read_timezone()
+    return {
+        "timezone": await system_control.current_timezone() or (configured[0] if configured else None),
+        "source": configured[1] if configured else "image",
+        "timezones": pairing.list_timezones(),
+    }
+
+
+class TimezoneRequest(BaseModel):
+    value: str
+
+
+@app.post("/api/local/timezone")
+async def timezone_set(body: TimezoneRequest):
+    try:
+        name = pairing.validate_timezone(body.value)
+    except pairing.TimezoneError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    pairing.write_timezone(name)
+    try:
+        await system_control.apply_timezone(name)
+    except system_control.SystemCommandError as exc:
+        # Saved either way: firstboot.py applies it on the next boot.
+        raise HTTPException(status_code=502, detail=f"Saved, but it couldn't be applied yet — it will take effect after a restart. ({exc})") from exc
+    return {"ok": True, "timezone": name, "source": "device"}
+
+
 @app.get("/api/local/audio-volume")
 def audio_volume_status():
     # Deliberately its own tiny endpoint rather than folded into

@@ -212,7 +212,10 @@
         },
         "advanced": {
             "languageTitle": "Language",
-            "languageHint": "Used for this screen and the slides shown on it. Also changes the language on the website, and follows changes made there."
+            "languageHint": "Used for this screen and the slides shown on it. Also changes the language on the website, and follows changes made there.",
+            "timezoneTitle": "Timezone",
+            "timezoneCurrent": "Current timezone: {zone}",
+            "timezoneHint": "Sets the time zone used for times shown on this device. Choose an area, then a place. A factory reset returns it to the default this device was built with."
         },
         "diagnostics": {
             "title": "Network Diagnostics",
