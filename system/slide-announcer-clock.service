@@ -1,0 +1,21 @@
+[Unit]
+Description=Restore the saved wall-clock time from /data at boot, save it at shutdown
+# The Pi has no RTC battery and /var (where systemd-timesyncd keeps its own
+# stamp) is a tmpfs, so without this an offline boot starts at the image's
+# build date. See scripts/clock-stamp.sh and slide-announcer-clock-save.timer.
+DefaultDependencies=no
+RequiresMountsFor=/data
+After=data.mount
+Before=systemd-timesyncd.service sysinit.target time-set.target
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/slide-announcer-clock-stamp restore
+# Best effort on a clean shutdown; abrupt power loss relies on the timer.
+ExecStop=/usr/local/sbin/slide-announcer-clock-stamp save
+
+[Install]
+WantedBy=sysinit.target

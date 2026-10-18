@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly save of the wall-clock time (no RTC battery)
+
+[Timer]
+# First save soon after boot (once NTP has likely corrected the clock), then
+# hourly: ~24 tiny writes a day, negligible SD wear.
+OnBootSec=5min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,7 @@
+[Unit]
+Description=Save the current wall-clock time to /data
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/slide-announcer-clock-stamp save

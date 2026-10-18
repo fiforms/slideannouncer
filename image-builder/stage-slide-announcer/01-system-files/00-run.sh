@@ -54,6 +54,7 @@ if [ -d files/product/system ]; then
 		[ -f "$script" ] && install -m 755 "$script" "${ROOTFS_DIR}/usr/local/sbin/"
 	done
 fi
+install -m 755 files/system/scripts/clock-stamp.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-clock-stamp"
 install -m 755 files/system/scripts/data-resize.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-data-resize.sh"
 install -m 755 files/system/scripts/kiosk-start.sh "${ROOTFS_DIR}/usr/local/bin/slide-announcer-kiosk-start.sh"
 install -m 755 files/system/scripts/rauc-update.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-update"
@@ -569,6 +570,8 @@ systemctl enable slide-announcer-volume-key.service
 systemctl enable slide-announcer-tryboot-check.service
 systemctl enable slide-announcer-local-app-updater.timer
 systemctl enable slide-announcer-os-updater.timer
+systemctl enable slide-announcer-clock.service
+systemctl enable slide-announcer-clock-save.timer
 systemctl enable rauc.service
 systemctl enable nginx.service
 systemctl enable seatd.service
