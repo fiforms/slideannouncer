@@ -359,7 +359,7 @@ install -d "${FILES_DIR}/local-app-release"
 cp "${REPO_ROOT}/local-app/deploy/slide-announcer-local-app-latest.tar.gz" \
 	"${FILES_DIR}/local-app-release/local-app.tar.gz"
 cp "${REPO_ROOT}/local-app/deploy/VERSION" "${FILES_DIR}/local-app-release/VERSION"
-cp "${REPO_ROOT}/local-app/backend/requirements.txt" "${FILES_DIR}/local-app-release/requirements.txt"
+merged_requirements "${FILES_DIR}/local-app-release/requirements.txt"
 
 {
 	echo "OS_VERSION=${OS_VERSION}"

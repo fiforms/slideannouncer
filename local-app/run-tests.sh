@@ -6,7 +6,7 @@
 #   PRODUCT_ROOT=examples/portal local-app/run-tests.sh [pytest args]
 #
 # With PYTHON unset, uses (creating it on first run) a venv at
-# local-app/backend/venv with requirements.txt + pytest; set PYTHON to use
+# local-app/backend/venv with the merged core + product requirements + pytest; set PYTHON to use
 # your own interpreter instead.
 set -euo pipefail
 
@@ -16,11 +16,18 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -z "${PYTHON:-}" ]; then
 	VENV="${HERE}/backend/venv"
+	REQS="$(mktemp)"
+	merged_requirements "$REQS"
 	if [ ! -x "${VENV}/bin/python" ]; then
 		echo "==> Creating ${VENV} (first run)"
 		python3 -m venv "$VENV"
-		"${VENV}/bin/pip" install -q -r "${HERE}/backend/requirements.txt" pytest
 	fi
+	# Reinstall when core's or the product's requirements changed.
+	if ! cmp -s "$REQS" "${VENV}/requirements.installed"; then
+		"${VENV}/bin/pip" install -q -r "$REQS" pytest
+		cp "$REQS" "${VENV}/requirements.installed"
+	fi
+	rm -f "$REQS"
 	PYTHON="${VENV}/bin/python"
 fi
 

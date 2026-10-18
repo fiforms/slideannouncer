@@ -9,7 +9,7 @@ Product = one directory, **outside this repo**, named by `PRODUCT_ROOT`:
 
 ```
 <product>/
-  image/      product.env, packages, enable, system/      → the OS image
+  image/      product.env, packages, requirements.txt, enable, system/      → the OS image
   backend/    a Python package exposing `product`          → backend/products/<name>/
   frontend/   index.js + the product's Vue code            → src/products/<name>/
 ```
@@ -80,6 +80,10 @@ The server side is the product's other half:
 - `packages` — extra apt packages, appended to the core list at build time
   (CUPS, for instance). Hotfix bundles can't install packages, so changing
   this means a full image.
+- `requirements.txt` — optional extra Python dependencies, appended to
+  `local-app/backend/requirements.txt` for the image's venv and for
+  `run-tests.sh`. The venv is built only at image time, so changing this
+  also means a full image.
 - `system/*.service|*.timer` — units installed into `/etc/systemd/system`;
   `system/scripts/*` — installed into `/usr/local/sbin` under the same name.
 - `enable` — the units to enable, one per line.

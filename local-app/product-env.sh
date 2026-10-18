@@ -2,7 +2,8 @@
 # image-builder/build.sh: resolves the product being built (docs/PRODUCTS.md).
 #
 #   PRODUCT_ROOT   directory holding the product — required. Layout:
-#                    image/      product.env, packages, enable, system/
+#                    image/      product.env, packages, requirements.txt (optional
+#                                Python deps), enable, system/
 #                    backend/    a Python package (__init__.py exposing `product`)
 #                    frontend/   index.js and the product's Vue code
 #   PRODUCT        its name (default: PRODUCT_ROOT's basename) — the package
@@ -73,6 +74,17 @@ product_version_suffix() {
 		suffix="${suffix}-${hash}${dirty}"
 	fi
 	echo "$suffix"
+}
+
+# merged_requirements <dest>: core's backend/requirements.txt plus the
+# product's optional image/requirements.txt, into <dest>. The venv is OS-image
+# infrastructure, so product deps live in the image/ seam beside `packages`.
+merged_requirements() {
+	cat "${LOCAL_APP_DIR}/backend/requirements.txt" > "$1"
+	if [ -f "${PRODUCT_ROOT}/image/requirements.txt" ]; then
+		printf '\n' >> "$1"
+		cat "${PRODUCT_ROOT}/image/requirements.txt" >> "$1"
+	fi
 }
 
 LOCAL_APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

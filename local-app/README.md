@@ -42,7 +42,9 @@ image, deployed via atomic symlink-swap rather than A/B partitioning (see
     `GET`/`POST /api/local/system/update-check` (`POST` triggers a fresh
     check and returns it; `GET` returns the last cached result without
     triggering one), `POST /api/local/system/factory-reset`.
-  - `requirements.txt` — installed into a venv at build time by
+  - `requirements.txt` — core's Python deps (a product's optional
+    `image/requirements.txt` is appended at build time), installed into a
+    venv by
     `../image-builder/stage-slide-announcer/01-system-files/00-run.sh`.
 - `frontend/` — a Vue 3 + Vite SPA (`npm run dev` for local development
   against a backend on `127.0.0.1:8000`; `npm run build` produces `dist/`,
