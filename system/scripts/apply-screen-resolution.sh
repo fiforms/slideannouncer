@@ -35,7 +35,12 @@ set -uo pipefail
 # slide-announcer-backend.service with no such session — without this,
 # wlr-randr would fail to find a Wayland display at all.
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
+# labwc takes the first free socket name (normally wayland-0), so look for
+# the real socket instead of guessing a number.
+if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+	sock="$(ls "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null | grep -v '\.lock$' | head -n1)"
+	export WAYLAND_DISPLAY="$(basename "${sock:-wayland-0}")"
+fi
 
 SCREEN_RESOLUTION_FILE="/data/status/screen-resolution"
 TARGET="1080p"
