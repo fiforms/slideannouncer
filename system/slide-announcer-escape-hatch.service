@@ -1,0 +1,22 @@
+[Unit]
+Description=Slide Announcer escape hatch: key combination returns the kiosk to local Settings
+# Ordering only, not Requires= — it must keep listening while the kiosk is
+# stopped, restarting or showing a hung page (the whole point of it).
+After=slide-announcer-kiosk.service
+
+[Service]
+Type=simple
+# Unprivileged, like slide-announcer-volume-key.service: /dev/input needs only
+# the `input` group; steering the kiosk's Chromium goes over its loopback debug
+# port, and restarting the kiosk unit is already polkit-granted for this
+# account (system/polkit/50-slide-announcer-system.rules).
+User=slideannouncer
+Group=slideannouncer
+ExecStart=/usr/local/sbin/slide-announcer-escape-hatch
+Restart=always
+RestartSec=2
+
+# Installed for every product but enabled only by those that opt in: list it in
+# the product's image `enable` file (docs/ESCAPE_HATCH.md).
+[Install]
+WantedBy=multi-user.target

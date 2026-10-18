@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import captive_portal
+import escape_hatch
 import heartbeat
 import network
 import network_diagnostics
@@ -98,6 +99,13 @@ def local_status():
         "product": product.get().name,
         **product.get().status_fields(),
     }
+
+
+@app.post("/api/local/escape-hold/consume")
+def consume_escape_hold():
+    """For a product's launcher screen (docs/ESCAPE_HATCH.md): was the kiosk just
+    restarted by the escape hatch? True at most once per escape."""
+    return {"held": escape_hatch.consume_hold()}
 
 
 class ServerUrlRequest(BaseModel):

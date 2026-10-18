@@ -131,10 +131,9 @@ with it Wi-Fi setup — never runs (its redirect only exists inside the local
 app). Leave `KIOSK_URL` unset, set `Product.confirm_server_url`, add a wizard
 step with `setupSteps`, and make `mainView` a small launcher that navigates to
 the confirmed site once setup is done — see [SERVER_URL.md](SERVER_URL.md);
-the Settings screens keep working at `http://localhost/…`. **Not built yet:** the escape hatch back to Settings (a
-labwc keybinding plus a CDP supervisor that also catches load failures —
-generalising `revelation-peer-daemon.py`'s CDP use) and a Chromium URL
-allow-list. That's the next phase.
+the Settings screens keep working at `http://localhost/…`. The way back from the
+remote page is the escape hatch — a key combination, opt-in per product; see
+[ESCAPE_HATCH.md](ESCAPE_HATCH.md). **Not built yet:** a Chromium URL allow-list.
 
 ## Still signage-flavoured (known leftovers)
 

@@ -109,8 +109,9 @@ above), `image-builder/.env.example`, `docs/BUILDING.md`, `docs/PRODUCTS.md`,
 
 ## Not changed / limitations
 
-- A product whose site is down once the kiosk has navigated away has no way back
-  to Settings yet (the "escape hatch" in `PRODUCTS.md` is still unbuilt).
+- A product whose site is down once the kiosk has navigated away gets back to
+  Settings with the escape hatch, which the product must opt into — see
+  [ESCAPE_HATCH.md](ESCAPE_HATCH.md).
 - Moving a set-up device to another server is a factory reset by design; there
   is no in-place "change server".
 - Devices already in the field (paired before this change, no
