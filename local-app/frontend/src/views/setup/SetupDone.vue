@@ -6,6 +6,7 @@ import { api } from '../../api.js'
 import { setSetupRequired } from '../../setupState.js'
 import WizardNav from './WizardNav.vue'
 import { prevPath } from '../../setupFlow.js'
+import { product } from '../../product.js'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -64,6 +65,7 @@ async function start() {
     </template>
     <p v-else-if="status" class="detail">{{ t('setup.done.unpairedNote') }}</p>
     <p v-if="status?.hostname_change_pending" class="detail">{{ t('setup.done.restartNote') }}</p>
+    <component :is="product.setupDoneNote" v-if="product.setupDoneNote" />
     <p v-if="error" class="pill warn">{{ error }}</p>
 
     <WizardNav
