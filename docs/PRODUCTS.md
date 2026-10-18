@@ -72,7 +72,9 @@ The server side is the product's other half:
 
 ## Image seams — `<product>/image/`
 
-- `product.env` — shell settings sourced by `kiosk-start.sh`. `KIOSK_URL` is
+- `product.env` — shell settings sourced by `kiosk-start.sh`. (Don't point
+  `KIOSK_URL` at a remote site if the device needs the first-run wizard —
+  see *A remote-portal product* below.) `KIOSK_URL` is
   what Chromium opens: `http://localhost/kiosk` (the local app) or a remote
   https URL.
 - `packages` — extra apt packages, appended to the core list at build time
@@ -97,6 +99,7 @@ overlay).
 | `status_fields()` | extra keys in `GET /api/local/status` |
 | `heartbeat_payload()`, `on_heartbeat_response()` | the contract's extension points |
 | `wipe_paths` | state wiped on unpair/revocation |
+| `confirm_server_url` | the server address is confirmed in the first-run wizard and saved on the device (`SERVER_URL.md`) |
 
 The release's `PRODUCT` file picks the product at run time. Core modules must call `product.get()` at the point of use, never import a
 product at module level (products import core).
@@ -112,6 +115,7 @@ product at module level (products import core).
 | `settingsRoutes` | extra children of `/settings` |
 | `railCategories(t)` | extra settings rail entries |
 | `advancedSection` | component at the bottom of Settings > Advanced |
+| `setupSteps` | extra first-run wizard steps, `{ key, after, path, component }` (`setupFlow.js`; `SERVER_URL.md`) |
 | `loadSettings()` | refresh product state when Settings opens |
 | `settingsPin()` | the Settings PIN, or `null` |
 | `messages` | `{ en, es }` UI strings, deep-merged over the core `locales/*.json` (product wins on conflict) |
@@ -121,9 +125,13 @@ Product code imports core through the `@core/` alias (`@core/api.js`,
 
 ## A remote-portal product (what a POS needs)
 
-Set `KIOSK_URL` to the portal, leave `mainView` unused, and the device boots
-straight to it; the setup wizard, Wi-Fi and Settings screens still work at
-`http://localhost/…`. **Not built yet:** the escape hatch back to Settings (a
+Don't put the portal's address in `KIOSK_URL`: a remote `KIOSK_URL` makes the
+device boot straight to the site, so on a fresh device the setup wizard — and
+with it Wi-Fi setup — never runs (its redirect only exists inside the local
+app). Leave `KIOSK_URL` unset, set `Product.confirm_server_url`, add a wizard
+step with `setupSteps`, and make `mainView` a small launcher that navigates to
+the confirmed site once setup is done — see [SERVER_URL.md](SERVER_URL.md);
+the Settings screens keep working at `http://localhost/…`. **Not built yet:** the escape hatch back to Settings (a
 labwc keybinding plus a CDP supervisor that also catches load failures —
 generalising `revelation-peer-daemon.py`'s CDP use) and a Chromium URL
 allow-list. That's the next phase.

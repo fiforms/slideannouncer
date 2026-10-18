@@ -19,6 +19,7 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 import yaml
@@ -88,6 +89,15 @@ LANGUAGE_PENDING_FILE = Path("/data/status/language-pending")
 # not of its pairing (a factory reset still clears it with the rest of
 # /data).
 LOCAL_LANGUAGE_FILE = Path("/data/status/language-local")
+# The server this device talks to, once it has been CONFIRMED on the device
+# (first-run wizard, products with Product.confirm_server_url — see
+# docs/SERVER_URL.md). When present it wins over the boot yaml's `server_url`,
+# which from then on is only the default offered by the wizard. Not in
+# WIPE_PATHS: it describes where this device belongs, not its pairing — an
+# unpair or revocation keeps it; only a factory reset (which reformats /data)
+# removes it. system/scripts/rauc-update.py reads the same file (its own copy
+# of the logic — keep the two in step).
+SERVER_URL_FILE = Path("/data/status/server-url")
 # Present once the first-run setup wizard has been finished (or skipped
 # through). See is_setup_complete(). Not in WIPE_PATHS either: an unpair
 # drops the device back to an unpaired slideshow, not back into the
@@ -147,20 +157,81 @@ class PairingError(RuntimeError):
     """Raised with a message safe to show directly on the pairing screen."""
 
 
+class ServerUrlError(PairingError):
+    """A server URL that can't be used; the message is safe to show in the wizard."""
+
+
+def normalize_server_url(raw: str) -> str:
+    """What a person typed -> the form stored and used everywhere: scheme and
+    host, an optional path, no trailing slash. Raises ServerUrlError."""
+    value = (raw or "").strip()
+    if value and "://" not in value:
+        value = f"https://{value}"
+    parts = urlsplit(value)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ServerUrlError("Enter the server's web address, like https://relief.example.org")
+    if parts.username or parts.password or parts.query or parts.fragment:
+        raise ServerUrlError("The address can't include a login, ?query or #section.")
+    try:
+        parts.port  # noqa: B018 — raises ValueError for a malformed port
+    except ValueError:
+        raise ServerUrlError("That port number isn't valid.") from None
+    return value.rstrip("/")
+
+
+def read_confirmed_server_url() -> str | None:
+    """The URL confirmed on this device (SERVER_URL_FILE), or None."""
+    try:
+        value = SERVER_URL_FILE.read_text().strip()
+    except OSError:
+        return None
+    return value.rstrip("/") or None
+
+
+def read_boot_server_url() -> str | None:
+    """The boot yaml's `server_url`, or None if absent. For a product that
+    confirms the server in the wizard this is only the default offered there."""
+    try:
+        data = yaml.safe_load(BOOT_YAML.read_text()) or {}
+    except (OSError, yaml.YAMLError):
+        return None
+    server_url = data.get("server_url") if isinstance(data, dict) else None
+    return str(server_url).rstrip("/") if server_url else None
+
+
 def read_server_url() -> str:
-    """The AnnouncementSlides server this device talks to — a `server_url`
-    scalar in /boot/firmware/slideannouncer.yaml (see that file's own
-    comment), not a build-time constant, so the same image can serve
-    multiple independent servers just by swapping this file. Fails closed
-    (same spirit as ssh-gate.py) rather than silently doing nothing.
+    """The server this device talks to: the URL confirmed on the device
+    (SERVER_URL_FILE) if there is one, otherwise the `server_url` scalar in
+    /boot/firmware/slideannouncer.yaml (see that file's own comment) — so the
+    same image can serve multiple independent servers, and a device that never
+    confirmed one (every signage device) behaves exactly as before. Fails
+    closed (same spirit as ssh-gate.py) rather than silently doing nothing.
     """
+    confirmed = read_confirmed_server_url()
+    if confirmed:
+        return confirmed
     if not BOOT_YAML.exists():
         raise PairingError(f"{BOOT_YAML} is missing — this device has no boot config at all.")
-    data = yaml.safe_load(BOOT_YAML.read_text()) or {}
-    server_url = data.get("server_url")
+    server_url = read_boot_server_url()
     if not server_url:
         raise PairingError(f"server_url is not set in {BOOT_YAML}.")
-    return server_url.rstrip("/")
+    return server_url
+
+
+def write_server_url(url: str) -> None:
+    """Persists an already-normalized URL as this device's confirmed server."""
+    SERVER_URL_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = SERVER_URL_FILE.with_name(SERVER_URL_FILE.name + ".tmp")
+    tmp.write_text(url + "\n")
+    tmp.chmod(0o644)
+    tmp.replace(SERVER_URL_FILE)
+
+
+def server_url_locked() -> bool:
+    """True once the confirmed server may no longer be changed from the device:
+    the device has been paired or has finished setup. (Moving a device to
+    another server is a factory reset, which clears this with the rest of /data.)"""
+    return is_setup_complete()
 
 
 def api_url(path: str) -> str:

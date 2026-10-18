@@ -75,6 +75,15 @@ def local_status():
         # waiting on a reboot (firstboot.py's set_hostname()).
         "hostname_change_pending": pairing.hostname_change_pending(hostname),
         "server_url": server_url,
+        # Products with Product.confirm_server_url pick the server on the
+        # device (docs/SERVER_URL.md): `server_url_default` is the boot yaml's
+        # value, offered as the wizard's starting point; `server_url_confirmed`
+        # says whether one has been saved on this device yet; `server_url_locked`
+        # that it can no longer be changed here.
+        "confirm_server_url": product.get().confirm_server_url,
+        "server_url_default": pairing.read_boot_server_url(),
+        "server_url_confirmed": pairing.read_confirmed_server_url() is not None,
+        "server_url_locked": pairing.server_url_locked(),
         "image_version": VERSION_FILE.read_text().strip() if VERSION_FILE.exists() else None,
         "app_version": heartbeat.read_app_version(),
         "setup_mode": setup_info.get("setup_mode"),
@@ -89,6 +98,39 @@ def local_status():
         "product": product.get().name,
         **product.get().status_fields(),
     }
+
+
+class ServerUrlRequest(BaseModel):
+    url: str
+    # The wizard first asks with verify=true; if the server can't be reached it
+    # shows why and offers "use it anyway", which repeats the call with false
+    # (a server that is down right now is still the right server).
+    verify: bool = True
+
+
+@app.post("/api/local/server-url")
+async def set_server_url(body: ServerUrlRequest):
+    """The first-run wizard's Server step. Only for products that confirm the
+    server on the device, and only until the device is paired or set up —
+    after that the address is fixed until a factory reset."""
+    if not product.get().confirm_server_url:
+        raise HTTPException(status_code=404, detail="This device's server is set in its boot configuration.")
+    if pairing.server_url_locked():
+        raise HTTPException(
+            status_code=409,
+            detail="This device is already set up. To use a different server, do a factory reset.")
+    try:
+        url = pairing.normalize_server_url(body.url)
+    except pairing.ServerUrlError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    result = {"state": "unchecked", "detail": None}
+    if body.verify:
+        result = await server_check.probe(url)
+        if result["state"] != "ok":
+            why = f" ({result['detail']})" if result.get("detail") else ""
+            raise HTTPException(status_code=422, detail=f"Couldn't reach a server at {result['host']}{why}.")
+    pairing.write_server_url(url)
+    return {"server_url": url, "check": result["state"]}
 
 
 class PairRequest(BaseModel):

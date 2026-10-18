@@ -329,11 +329,20 @@ if [ "$SSH_ENABLED" = "1" ]; then
 	mv "${YAML_EXAMPLE}.tmp" "$YAML_EXAMPLE"
 fi
 # Same rationale as the ssh_authorized_keys substitution above: seeded into
-# the yaml (read at runtime, per SLIDE_ANNOUNCER.md) rather than a separate
-# build-time file, so this is just a convenience default — not required,
-# and swappable per-device after the fact with no rebuild/reflash.
+# the boot partition's slideannouncer.yaml (read at runtime, per
+# SLIDE_ANNOUNCER.md) rather than a separate build-time file, so this is just
+# a convenience default — not required, and swappable per-device after the
+# fact with no rebuild/reflash (for a product that confirms the server in the
+# first-run wizard it is only the wizard's default; see docs/SERVER_URL.md).
+#
+# Deliberately NOT written into the staged slideannouncer.yaml.example
+# (above), because that file is also copied into the root filesystem
+# (/opt/slide-announcer/provisioning/) — the address must live on the boot
+# partition only, never in the rootfs image. 00-run.sh applies it to the boot
+# copy from this separate seed file, which is never installed into the rootfs.
 if [ -n "$SLIDE_ANNOUNCER_SERVER_URL" ]; then
-	sed -i "s|^# server_url: .*|server_url: ${SLIDE_ANNOUNCER_SERVER_URL}|" "${FILES_DIR}/provisioning/slideannouncer.yaml.example"
+	mkdir -p "${FILES_DIR}/boot-seed"
+	printf '%s\n' "$SLIDE_ANNOUNCER_SERVER_URL" > "${FILES_DIR}/boot-seed/server_url"
 fi
 # Fixed OS-image infra, like local-app-seed.py — deliberately NOT part of
 # the versioned local-app release tarball below, so a bad app update can

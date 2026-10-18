@@ -5,13 +5,14 @@ import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
 import NetworkStatus from '../settings/NetworkStatus.vue'
 import WizardNav from './WizardNav.vue'
+import { nextPath, prevPath } from '../../setupFlow.js'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 
 // Coming forward from Welcome (?auto=1) with a network cable already
-// online, there's nothing to set up here — go straight on to naming.
+// online, there's nothing to set up here — go straight on to the next step.
 // Anything short of that (WiFi, no internet, a captive portal, a failed
 // check) shows the step as normal.
 //
@@ -26,7 +27,7 @@ onMounted(async () => {
     const status = await api.networkStatus()
     online.value = status.connected && status.connectivity === 'full'
     if (checking.value && online.value && status.connection_type === 'ethernet') {
-      router.replace('/setup/name')
+      router.replace(nextPath('network'))
       return
     }
   } catch {
@@ -48,7 +49,7 @@ onMounted(async () => {
       <!-- The same screen as Settings > Network; its WiFi setup button
            leads to /setup/network/wifi via meta.networkBase. -->
       <NetworkStatus />
-      <WizardNav back="/setup" :autofocus-next="online" @next="router.push('/setup/name')" />
+      <WizardNav :back="prevPath('network')" :autofocus-next="online" @next="router.push(nextPath('network'))" />
     </template>
   </div>
 </template>

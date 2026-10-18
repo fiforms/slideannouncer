@@ -6,6 +6,7 @@ import { api } from '../../api.js'
 import { setLocale, LANGUAGE_OPTIONS } from '../../i18n.js'
 import Dropdown from '../../components/Dropdown.vue'
 import WizardNav from './WizardNav.vue'
+import { nextPath } from '../../setupFlow.js'
 
 const router = useRouter()
 const { t, locale } = useI18n()
@@ -36,7 +37,7 @@ async function next() {
   await chooseLanguage(locale.value)
   // ?auto: SetupNetwork skips itself when a cable is already online —
   // only on the way forward, so Back from the next step still shows it.
-  router.push({ path: '/setup/network', query: { auto: '1' } })
+  router.push({ path: nextPath('welcome'), query: { auto: '1' } })
 }
 </script>
 

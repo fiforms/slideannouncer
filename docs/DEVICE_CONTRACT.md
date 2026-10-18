@@ -24,7 +24,10 @@ doesn't send yet; the device accepts both.
 
 - All request and response bodies are JSON (`Content-Type: application/json`).
 - `{base}` = `{server_url}{api_base}`. `server_url` comes from
-  `/boot/firmware/slideannouncer.yaml` on the device (no trailing slash);
+  `/boot/firmware/slideannouncer.yaml` on the device (no trailing slash) — or,
+  for a product that confirms the server in the first-run wizard, from
+  `/data/status/server-url`, which takes precedence once set (see
+  [SERVER_URL.md](SERVER_URL.md));
   `api_base` is fixed per product (`Product.api_base`, e.g.
   `/api/slide-announcers`). One image can therefore talk to any server.
 - HTTPS is strongly recommended. The bearer token and every update URL travel

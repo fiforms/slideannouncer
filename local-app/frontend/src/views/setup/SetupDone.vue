@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
 import { setSetupRequired } from '../../setupState.js'
 import WizardNav from './WizardNav.vue'
+import { prevPath } from '../../setupFlow.js'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -66,7 +67,7 @@ async function start() {
     <p v-if="error" class="pill warn">{{ error }}</p>
 
     <WizardNav
-      back="/setup/pairing"
+      :back="prevPath('done')"
       :next-label="restarting ? t('setup.done.restarting') : t('setup.done.start')"
       :next-disabled="starting"
       autofocus-next

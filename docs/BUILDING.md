@@ -26,8 +26,11 @@ partition (`server_url`, see `provisioning/slideannouncer.yaml.example`),
 not a build-time value — one image can serve multiple independent
 fleets/servers, since the yaml is just swapped per device (or edited
 post-flash, no rebuild/reflash needed). Setting `SLIDE_ANNOUNCER_SERVER_URL`
-in `.env` is optional; if set, it only seeds a default into the yaml so a
-freshly flashed device still works without a post-flash edit:
+in `.env` is optional; if set, it only seeds a default into the **boot
+partition's** yaml (never the root filesystem) so a freshly flashed device still
+works without a post-flash edit. For a product that confirms the server in the
+first-run wizard it is just the wizard's default — see
+[SERVER_URL.md](SERVER_URL.md):
 
 ```bash
 cd slideannouncer/image-builder

@@ -139,7 +139,7 @@ commit branch — no real failure has ever been forced through it. See
   now lives in `slideannouncer.yaml` on the boot partition, not baked into
   the image, so one image can serve multiple fleets/servers just by
   swapping that file per device — setting this var only seeds a default
-  into it, so a freshly flashed device still works without a post-flash
+  into the boot partition's copy of it (never the root filesystem), so a freshly flashed device still works without a post-flash
   edit. `SLIDE_ANNOUNCER_WIFI_COUNTRY` is
   optional (defaults to `US`) — the WiFi radio ships soft rfkill-blocked
   by the kernel until a regulatory domain is set, regardless of

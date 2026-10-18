@@ -48,15 +48,25 @@ import yaml
 
 BOOT_YAML = Path("/boot/firmware/slideannouncer.yaml")
 DEVICE_TOKEN_FILE = Path("/data/device-token")
+# Server confirmed on the device (first-run wizard) — see pairing.py's
+# SERVER_URL_FILE; takes precedence over the boot yaml's server_url.
+SERVER_URL_FILE = Path("/data/status/server-url")
 VERSION_FILE = Path("/opt/slide-announcer/VERSION")
 
 
 def read_server_url():
-    """See local-app/backend/pairing.py's read_server_url() — same
-    server_url field in /boot/firmware/slideannouncer.yaml, same
+    """See local-app/backend/pairing.py's read_server_url() — same rule (the
+    URL confirmed on the device in /data/status/server-url, else the
+    server_url field in /boot/firmware/slideannouncer.yaml), same
     fail-closed behavior, duplicated here since this CLI runs outside the
-    local-app backend's venv/process.
+    local-app backend's venv/process. Keep the two in step.
     """
+    try:
+        confirmed = SERVER_URL_FILE.read_text().strip().rstrip("/")
+    except OSError:
+        confirmed = ""
+    if confirmed:
+        return confirmed
     if not BOOT_YAML.exists():
         sys.exit(f"{BOOT_YAML} missing — this device has no boot config at all.")
     data = yaml.safe_load(BOOT_YAML.read_text()) or {}

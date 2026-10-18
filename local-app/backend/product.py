@@ -44,6 +44,12 @@ class Product:
     # body, and handed the full response body after a successful one.
     heartbeat_payload: Callable[[], dict] = lambda: {}
     on_heartbeat_response: Callable[[dict], None] = lambda response: None
+    # True for a product whose server address is chosen on the device: the
+    # first-run wizard confirms it (the product supplies the step through the
+    # frontend's `setupSteps`), POST /api/local/server-url stores it, and it is
+    # kept until a factory reset. False (the default) leaves `server_url`
+    # entirely to the boot yaml, as before. See docs/SERVER_URL.md.
+    confirm_server_url: bool = False
     # Product state wiped with the rest of the pairing state on unpair /
     # revocation (a re-pair may attach this device to different data).
     wipe_paths: list[Path] = field(default_factory=list)

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
 import WizardNav from './WizardNav.vue'
+import { nextPath, prevPath } from '../../setupFlow.js'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -54,7 +55,7 @@ async function next() {
       saving.value = false
     }
   }
-  router.push('/setup/pairing')
+  router.push(nextPath('name'))
 }
 </script>
 
@@ -81,7 +82,7 @@ async function next() {
 
     <!-- Next, not the name field, gets focus: keeping the default is the
          common case, and Down/Up still reaches the field. -->
-    <WizardNav back="/setup/network" :next-disabled="saving || !loaded" autofocus-next @next="next" />
+    <WizardNav :back="prevPath('name')" :next-disabled="saving || !loaded" autofocus-next @next="next" />
   </div>
 </template>
 

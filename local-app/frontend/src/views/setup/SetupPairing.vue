@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { api } from '../../api.js'
 import PairingForm from '../../components/PairingForm.vue'
 import WizardNav from './WizardNav.vue'
+import { nextPath, prevPath } from '../../setupFlow.js'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -22,7 +23,7 @@ onMounted(async () => {
 })
 
 function next() {
-  router.push('/setup/done')
+  router.push(nextPath('pairing'))
 }
 </script>
 
@@ -47,7 +48,7 @@ function next() {
     />
 
     <WizardNav
-      back="/setup/name"
+      :back="prevPath('pairing')"
       :next-label="status?.paired ? null : t('setup.skip')"
       :next-disabled="!loaded"
       @next="next"

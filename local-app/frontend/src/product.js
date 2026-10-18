@@ -9,6 +9,8 @@ export const product = {
   mainView: null,
   overlay: null,
   settingsRoutes: [],
+  // Extra first-run wizard steps — see setupFlow.js.
+  setupSteps: [],
   railCategories: () => [],
   advancedSection: null,
   loadSettings: async () => {},

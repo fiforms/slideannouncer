@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { stepKeys } from '../../setupFlow.js'
 
 // Shell for the first-run setup wizard (router.js's /setup routes): a
 // progress bar across the top and the current step below. Each step
@@ -9,7 +10,8 @@ import { useI18n } from 'vue-i18n'
 // save a language, save a name — is the step's business. The WiFi list/
 // connect screens are the very same components Settings > Network uses,
 // mounted here with meta.networkBase pointing back into the wizard.
-const STEPS = ['welcome', 'network', 'name', 'pairing', 'done']
+// Core steps plus any a product adds (setupFlow.js).
+const STEPS = stepKeys
 
 const route = useRoute()
 const { t } = useI18n()

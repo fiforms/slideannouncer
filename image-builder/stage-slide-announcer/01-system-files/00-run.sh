@@ -399,6 +399,15 @@ install -m 644 files/system/cloud-init/network-config \
 # here only reaches whoever mounts the card BEFORE first power-on.
 install -m 644 files/provisioning/slideannouncer.yaml.example \
 	"${ROOTFS_DIR}/boot/firmware/slideannouncer.yaml"
+# The build's default server address (build.sh, SLIDE_ANNOUNCER_SERVER_URL),
+# applied to the BOOT partition's copy only. The rootfs copy of the example
+# (/opt/slide-announcer/provisioning/) stays generic, so the address is never
+# part of the root filesystem image — see docs/SERVER_URL.md.
+if [ -f files/boot-seed/server_url ]; then
+	SEED_SERVER_URL="$(sed 's/[&|\\]/\\&/g' files/boot-seed/server_url)"  # escape sed-special characters
+	sed -i "s|^# server_url: .*|server_url: ${SEED_SERVER_URL}|" \
+		"${ROOTFS_DIR}/boot/firmware/slideannouncer.yaml"
+fi
 
 # Root password — debugging/development only (see .env.example and
 # build.sh, which only stages this file when ROOT_DEV_PASSWORD is set).

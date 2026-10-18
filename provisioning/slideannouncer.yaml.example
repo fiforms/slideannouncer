@@ -15,15 +15,30 @@ default_language: en
 
 # The AnnouncementSlides server this device talks to (pairing/sync/
 # heartbeat, and OS OTA update checks) — e.g. https://your-server.example.org,
-# no trailing slash. Read fresh by the local-app backend and
-# slide-announcer-update alike on every request, so changing it (and
-# rebooting, or restarting slide-announcer-backend) is all that's needed
-# to move a device to a different server — no rebuild/reflash required.
+# no trailing slash.
+#
+# HOW THIS VALUE IS USED DEPENDS ON THE PRODUCT:
+#
+#  * Products where the server is chosen on the device (Product.confirm_server_url,
+#    e.g. R Station): this is only the DEFAULT the first-run setup wizard offers.
+#    Whoever sets the device up confirms or changes it there, and the confirmed
+#    address is saved on the device itself (/data/status/server-url) and used
+#    for everything from then on. EDITING THIS LINE DOES NOT MOVE A DEVICE THAT
+#    HAS ALREADY BEEN SET UP TO ANOTHER SERVER. To point such a device at a
+#    different server, do a factory reset (which wipes /data and runs the wizard
+#    again); this value is then offered as the default again.
+#
+#  * Other products (the original Slide Announcer): this is the server, read
+#    fresh on every request, so changing it (and rebooting, or restarting
+#    slide-announcer-backend) moves the device to a different server — no
+#    rebuild/reflash needed.
+#
 # This is what lets one image serve multiple independent servers: build it
 # once, then set this per-device (or pre-provision it onto the boot
 # partition before first boot, same as network-config below).
-# Missing/blank here is a hard failure — pairing, sync, heartbeat, and OTA
-# checks all refuse to run rather than silently doing nothing.
+# Missing/blank is a hard failure for the second kind of product (pairing,
+# sync, heartbeat, and OTA checks refuse to run rather than silently doing
+# nothing), and just means an empty field in the wizard for the first.
 
 # server_url: https://your-server.example.org
 

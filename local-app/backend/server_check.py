@@ -18,14 +18,9 @@ import pairing
 TIMEOUT_SECONDS = 6.0
 
 
-async def check() -> dict:
-    """{"state": "ok" | "error" | "unreachable" | "unconfigured",
-        "host": str | None, "detail": str | None, "latency_ms": int | None}"""
-    try:
-        server_url = pairing.read_server_url()
-    except pairing.PairingError as exc:
-        return {"state": "unconfigured", "host": None, "detail": str(exc), "latency_ms": None}
-
+async def probe(server_url: str) -> dict:
+    """The same check against an explicit URL (the first-run wizard validates a
+    server before saving it)."""
     host = urlsplit(server_url).hostname or server_url
     started = time.monotonic()
     try:
@@ -42,3 +37,13 @@ async def check() -> dict:
     if resp.is_success:
         return {"state": "ok", "host": host, "detail": None, "latency_ms": latency_ms}
     return {"state": "error", "host": host, "detail": f"HTTP {resp.status_code}", "latency_ms": latency_ms}
+
+
+async def check() -> dict:
+    """{"state": "ok" | "error" | "unreachable" | "unconfigured",
+        "host": str | None, "detail": str | None, "latency_ms": int | None}"""
+    try:
+        server_url = pairing.read_server_url()
+    except pairing.PairingError as exc:
+        return {"state": "unconfigured", "host": None, "detail": str(exc), "latency_ms": None}
+    return await probe(server_url)
