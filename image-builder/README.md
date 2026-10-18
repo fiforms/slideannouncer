@@ -198,8 +198,9 @@ either one unset keeps SSH entirely disabled.
 ### Virt (UEFI/VM) test image — `./build.sh --virt`
 
 After the normal artifacts, `--virt` also writes
-`deploy/<product>-<version>-virt.img` (plus a plain `xz` of it,
-`.img.xz`, for download — the raw file is a sparse 8 GiB file, mostly zeros),
+`deploy/<product>-<version>-virt.img.xz` (a plain `xz` of the raw disk; the
+uncompressed 8 GiB `.img` is deleted after compression to save space unless
+you pass `--keep`: `./build.sh --virt --keep`),
 a raw GPT disk (ESP + rootA + data, no
 rootB) that boots under UEFI on an **arm64** VM: QEMU `-M virt` with AAVMF,
 Proxmox with an emulated arm64 guest, or VirtualBox on an arm64 host (it
@@ -236,10 +237,8 @@ cd image-builder/deploy
 
 # The image is already a full 8 GiB disk (sparse), with /data filling the
 # end of it — no resize needed. Work on a scratch copy so the built image
-# stays pristine. From the compressed download, decompress sparsely:
-#   xz -dc "<product>-<version>-virt.img.xz" | cp --sparse=always /dev/stdin /tmp/virt-test.img
-# or from the raw file:
-cp --sparse=always "<product>-<version>-virt.img" /tmp/virt-test.img
+# stays pristine. Decompress the .xz sparsely into the scratch copy:
+xz -dc "<product>-<version>-virt.img.xz" | cp --sparse=always /dev/stdin /tmp/virt-test.img
 
 # Writable UEFI variable store (the firmware needs its own copy)
 cp /usr/share/AAVMF/AAVMF_VARS.fd /tmp/virt-vars.fd

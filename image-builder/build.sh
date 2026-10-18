@@ -14,6 +14,8 @@
 #                               <product>-<version>-virt.img for testing under
 #                               UEFI on an arm64 VM (no A/B, tryboot or OTA —
 #                               see make-virt-image.sh). Needs network (apt).
+#                               Only the .img.xz is kept unless --keep is given.
+#   ./build.sh --virt --keep   also keep the uncompressed (sparse 8GiB) virt .img
 #   RESUME_WORK=<dir> ./build.sh
 #                               skip the pi-gen/Docker build and reuse an
 #                               already-decompressed raw.img from a previous
@@ -29,11 +31,13 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/.." && pwd)"
 BUILD_VIRT=0
+KEEP_VIRT_RAW=0
 for arg in "$@"; do
 	case "$arg" in
 		--virt) BUILD_VIRT=1 ;;
+		--keep) KEEP_VIRT_RAW=1 ;;
 		*)
-			echo "build.sh: unknown argument: ${arg} (supported: --virt)" >&2
+			echo "build.sh: unknown argument: ${arg} (supported: --virt, --keep)" >&2
 			exit 1
 			;;
 	esac
@@ -818,11 +822,15 @@ if [ "$BUILD_VIRT" = 1 ]; then
 	echo "==> Building the virt (UEFI/VM) test image (requires root + network)"
 	sudo "${HERE}/make-virt-image.sh" "${WORK}/raw.img" "$VIRT_OUT"
 	sudo chown "$(id -u):$(id -g)" "$VIRT_OUT"
-	echo "==> Done: ${VIRT_OUT} (sparse; ${VIRT_DISK_SIZE_MB:-8192}MiB)"
 	# Same raw disk, compressed with plain xz for download/transfer (the
-	# image is mostly zeros, so this is small). Keep the raw .img too.
+	# image is mostly zeros, so this is small). Unless --keep, replace the
+	# uncompressed .img (${VIRT_DISK_SIZE_MB:-8192}MiB) with the .xz to save disk.
 	echo "==> Compressing the virt image"
-	xz -6 -T0 -k -f "$VIRT_OUT"
+	if [ "$KEEP_VIRT_RAW" = 1 ]; then
+		xz -6 -T0 -k -f "$VIRT_OUT"
+	else
+		xz -6 -T0 -f "$VIRT_OUT"
+	fi
 	echo "==> Done: ${VIRT_OUT}.xz"
 fi
 
