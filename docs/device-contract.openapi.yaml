@@ -26,7 +26,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PairResponse" }
-        "422": { description: Invalid, expired or already-used code }
+        "422": { description: "Invalid, expired or already-used code" }
         "429": { description: Rate limited }
   /heartbeat:
     post:
