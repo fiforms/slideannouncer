@@ -49,7 +49,9 @@ if [ -d files/product/system ]; then
 		[ -e "$unit" ] && install -m 644 "$unit" "${ROOTFS_DIR}/etc/systemd/system/"
 	done
 	for script in files/product/system/scripts/*; do
-		[ -e "$script" ] && install -m 755 "$script" "${ROOTFS_DIR}/usr/local/sbin/"
+		# -f, not -e: the rsynced dev tree can carry a __pycache__/ dir, and
+		# `install` exits non-zero on a directory, failing the whole build.
+		[ -f "$script" ] && install -m 755 "$script" "${ROOTFS_DIR}/usr/local/sbin/"
 	done
 fi
 install -m 755 files/system/scripts/data-resize.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-data-resize.sh"
