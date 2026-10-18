@@ -64,6 +64,11 @@ install -m 755 files/system/scripts/vtlock-apply.py "${ROOTFS_DIR}/usr/local/sbi
 install -m 755 files/system/scripts/home-dirs.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-home-dirs"
 install -m 755 files/system/scripts/ssh-gate.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-ssh-gate"
 install -m 755 files/system/scripts/power-button-monitor.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-power-button-monitor"
+install -m 755 files/system/scripts/boot-splash.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-boot-splash"
+# Boot splash: the pre-scaled raw image build.sh made from the product's
+# image/splash.png, else the core's system/splash/splash.png.
+install -d "${ROOTFS_DIR}/usr/share/slide-announcer"
+install -m 644 files/splash.raw "${ROOTFS_DIR}/usr/share/slide-announcer/splash.raw"
 install -m 755 files/system/scripts/display-power.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-display-power"
 install -m 755 files/system/scripts/apply-audio-output.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-audio-output"
 install -m 755 files/system/scripts/apply-screen-resolution.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-screen-resolution"
@@ -349,6 +354,12 @@ sed -i -E 's/ resize\b//' "$CMDLINE"
 # the very first mount read-only; the fstab entry only matters afterward if
 # systemd-remount-fs.service re-evaluates the options.
 sed -i 's/$/ ro quiet loglevel=3 logo.nologo vt.global_cursor_default=0/' "$CMDLINE"
+# Boot at 1080p on whichever HDMI port is in use. The boot splash
+# (system/scripts/boot-splash.py) paints the vc4 framebuffer, which on a Pi 4
+# at the default 4K is a 16bpp console that shows nothing we write; at 1080p it
+# displays normally. labwc switches to the device's own resolution setting
+# later. A token for an unplugged connector is harmless.
+sed -i 's/$/ video=HDMI-A-1:1920x1080@60 video=HDMI-A-2:1920x1080@60/' "$CMDLINE"
 # WiFi regulatory domain (from SLIDE_ANNOUNCER_WIFI_COUNTRY via build.sh).
 # Set on the kernel cmdline so cfg80211 comes up with the country already
 # applied, on every boot and every RAUC slot (cmdline.txt ships in each
@@ -401,6 +412,16 @@ install -m 644 files/system/cloud-init/network-config \
 # here only reaches whoever mounts the card BEFORE first power-on.
 install -m 644 files/provisioning/slideannouncer.yaml.example \
 	"${ROOTFS_DIR}/boot/firmware/slideannouncer.yaml"
+# Image identification comment (build.sh writes boot-seed/image_comment from
+# the product's image/BOOT_COMMENT + build info): prepended to the BOOT
+# partition's copy only, so someone mounting the card offline can tell what
+# kind of image it is. firstboot.py edits the yaml line-by-line, so the
+# comment survives first boot.
+if [ -f files/boot-seed/image_comment ]; then
+	cat files/boot-seed/image_comment "${ROOTFS_DIR}/boot/firmware/slideannouncer.yaml" \
+		> "${ROOTFS_DIR}/boot/firmware/slideannouncer.yaml.new"
+	mv "${ROOTFS_DIR}/boot/firmware/slideannouncer.yaml.new" "${ROOTFS_DIR}/boot/firmware/slideannouncer.yaml"
+fi
 # The build's default server address (build.sh, SLIDE_ANNOUNCER_SERVER_URL),
 # applied to the BOOT partition's copy only. The rootfs copy of the example
 # (/opt/slide-announcer/provisioning/) stays generic, so the address is never
@@ -538,6 +559,7 @@ systemctl enable slide-announcer-firstboot.service
 systemctl enable slide-announcer-local-app-seed.service
 systemctl enable slide-announcer-backend.service
 systemctl enable slide-announcer-vtlock.service
+systemctl enable slide-announcer-splash.service
 systemctl enable slide-announcer-kiosk.service
 systemctl enable slide-announcer-power-button-dirs.service
 systemctl enable slide-announcer-power-button.service

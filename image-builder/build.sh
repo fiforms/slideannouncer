@@ -279,6 +279,11 @@ rm -rf "$FILES_DIR"
 mkdir -p "$FILES_DIR"
 rsync -a --exclude 'backend/venv' "${REPO_ROOT}/system/" "${FILES_DIR}/system/"
 rsync -a "${PRODUCT_DIR}/" "${FILES_DIR}/product/"
+# Boot splash (product's image/splash.png overrides the core's), converted to
+# the raw format the device reads — it has no image library. Needs Pillow here.
+SPLASH_PNG="${REPO_ROOT}/system/splash/splash.png"
+[ ! -f "${PRODUCT_DIR}/splash.png" ] || SPLASH_PNG="${PRODUCT_DIR}/splash.png"
+"${HERE}/splash-convert.py" "$SPLASH_PNG" "${FILES_DIR}/splash.raw"
 sed -i "s|@@RAUC_COMPATIBLE@@|${RAUC_COMPATIBLE}|" "${FILES_DIR}/system/rauc/system.conf"
 rsync -a "${REPO_ROOT}/provisioning/" "${FILES_DIR}/provisioning/"
 # The WiFi regulatory domain is applied via the kernel cmdline
@@ -344,6 +349,19 @@ if [ -n "$SLIDE_ANNOUNCER_SERVER_URL" ]; then
 	mkdir -p "${FILES_DIR}/boot-seed"
 	printf '%s\n' "$SLIDE_ANNOUNCER_SERVER_URL" > "${FILES_DIR}/boot-seed/server_url"
 fi
+# Comment block identifying the image, for whoever mounts the boot partition
+# offline: the product's image/BOOT_COMMENT (free text, optional) plus the
+# product name, OS version and build date. Boot partition copy only, like
+# the server URL above — applied by 00-run.sh.
+mkdir -p "${FILES_DIR}/boot-seed"
+{
+	echo "# ==== IMAGE: ${PRODUCT} ${OS_VERSION} (built ${BUILD_DATE}) ===="
+	if [ -f "${PRODUCT_DIR}/BOOT_COMMENT" ]; then
+		sed -e 's/[[:space:]]*$//' -e '/^$/d' -e 's/^/# /' "${PRODUCT_DIR}/BOOT_COMMENT"
+	fi
+	echo "# ==============================================================="
+	echo
+} > "${FILES_DIR}/boot-seed/image_comment"
 # Fixed OS-image infra, like local-app-seed.py — deliberately NOT part of
 # the versioned local-app release tarball below, so a bad app update can
 # never take the update mechanism itself down with it.

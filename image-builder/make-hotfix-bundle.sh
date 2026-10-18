@@ -124,9 +124,12 @@ chmod 755 "$STAGE_DIR"
 tar --owner=0 --group=0 --numeric-owner -C "$STAGE_DIR" -czf "${BUNDLE_DIR}/files.tar.gz" .
 
 # Belt and braces: refuse to ship a bundle whose "./" entry isn't 0755.
-if ! tar -tvzf "${BUNDLE_DIR}/files.tar.gz" | head -n1 | grep -q '^drwxr-xr-x .* \./$'; then
+# (First line captured with `|| true`: under pipefail, head closing the pipe
+# early SIGPIPEs tar on a large archive and would fail this check spuriously.)
+ROOT_ENTRY="$(tar -tvzf "${BUNDLE_DIR}/files.tar.gz" | head -n1 || true)"
+if ! grep -q '^drwxr-xr-x .* \./$' <<< "$ROOT_ENTRY"; then
 	echo "make-hotfix-bundle.sh: files.tar.gz's './' entry is not drwxr-xr-x — it would change / on the device" >&2
-	tar -tvzf "${BUNDLE_DIR}/files.tar.gz" | head -n1 >&2
+	echo "$ROOT_ENTRY" >&2
 	exit 1
 fi
 

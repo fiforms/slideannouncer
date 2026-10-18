@@ -392,7 +392,6 @@ def write_screen_resolution(value: str) -> None:
     SCREEN_RESOLUTION_FILE.parent.mkdir(parents=True, exist_ok=True)
     SCREEN_RESOLUTION_FILE.write_text(value)
     SCREEN_RESOLUTION_FILE.chmod(0o644)
-    AUDIO_OUTPUT_FILE.chmod(0o644)
 
 
 def read_audio_volume() -> int:

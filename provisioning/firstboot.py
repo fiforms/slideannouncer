@@ -318,7 +318,7 @@ def _network_preconfigured() -> bool:
     return bool((data or {}).get("network"))
 
 
-def has_network_connectivity(timeout: float = 15.0, poll_interval: float = 2.0) -> bool:
+def has_network_connectivity(timeout: float = 15.0, poll_interval: float = 2.0, wait: bool = True) -> bool:
     """True once NetworkManager reports an active wifi/ethernet connection —
     e.g. pre-provisioned via cloud-init's network-config (see
     docs/BUILDING.md, "Pre-provisioning network + identity"), applied
@@ -338,10 +338,14 @@ def has_network_connectivity(timeout: float = 15.0, poll_interval: float = 2.0) 
     already-plugged-in ethernet cable is covered by the immediate check
     below regardless — wired connections don't have WiFi's
     association/DHCP delay to race against.
+
+    wait=False skips the polling entirely (main() uses it so the kiosk isn't
+    held back for WiFi to associate; the polling happens later via
+    --refresh-setup-mode).
     """
     if _network_connected_now():
         return True
-    if not _network_preconfigured():
+    if not wait or not _network_preconfigured():
         return False
 
     deadline = time.monotonic() + timeout
@@ -376,14 +380,14 @@ def detect_hid_input() -> bool:
     return has_keyboard and has_pointer
 
 
-def detect_setup_mode() -> None:
+def detect_setup_mode(wait: bool = True) -> None:
     """Senses which of the three setup modalities applies. Does not act on
     it — acting (joining WiFi, launching the setup UI) is Tier 2 (the real
     local-app), not implemented here.
     """
     config = load_boot_config()
 
-    if has_network_connectivity():
+    if has_network_connectivity(wait=wait):
         mode = "headless-config"
     elif detect_hid_input():
         mode = "hid-setup"
@@ -460,11 +464,33 @@ def sync_ssh_authorized_keys() -> None:
     log("synced ssh_authorized_keys to slideadmin's authorized_keys")
 
 
+def refresh_setup_mode_later() -> None:
+    """Re-run setup-mode detection WITH the WiFi wait, detached from this
+    service. slide-announcer-kiosk.service is ordered after firstboot, and
+    waiting up to 15s here for WiFi to associate delayed the whole display
+    by ~6s on every boot — for a value that is only shown on the local
+    status API. So main() writes an instant best-effort result and this
+    corrects it once WiFi has had its chance. Only needed when a network is
+    pre-provisioned but not up yet (otherwise the wait was a no-op anyway).
+    """
+    if _network_connected_now() or not _network_preconfigured():
+        return
+    subprocess.run(
+        ["systemd-run", "--no-block", "--collect", "--unit=slide-announcer-setup-mode-refresh",
+         sys.executable, str(Path(__file__).resolve()), "--refresh-setup-mode"],
+        check=False,
+    )
+
+
 def main() -> int:
+    if "--refresh-setup-mode" in sys.argv:
+        detect_setup_mode(wait=True)
+        return 0
     run_once_setup()
     ensure_identity()
     set_hostname()
-    detect_setup_mode()
+    detect_setup_mode(wait=False)
+    refresh_setup_mode_later()
     write_language_boot_hint()
     sync_ssh_authorized_keys()
     return 0

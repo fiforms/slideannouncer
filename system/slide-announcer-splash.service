@@ -1,0 +1,15 @@
+[Unit]
+Description=Slide Announcer boot splash (paints the framebuffer early)
+DefaultDependencies=no
+After=systemd-modules-load.service
+Before=slide-announcer-kiosk.service
+ConditionPathExists=/usr/share/slide-announcer/splash.raw
+
+[Service]
+# simple, not oneshot: the script polls for the real framebuffer for a few
+# seconds and must not hold up the rest of sysinit while it waits.
+Type=simple
+ExecStart=/usr/local/sbin/slide-announcer-boot-splash
+
+[Install]
+WantedBy=sysinit.target

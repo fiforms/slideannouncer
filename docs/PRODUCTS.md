@@ -87,6 +87,13 @@ The server side is the product's other half:
 - `system/*.service|*.timer` — units installed into `/etc/systemd/system`;
   `system/scripts/*` — installed into `/usr/local/sbin` under the same name.
 - `enable` — the units to enable, one per line.
+- `splash.png` — optional boot splash, painted on the framebuffer early in
+  boot by `slide-announcer-splash.service`. Overrides the core's default
+  (`system/splash/splash.png`); scaled to fit, centred on black, so use a
+  black background. Can ship as a hotfix (the image is pre-scaled at build time; the device needs no image library).
+- `BOOT_COMMENT` — optional free text, written as `#` comments at the top of
+  the boot partition's `slideannouncer.yaml` (with product, OS version and
+  build date) so someone mounting the card offline can tell what it is.
 
 Persistent state must live under `/data` (the root is read-only with an
 overlay).
