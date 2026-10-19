@@ -12,23 +12,30 @@ import { product } from './product.js'
 
 const CORE = ['welcome', 'network', 'name', 'pairing', 'done']
 
-export const productSteps = product.setupSteps || []
+// Read lazily, never at module load: a product's own wizard steps import this file
+// (for nextPath/prevPath), and the product definition imports those steps, so
+// `product` is not yet defined when this module first runs — a top-level read
+// threw "Cannot access 'product' before initialization" and left a blank screen.
+export const getProductSteps = () => product.setupSteps || []
 
-export const stepKeys = CORE.flatMap((key) => [
-  key,
-  ...productSteps.filter((step) => step.after === key).map((step) => step.key),
-])
+export const getStepKeys = () =>
+  CORE.flatMap((key) => [
+    key,
+    ...getProductSteps().filter((step) => step.after === key).map((step) => step.key),
+  ])
 
 export function stepPath(key) {
-  const own = productSteps.find((step) => step.key === key)
+  const own = getProductSteps().find((step) => step.key === key)
   if (own) return `/setup/${own.path}`
   return key === 'welcome' ? '/setup' : `/setup/${key}`
 }
 
 export function nextPath(key) {
-  return stepPath(stepKeys[stepKeys.indexOf(key) + 1])
+  const keys = getStepKeys()
+  return stepPath(keys[keys.indexOf(key) + 1])
 }
 
 export function prevPath(key) {
-  return stepPath(stepKeys[stepKeys.indexOf(key) - 1])
+  const keys = getStepKeys()
+  return stepPath(keys[keys.indexOf(key) - 1])
 }

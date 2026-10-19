@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { product } from './product.js'
-import { prevPath, productSteps } from './setupFlow.js'
+import { getProductSteps, prevPath } from './setupFlow.js'
 import PinGate from './views/PinGate.vue'
 import SettingsLayout from './views/settings/SettingsLayout.vue'
 import NetworkStatus from './views/settings/NetworkStatus.vue'
@@ -91,7 +91,7 @@ const router = createRouter({
         },
         { path: 'network/diagnostics', component: NetworkDiagnostics, meta: { step: 'network', parent: '/setup/network', networkBase: '/setup/network' } },
         // A product's own steps (setupFlow.js) sit among the core ones.
-        ...productSteps.map((step) => ({ path: step.path, component: step.component, meta: { step: step.key, parent: prevPath(step.key) } })),
+        ...getProductSteps().map((step) => ({ path: step.path, component: step.component, meta: { step: step.key, parent: prevPath(step.key) } })),
         { path: 'name', component: SetupName, meta: { step: 'name', parent: prevPath('name') } },
         { path: 'pairing', component: SetupPairing, meta: { step: 'pairing', parent: prevPath('pairing') } },
         { path: 'done', component: SetupDone, meta: { step: 'done', parent: prevPath('done') } },

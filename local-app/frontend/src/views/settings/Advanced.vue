@@ -79,7 +79,7 @@ async function loadTimezone() {
     const data = await api.timezoneStatus()
     timezone.value = data.timezone
     timezoneSource.value = data.source
-    timezoneList.value = data.timezones
+    timezoneList.value = data.timezones ?? []
     area.value = data.timezone ? splitZone(data.timezone)[0] : null
   } catch {
     // leave blank rather than erroring out the page
