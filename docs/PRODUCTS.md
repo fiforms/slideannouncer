@@ -87,6 +87,8 @@ The server side is the product's other half:
   `local-app/backend/requirements.txt` for the image's venv and for
   `run-tests.sh`. The venv is built only at image time, so changing this
   also means a full image.
+- `debs/*.deb` — local packages (backports newer than the distro's), `apt-get install`ed in the chroot after the
+  `packages` list, so they upgrade a distro copy of the same package. Full image only, like `packages`.
 - `system/*.service|*.timer` — units installed into `/etc/systemd/system`;
   `system/scripts/*` — installed into `/usr/local/sbin` under the same name.
 - `enable` — the units to enable, one per line.

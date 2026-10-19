@@ -586,6 +586,18 @@ systemctl enable nginx.service
 systemctl enable seatd.service
 EOF
 
+# The product's own .deb files (products/<name>/image/debs/*.deb) — packages
+# newer than the distro's (backports). Installed after the apt list, so they
+# upgrade any distro copy of the same package. See docs/PRODUCTS.md.
+if compgen -G "files/product/debs/*.deb" > /dev/null; then
+	install -d "${ROOTFS_DIR}/tmp/product-debs"
+	cp files/product/debs/*.deb "${ROOTFS_DIR}/tmp/product-debs/"
+	on_chroot << 'EOF2'
+apt-get install -y --allow-downgrades /tmp/product-debs/*.deb
+rm -rf /tmp/product-debs
+EOF2
+fi
+
 # The product's own units (products/<name>/enable, one unit per line).
 if [ -f files/product/enable ]; then
 	grep -v '^[[:space:]]*\(#\|$\)' files/product/enable | while read -r unit; do
