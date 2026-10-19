@@ -74,9 +74,8 @@ subprocess) in a separate change. Likewise `escape-hatch.py`'s device scan copie
 
 ## Limits
 
-- Not yet run on a real Pi or with the real remote; the device scan and the
-  `KEY_HOMEPAGE` code are modelled on the working volume monitor and on Key Debug's
-  report, but unconfirmed here. The Chrome redirect itself is tested against a real browser.
+- Confirmed working on a real Pi (2026-10-18). The Chrome redirect itself is also tested
+  against a real browser.
 - It can't help if Chromium or labwc is gone entirely (the kiosk unit's own
   `Restart=always` handles that), nor if the local nginx/backend is down — Settings
   would then not load.

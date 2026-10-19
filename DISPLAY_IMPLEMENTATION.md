@@ -3,11 +3,11 @@
 An entity admin picks the kiosk's display resolution (4K or 1080p) from
 the device's on-screen Settings → Screens page. If a second HDMI output is
 connected, it's automatically mirrored at the same mode — there's no
-separate control for that yet. **Not yet confirmed on real hardware** —
-this whole feature was built without a Pi in hand to test against (unlike
-`AUDIO_IMPLEMENTATION.md`'s audio-output feature, which shipped a similar
-first pass and then got fixed against real hardware bugs). Read this
-document's "Untested assumptions" section before relying on it.
+separate control for that yet. Single-display resolution switching is **confirmed on real hardware**
+(2026-10-18). **Dual-HDMI mirroring is still untested.** The feature was
+built without a Pi in hand (unlike `AUDIO_IMPLEMENTATION.md`'s audio-output
+feature, which got fixed against real hardware bugs); see "Hardware
+verification" below for what has and hasn't been confirmed.
 
 ## Resolution
 
@@ -52,33 +52,21 @@ is written up as a documented-but-unbuilt idea in the main repo's
 not started, and unverified whether the hardware/compositor stack even
 supports it cleanly.
 
-## Untested assumptions
+## Hardware verification
 
-None of this has been run against the actual Pi 4 B hardware yet. Specific
-things to confirm on a real device, roughly in order:
-1. `wlr-randr` is added to `00-packages` but the image hasn't been rebuilt
-   and flashed with it — confirm it's actually present and runnable as the
-   `slideannouncer` user post-boot.
-2. Single-HDMI first: does `wlr-randr` list the expected output name
-   (assumed something like `HDMI-A-1`, the typical vc4-kms-v3d/wlroots
-   naming — same kind of assumption `apply-audio-output.sh` had to confirm
-   for `wpctl` sink names), and does setting `1920x1080@60Hz`/
-   `3840x2160@30Hz` actually change what's on screen?
-3. `kiosk-start.sh`'s `-s` session-command change (folding
-   `apply-screen-resolution.sh` in ahead of the `exec chromium…` call) —
-   confirm labwc actually runs it as a shell command with `;` sequencing
-   the way it's written, and that a `wlr-randr` failure (`|| true`) doesn't
-   block Chromium from starting.
-4. Then dual-HDMI: connect a second monitor, confirm both outputs actually
-   report as connected to `wlr-randr` and both mirror correctly — this is
-   the part the user has explicitly never tried at all, on any software
-   stack, before this feature existed.
-5. `XDG_RUNTIME_DIR`/`WAYLAND_DISPLAY` guesses in
-   `apply-screen-resolution.sh` for the backend-triggered call path (no
-   session to inherit them from, same class of bug `apply-audio-output.sh`
-   hit for PipeWire's `XDG_RUNTIME_DIR` the first time this pattern was
-   used) — confirm a Settings-UI resolution change while the kiosk is
-   already running actually re-applies live, not just at next boot.
+Confirmed on a real Pi (2026-10-18): resolution changes from Settings →
+Screens work, including re-applying live while the kiosk is running. That
+covers the original assumptions that `wlr-randr` is present and runnable
+as the `slideannouncer` user, that the output name and mode strings
+(`1920x1080@60Hz`/`3840x2160@30Hz`) change what's on screen, that
+`kiosk-start.sh`'s `-s` session command sequences correctly without a
+`wlr-randr` failure blocking Chromium, and that the
+`XDG_RUNTIME_DIR`/`WAYLAND_DISPLAY` guesses in
+`apply-screen-resolution.sh` hold for the backend-triggered path.
+
+**Still untested: dual-HDMI.** Connect a second monitor, confirm both
+outputs report as connected to `wlr-randr` and both mirror correctly at the
+chosen mode. The user has never tried this on any software stack.
 
 ## Shipping
 
