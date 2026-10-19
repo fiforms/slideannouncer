@@ -99,6 +99,13 @@ stage_local_app() {
 	rsync -a --exclude '__pycache__' "${PRODUCT_ROOT}/backend/" "${dest}/backend/products/${PRODUCT}/"
 	rsync -a --exclude node_modules --exclude dist "${LOCAL_APP_DIR}/frontend/" "${dest}/frontend/"
 	rsync -a "${PRODUCT_ROOT}/frontend/" "${dest}/frontend/src/products/${PRODUCT}/"
+	# The product's boot-splash image doubles as its branding on the first-run
+	# wizard's Welcome screen (SetupWelcome.vue): served at /product-splash.png,
+	# so there is one source file for both. Absent -> the text heading instead.
+	if [ -f "${PRODUCT_ROOT}/image/splash.png" ]; then
+		mkdir -p "${dest}/frontend/public"
+		cp "${PRODUCT_ROOT}/image/splash.png" "${dest}/frontend/public/product-splash.png"
+	fi
 }
 
 # build_release_tree <build_dir> <release_dir>: builds the frontend inside

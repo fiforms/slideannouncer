@@ -11,6 +11,9 @@ import { nextPath } from '../../setupFlow.js'
 const router = useRouter()
 const { t, locale } = useI18n()
 
+// The product's splash image, if it has one (vite.config.js) — replaces the heading.
+const hasLogo = __HAS_PRODUCT_SPLASH__
+
 const saving = ref(false)
 const error = ref(null)
 
@@ -43,7 +46,10 @@ async function next() {
 
 <template>
   <div class="setup-card setup-card--centered">
-    <h1 class="title">{{ t('setup.welcome.title') }}</h1>
+    <!-- mix-blend-mode: a splash is usually on black; lighten lets the card's own
+         colour show through instead of a black box. -->
+    <img v-if="hasLogo" class="logo" src="/product-splash.png" :alt="t('setup.welcome.title')">
+    <h1 v-else class="title">{{ t('setup.welcome.title') }}</h1>
     <p class="intro">{{ t('setup.welcome.intro') }}</p>
 
     <div class="field">
@@ -63,6 +69,14 @@ async function next() {
 
 <style scoped>
 .title { font-size: 2.8rem; }
+.logo {
+  display: block;
+  max-width: min(100%, 36rem);
+  max-height: 34vh;
+  margin: -1rem auto 0.5rem;
+  object-fit: contain;
+  mix-blend-mode: lighten;
+}
 .field {
   display: flex;
   flex-direction: column;

@@ -129,6 +129,7 @@ product at module level (products import core).
 | `setupSteps` | extra first-run wizard steps, `{ key, after, path, component }` (`setupFlow.js`; `SERVER_URL.md`) |
 | `setupDoneNote` | component shown on the wizard's Done screen (e.g. the R Station's escape-key hint) |
 | `loadSettings()` | refresh product state when Settings opens |
+| *(file)* `image/splash.png` | also shown in place of the heading on the first-run Welcome screen (staged as `/product-splash.png`; no file, text heading) |
 | `settingsPin()` | the Settings PIN, or `null` |
 | `messages` | `{ en, es }` UI strings, deep-merged over the core `locales/*.json` (product wins on conflict) |
 

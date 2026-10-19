@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath } from 'node:url'
+import { existsSync } from 'node:fs'
 
 // Which product's frontend (src/products/<name>/index.js) is built in —
 // package.sh and dev-deploy.sh set KIOSK_PRODUCT; see docs/PRODUCTS.md.
@@ -12,8 +13,15 @@ const src = fileURLToPath(new URL('./src', import.meta.url))
 // (see system/nginx-slide-announcer.conf). The dev proxy below is only for
 // `npm run dev` against a backend running locally at 127.0.0.1:8000 — real
 // devices always serve both through the same nginx origin.
+// Whether the product supplied a splash image (product-env.sh stages it as
+// public/product-splash.png) for the first-run Welcome screen to show.
+const hasProductSplash = existsSync(fileURLToPath(new URL('./public/product-splash.png', import.meta.url)))
+
 export default defineConfig({
   plugins: [vue()],
+  define: {
+    __HAS_PRODUCT_SPLASH__: JSON.stringify(hasProductSplash),
+  },
   resolve: {
     alias: {
       // `@core/...` reaches the product-neutral shell from product code.
