@@ -8,6 +8,9 @@ set -euo pipefail
 # KIOSK_URL is what the browser opens: this device's own local app, or — for
 # a product that is a remote web portal — that site.
 KIOSK_URL="http://localhost/kiosk"
+# 1 = hide the idle mouse arrow (signage: nobody is meant to see a pointer). A product
+# whose screen is used with a mouse sets KIOSK_HIDE_CURSOR=0 in its product.env.
+KIOSK_HIDE_CURSOR=1
 # shellcheck disable=SC1091
 [ -f /opt/slide-announcer/product.env ] && . /opt/slide-announcer/product.env
 
@@ -30,7 +33,13 @@ export WLR_SEATD=1
 # than falling back to Chromium's own cursors, so link hover/text fields on
 # Settings/Pairing would otherwise be invisible too. A real mouse still
 # moves/clicks normally throughout; only the idle arrow is invisible.
-export XCURSOR_THEME=slide-announcer-blank
+# A product that is used with a mouse (R Station) sets KIOSK_HIDE_CURSOR=0 in its
+# product.env and gets the stock Adwaita arrow instead.
+if [ "$KIOSK_HIDE_CURSOR" = "0" ]; then
+	export XCURSOR_THEME=Adwaita
+else
+	export XCURSOR_THEME=slide-announcer-blank
+fi
 export XCURSOR_SIZE=24
 
 # Audio (PipeWire/WirePlumber) is NOT started here — this unit's

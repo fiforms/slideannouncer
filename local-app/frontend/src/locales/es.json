@@ -75,7 +75,7 @@
             "rebooting": "Reiniciando…",
             "goToSlideshow": "Ir a la presentación",
             "unpairTitle": "Desemparejar dispositivo",
-            "unpairHint": "Desconectarse del servidor y borrar las diapositivas sin restablecer la configuración de red.",
+            "unpairHint": "Desconectarse del servidor sin restablecer la configuración de red.",
             "unpairing": "Desemparejando…",
             "unpairButton": "Desemparejar dispositivo",
             "unpairConfirm": "Sí, desemparejar ahora",

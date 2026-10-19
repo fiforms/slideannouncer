@@ -76,7 +76,8 @@ The server side is the product's other half:
   `KIOSK_URL` at a remote site if the device needs the first-run wizard —
   see *A remote-portal product* below.) `KIOSK_URL` is
   what Chromium opens: `http://localhost/kiosk` (the local app) or a remote
-  https URL.
+  https URL. `KIOSK_HIDE_CURSOR=0` keeps the mouse arrow visible; the default
+  hides it (signage), via a transparent cursor theme.
 - `packages` — extra apt packages, appended to the core list at build time
   (CUPS, for instance). Hotfix bundles can't install packages, so changing
   this means a full image.
@@ -128,8 +129,8 @@ product at module level (products import core).
 | `advancedSection` | component at the bottom of Settings > Advanced |
 | `setupSteps` | extra first-run wizard steps, `{ key, after, path, component }` (`setupFlow.js`; `SERVER_URL.md`) |
 | `setupDoneNote` | component shown on the wizard's Done screen (e.g. the R Station's escape-key hint) |
-| `loadSettings()` | refresh product state when Settings opens |
 | *(file)* `image/splash.png` | also shown in place of the heading on the first-run Welcome screen (staged as `/product-splash.png`; no file, text heading) |
+| `loadSettings()` | refresh product state when Settings opens |
 | `settingsPin()` | the Settings PIN, or `null` |
 | `messages` | `{ en, es }` UI strings, deep-merged over the core `locales/*.json` (product wins on conflict) |
 

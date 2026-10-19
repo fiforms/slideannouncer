@@ -75,7 +75,7 @@
             "rebooting": "Rebooting…",
             "goToSlideshow": "Go to Slideshow",
             "unpairTitle": "Unpair Device",
-            "unpairHint": "Disconnect from the server and wipe slides without resetting network settings.",
+            "unpairHint": "Disconnect from the server without resetting network settings.",
             "unpairing": "Unpairing…",
             "unpairButton": "Unpair Device",
             "unpairConfirm": "Yes, unpair now",
