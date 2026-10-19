@@ -77,7 +77,9 @@ The server side is the product's other half:
   see *A remote-portal product* below.) `KIOSK_URL` is
   what Chromium opens: `http://localhost/kiosk` (the local app) or a remote
   https URL. `KIOSK_HIDE_CURSOR=0` keeps the mouse arrow visible; the default
-  hides it (signage), via a transparent cursor theme.
+  hides it (signage), via a transparent cursor theme. `HOSTNAME_PREFIX=name`
+  sets the pre-pairing hostname to `<name>-NNNNNN` (default `slideannouncer`);
+  installed on the device as `/opt/slide-announcer/product.env` and read at boot.
 - `packages` — extra apt packages, appended to the core list at build time
   (CUPS, for instance). Hotfix bundles can't install packages, so changing
   this means a full image.

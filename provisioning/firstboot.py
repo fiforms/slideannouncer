@@ -163,6 +163,24 @@ HOSTS_FILE = Path("/etc/hosts")
 HOSTNAME_STATUS_FILE = Path("/data/status/hostname")
 
 
+PRODUCT_ENV_FILE = Path("/opt/slide-announcer/product.env")
+DEFAULT_HOSTNAME_PREFIX = "slideannouncer"
+
+
+def hostname_prefix() -> str:
+    """The product's HOSTNAME_PREFIX from product.env (docs/PRODUCTS.md), used
+    for the pre-pairing `<prefix>-NNNNNN` hostname; DEFAULT_HOSTNAME_PREFIX
+    when unset or not a valid hostname label."""
+    try:
+        for line in PRODUCT_ENV_FILE.read_text().splitlines():
+            m = re.match(r"\s*HOSTNAME_PREFIX=[\"']?([A-Za-z0-9-]+)[\"']?\s*$", line)
+            if m and not m.group(1).startswith("-") and len(m.group(1)) <= 40:
+                return m.group(1).lower()
+    except OSError:
+        pass
+    return DEFAULT_HOSTNAME_PREFIX
+
+
 def derive_numeric_hostname(device_uuid: str) -> str:
     """Stable 6-digit numeric suffix derived from device_uuid — decimal,
     not hex, per operator preference (easier to read off a label or speak
@@ -173,7 +191,7 @@ def derive_numeric_hostname(device_uuid: str) -> str:
     yet) — see set_hostname()'s precedence below.
     """
     digest = hashlib.sha256(device_uuid.encode()).hexdigest()
-    return f"slideannouncer-{int(digest, 16) % 1_000_000:06d}"
+    return f"{hostname_prefix()}-{int(digest, 16) % 1_000_000:06d}"
 
 
 def set_hostname() -> None:

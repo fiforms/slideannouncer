@@ -550,7 +550,7 @@ def mark_setup_complete() -> None:
 
 def _fallback_hostname() -> str:
     device_uuid = identity.get_device_uuid()
-    return identity.derive_numeric_hostname(device_uuid) if device_uuid else "slideannouncer"
+    return identity.derive_numeric_hostname(device_uuid) if device_uuid else identity.hostname_prefix()
 
 
 def set_local_device_name(device_name: str) -> str:
