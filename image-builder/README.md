@@ -268,6 +268,83 @@ qemu-system-aarch64 \
 - For a throwaway run that never writes the image, skip the copy and add
   `snapshot=on` to the `-drive file=...` option instead.
 
+#### Running it on macOS (Apple silicon) — easiest
+
+An M-series Mac is arm64 itself, so the VM runs with hardware acceleration
+(`hvf`) at near-native speed and boots in seconds, not minutes.
+
+```bash
+brew install qemu xz
+cd ~/Downloads            # wherever the -virt.img.xz landed
+
+# Scratch copy (needs 8 GiB free; the image is a full-size raw disk)
+xz -dc "<product>-<version>-virt.img.xz" > virt-test.img
+
+# Firmware ships with Homebrew's qemu; the vars file must be a writable copy
+FW="$(brew --prefix)/share/qemu"
+cp "$FW/edk2-arm-vars.fd" virt-vars.fd
+
+qemu-system-aarch64 \
+  -M virt -accel hvf -cpu host -smp 4 -m 4G \
+  -drive if=pflash,format=raw,readonly=on,file="$FW/edk2-aarch64-code.fd" \
+  -drive if=pflash,format=raw,file=virt-vars.fd \
+  -drive file=virt-test.img,format=raw,if=virtio \
+  -device virtio-gpu-pci -display cocoa \
+  -device qemu-xhci -device usb-kbd -device usb-mouse \
+  -nic user,hostfwd=tcp::8080-:80,hostfwd=tcp::2222-:22 \
+  -serial mon:stdio
+```
+
+The login, web UI (`http://localhost:8080`) and quit key are the same as in
+the Linux section above.
+
+**UTM alternative (no command line):** install [UTM](https://mac.getutm.app/),
+create a VM → *Virtualize* → *Other*, tick *Skip ISO boot*, and give it 4 GB
+RAM / 4 cores. Decompress the `.img.xz` first (double-click it, or
+`xz -d`), then in the VM's settings delete the default drive and *Import
+Drive* the `.img` (interface *VirtIO*). Under *Network* choose *Emulated
+VLAN* with port forwards 80→8080 (TCP) so the web UI is reachable on
+`localhost:8080`.
+
+#### Running it on Windows
+
+Windows PCs are x86, so the arm64 guest is software-emulated: expect the
+first boot to take several minutes, like the Linux x86 case. (On a Windows-on-Arm
+PC, add `-accel whpx -cpu host` in place of `-cpu cortex-a72`.)
+
+1. Install QEMU for Windows from <https://www.qemu.org/download/#windows>
+   (or `winget install SoftwareFreedomConservancy.QEMU`). The default
+   location is `C:\Program Files\qemu`, which includes the firmware
+   `share\edk2-aarch64-code.fd`.
+2. Install [7-Zip](https://www.7-zip.org/) and extract the `.img` from the
+   downloaded `-virt.img.xz` (right-click → 7-Zip → Extract Here). It
+   expands to 8 GiB.
+3. In PowerShell, in the folder holding the `.img`, create the writable
+   UEFI variable store (a 64 MiB blank file works) and start the VM:
+
+```powershell
+$Q = "C:\Program Files\qemu"
+fsutil file createnew virt-vars.fd 67108864
+
+& "$Q\qemu-system-aarch64.exe" `
+  -M virt -cpu cortex-a72 -smp 4 -m 4G `
+  -drive if=pflash,format=raw,readonly=on,file="$Q\share\edk2-aarch64-code.fd" `
+  -drive if=pflash,format=raw,file=virt-vars.fd `
+  -drive file=<product>-<version>-virt.img,format=raw,if=virtio `
+  -device virtio-gpu-pci -display gtk `
+  -device qemu-xhci -device usb-kbd -device usb-mouse `
+  -nic user,hostfwd=tcp::8080-:80,hostfwd=tcp::2222-:22 `
+  -serial mon:stdio
+```
+
+The QEMU window is the kiosk display; open `http://localhost:8080` in your
+browser for the web UI. Close the QEMU window to stop the VM. If Windows
+Defender Firewall asks about QEMU, allow it on private networks only.
+
+> The macOS and Windows steps above follow QEMU's documented behaviour but
+> have not been run end-to-end by the maintainers; the Linux/x86 run is the
+> verified one. Corrections welcome.
+
 Output — two artifacts, same version stamp:
 - `image-builder/deploy/slideannouncer-<build-date>-<git-hash>.img.xz` — the
   full boot+rootA+rootB+data disk, for initial flashing only.
