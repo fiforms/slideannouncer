@@ -42,6 +42,8 @@ product's launcher calls **`POST /api/local/escape-hold/consume`**, which return
 `{"held": true}` once (and never for a flag older than 5 minutes, or after a
 reboot) — on `true` the launcher opens `/settings` instead of the site.
 
+The on-screen counterpart, which needs no keyboard, is [KIOSK_GUARD.md](KIOSK_GUARD.md).
+
 ## Adopting it in a product
 
 1. List `slide-announcer-escape-hatch.service` in the product's image `enable` file.

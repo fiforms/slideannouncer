@@ -1,0 +1,21 @@
+[Unit]
+Description=Slide Announcer kiosk guard: Settings button on every remote page, rescue from lost pages
+# Ordering only, not Requires= — it must keep listening while the kiosk is
+# stopped, restarting or showing a hung page (the whole point of it).
+After=slide-announcer-kiosk.service
+
+[Service]
+Type=simple
+# Unprivileged: it only talks to the kiosk's Chromium over its loopback debug
+# port, and restarting the kiosk unit is already polkit-granted for this
+# account (system/polkit/50-slide-announcer-system.rules).
+User=slideannouncer
+Group=slideannouncer
+ExecStart=/usr/local/sbin/slide-announcer-kiosk-guard
+Restart=always
+RestartSec=2
+
+# Installed for every product but enabled only by those that opt in: list it in
+# the product's image `enable` file (docs/KIOSK_GUARD.md).
+[Install]
+WantedBy=multi-user.target
