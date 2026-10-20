@@ -38,6 +38,9 @@ OS_VERSION_FILE = Path("/opt/slide-announcer/VERSION")
 APP_VERSION_FILE = Path("/data/local-app/current/VERSION")
 CPU_TEMP_FILE = Path("/sys/class/thermal/thermal_zone0/temp")
 STATUS_FILE = Path("/data/status/heartbeat.json")
+# The product's api_base, for system/scripts/rauc-update.py, which runs as root outside this
+# backend and otherwise can't know it.
+API_BASE_FILE = Path("/data/status/api-base")
 
 
 def _now_iso() -> str:
@@ -78,6 +81,58 @@ def read_cpu_temp_c() -> float | None:
         return None
 
 
+# What an update source's answer may set on the heartbeat response — exactly the fields the
+# updaters (local_app_updater.py, os-updater.py) read, and nothing else, so a third-party
+# source can never touch settings (name, language, kiosk function) or anything beyond "which
+# release to install".
+UPDATE_KEYS = (
+    "latest_app_version", "app_update_available", "app_download_url", "app_sha256",
+    "latest_os_version", "os_update_available", "os_bundle_url", "os_bundle_sha256", "os_release_type",
+)
+
+
+def _no_update() -> dict:
+    return {k: (False if k.endswith("_available") else None) for k in UPDATE_KEYS}
+
+
+async def apply_update_source(response: dict, payload: dict) -> dict:
+    """Follows the paired server's "look for software elsewhere" pointer.
+
+    The paired server always answers the heartbeat; when its admin has pointed it at another
+    server for firmware it says so with `update_server_url` (and drops its own offers). We
+    then ask that server — unauthenticated, it never learns who we are beyond what we send —
+    which release suits our architecture, versions and update channel, and fold only
+    UPDATE_KEYS of its answer into the response the updaters read. An unreachable or
+    misbehaving source means "no update this round", never a fall-back to somewhere the admin
+    didn't choose. The URL is the server's say-so, so only http(s) is followed.
+    """
+    source = response.get("update_server_url")
+    if not source:
+        return response
+    result = {**response, **_no_update(), "update_source": source}
+    if not (isinstance(source, str) and source.startswith(("http://", "https://"))):
+        result["update_source_error"] = "not an http(s) URL"
+        return result
+    query = {
+        "architecture": payload.get("architecture"),
+        "app_version": payload.get("app_version"),
+        "os_version": payload.get("os_version"),
+        "channel": response.get("update_channel"),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            answer = await client.post(f"{source.rstrip('/')}/api/devices/update-check", json=query)
+        answer.raise_for_status()
+        offered = answer.json()
+        if not isinstance(offered, dict):
+            raise ValueError("unexpected response")
+    except (httpx.HTTPError, ValueError) as exc:
+        result["update_source_error"] = str(exc) or type(exc).__name__
+        return result
+    result.update({k: offered[k] for k in UPDATE_KEYS if k in offered})
+    return result
+
+
 def _write_status(data: dict) -> None:
     STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATUS_FILE.write_text(json.dumps(data))
@@ -97,11 +152,24 @@ def read_status() -> dict | None:
         return None
 
 
+def _publish_api_base() -> None:
+    base = product.get().api_base
+    try:
+        if not API_BASE_FILE.exists() or API_BASE_FILE.read_text().strip() != base:
+            API_BASE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            API_BASE_FILE.write_text(base + "\n")
+            API_BASE_FILE.chmod(0o644)
+    except OSError:
+        pass  # best effort: the CLI falls back to its legacy default
+
+
 async def send_once() -> None:
     """Sends one heartbeat. A no-op if unpaired — nothing to report yet."""
     token = pairing.read_device_token()
     if not token:
         return
+
+    _publish_api_base()
 
     payload = {
         "app_version": read_app_version(),
@@ -148,7 +216,7 @@ async def send_once() -> None:
         _write_status({"last_attempt_at": _now_iso(), "last_error": f"HTTP {resp.status_code}"})
         return
 
-    response = resp.json()
+    response = await apply_update_source(resp.json(), payload)
 
     # The server is authoritative for this device's name once paired (an
     # entity admin can rename it from the fleet UI) — every successful

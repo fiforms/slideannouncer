@@ -52,6 +52,17 @@ DEVICE_TOKEN_FILE = Path("/data/device-token")
 # SERVER_URL_FILE; takes precedence over the boot yaml's server_url.
 SERVER_URL_FILE = Path("/data/status/server-url")
 VERSION_FILE = Path("/opt/slide-announcer/VERSION")
+APP_VERSION_FILE = Path("/data/local-app/current/VERSION")
+# The product's server path prefix (Product.api_base), which only the backend knows: it
+# writes it here on every heartbeat (heartbeat.py). Absent until the first one — the legacy
+# default below is what this CLI always used.
+API_BASE_FILE = Path("/data/status/api-base")
+LEGACY_API_BASE = "/api/slide-announcers"
+# Keep in step with heartbeat.py's UPDATE_KEYS (this CLI runs outside the backend's venv).
+UPDATE_KEYS = (
+    "latest_app_version", "app_update_available", "app_download_url", "app_sha256",
+    "latest_os_version", "os_update_available", "os_bundle_url", "os_bundle_sha256", "os_release_type",
+)
 
 
 def read_server_url():
@@ -88,6 +99,56 @@ def read_os_version():
     return None
 
 
+def read_api_base():
+    try:
+        value = API_BASE_FILE.read_text().strip().rstrip("/")
+    except OSError:
+        value = ""
+    return value or LEGACY_API_BASE
+
+
+def read_app_version():
+    try:
+        return APP_VERSION_FILE.read_text().strip() or None
+    except OSError:
+        return None
+
+
+def apply_update_source(response, payload, post=None):
+    """Follows the paired server's `update_server_url` pointer — the same rule as
+    local-app/backend/heartbeat.py's apply_update_source (see docs/DEVICE_CONTRACT.md,
+    "Update source"; keep the two in step): ask that server for a release, take only
+    UPDATE_KEYS from its answer, treat any failure as "no update" rather than falling back
+    anywhere else, and follow http(s) only. `post(url, body) -> dict` is injectable for tests."""
+    source = response.get("update_server_url")
+    if not source:
+        return response
+    result = {**response, **{k: (False if k.endswith("_available") else None) for k in UPDATE_KEYS}, "update_source": source}
+    if not (isinstance(source, str) and source.startswith(("http://", "https://"))):
+        result["update_source_error"] = "not an http(s) URL"
+        return result
+
+    def default_post(url, body):
+        req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
+                                     headers={"Content-Type": "application/json", "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())
+
+    query = {
+        "architecture": payload.get("architecture"), "app_version": payload.get("app_version"),
+        "os_version": payload.get("os_version"), "channel": response.get("update_channel"),
+    }
+    try:
+        offered = (post or default_post)(f"{source.rstrip('/')}/api/devices/update-check", query)
+        if not isinstance(offered, dict):
+            raise ValueError("unexpected response")
+    except (OSError, ValueError) as exc:  # URLError/HTTPError are OSErrors; JSON errors are ValueErrors
+        result["update_source_error"] = str(exc) or type(exc).__name__
+        return result
+    result.update({k: offered[k] for k in UPDATE_KEYS if k in offered})
+    return result
+
+
 def heartbeat():
     server_url = read_server_url()
     token = read_device_token()
@@ -100,12 +161,14 @@ def heartbeat():
             "of 'check'/plain 'install'."
         )
 
-    body = json.dumps({
+    payload = {
         "os_version": read_os_version(),
+        "app_version": read_app_version(),
         "architecture": platform.machine(),
-    }).encode()
+    }
+    body = json.dumps(payload).encode()
     req = urllib.request.Request(
-        f"{server_url}/api/slide-announcers/heartbeat",
+        f"{server_url}{read_api_base()}/heartbeat",
         data=body,
         method="POST",
         headers={
@@ -116,7 +179,7 @@ def heartbeat():
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read())
+            return apply_update_source(json.loads(resp.read()), payload)
     except urllib.error.HTTPError as e:
         if e.code == 401:
             sys.exit(

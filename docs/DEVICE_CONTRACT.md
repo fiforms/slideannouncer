@@ -174,6 +174,8 @@ Version strings: see [Versions](#versions).
 | `os_bundle_sha256` | string \| null | informational; the device relies on RAUC's signature check instead (see [Updates](#updates)) |
 | `os_release_type` | `"full"` \| `"hotfix"` \| null | non-null only when `os_update_available` |
 | `os_auto_update_enabled` | bool | per-device switch: whether the device may apply OS updates on its own schedule |
+| `update_channel` | string | optional: this device's channel as set on the paired server; only needed when `update_server_url` is set |
+| `update_server_url` | string \| null | optional: another server to ask for software instead of this one — see [Update source](#update-source) |
 | *extension fields* | any | see [Extensions](#extensions) |
 
 The device caches the entire response body locally (`/data/status/heartbeat.json`)
@@ -311,6 +313,24 @@ Uploaded filenames may be parsed to prefill the console form (optional, never
 blocking): `slideannouncer-<ver>.raucb`,
 `slideannouncer-<ver>.hotfix.from.<base>.raucb`,
 `slide-announcer-local-app-<ver>[-…].tar.gz`.
+
+### Update source
+
+A server may send **`update_server_url`** in the heartbeat response (an `http(s)` base URL) to say
+"I am not the place to get software; ask there". The paired server stays the only server a device is
+*paired* with — it still receives every heartbeat, owns name, language, function and channel — and
+makes no offers of its own while it sends the pointer (all `*_update_available` are false). The device
+then `POST`s `{update_server_url}/api/devices/update-check` with JSON
+`{"architecture", "app_version", "os_version", "channel"}` (`channel` = the response's `update_channel`),
+unauthenticated, and receives the same update fields as a heartbeat response. It copies **only** those
+fields (`latest_*`, `*_update_available`, `*_download_url`/`*_bundle_url`, `*_sha256`, `os_release_type`)
+into the cached response — a source can never change settings — and adds `update_source` (and
+`update_source_error` on failure). An unreachable or invalid source means *no update this cycle*, never
+a fall-back to somewhere else. Only `http`/`https` pointers are followed. The source answers from its own
+releases and never chains onward. Reference: `heartbeat.apply_update_source`,
+`DeviceUpdateCheckController`. The standalone `slide-announcer-update check` CLI (what Settings'
+"Check for Update" runs) carries its own copy of the same rule, and reads the product's `api_base` from
+`/data/status/api-base`, which the backend publishes on every heartbeat.
 
 ### Artifact serving
 

@@ -113,3 +113,5 @@ components:
         os_bundle_sha256: { type: string, nullable: true, pattern: "^[0-9a-fA-F]{64}$" }
         os_release_type: { type: string, nullable: true, enum: [full, hotfix, null] }
         os_auto_update_enabled: { type: boolean }
+        update_channel: { type: string, description: "Optional. Sent with update_server_url so the device can ask the source for its own channel." }
+        update_server_url: { type: string, nullable: true, description: "Optional. Another server to ask for software instead (see DEVICE_CONTRACT.md, Update source)." }
