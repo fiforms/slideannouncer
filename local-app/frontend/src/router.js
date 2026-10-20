@@ -6,6 +6,7 @@ import SettingsLayout from './views/settings/SettingsLayout.vue'
 import NetworkStatus from './views/settings/NetworkStatus.vue'
 import WifiList from './views/settings/WifiList.vue'
 import WifiConnect from './views/settings/WifiConnect.vue'
+import About from './views/settings/About.vue'
 import System from './views/settings/System.vue'
 import Advanced from './views/settings/Advanced.vue'
 import Pairing from './views/settings/Pairing.vue'
@@ -43,7 +44,8 @@ const router = createRouter({
       // where the remote's Back goes from this screen's content pane —
       // see remoteNav.js; screens without one return focus to the rail.
       children: [
-        { path: '', redirect: '/settings/network' },
+        { path: '', redirect: '/settings/about' },
+        { path: 'about', component: About, meta: { railPath: '/settings/about' } },
         { path: 'system', component: System, meta: { railPath: '/settings/system' } },
         { path: 'advanced', component: Advanced, meta: { railPath: '/settings/advanced' } },
         // Screen resolution now lives on Advanced.

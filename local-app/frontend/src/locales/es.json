@@ -11,6 +11,7 @@
         "countdown": "Volviendo a la presentación en {seconds}s…"
     },
     "settingsLayout": {
+        "about": "Acerca de",
         "backToSlideshow": "← Volver a la presentación",
         "system": "Sistema",
         "network": "Red",
@@ -18,6 +19,9 @@
         "advanced": "Avanzado"
     },
     "settings": {
+        "about": {
+            "title": "Acerca de este dispositivo"
+        },
         "system": {
             "title": "Sistema",
             "deviceInfo": "Información del dispositivo",

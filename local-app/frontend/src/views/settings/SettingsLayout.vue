@@ -18,6 +18,7 @@ const route = useRoute()
 // The product's own entries (`sub` ones are indented under Advanced) come
 // from product.railCategories() — see product.js.
 const categories = computed(() => [
+  { path: '/settings/about', label: t('settingsLayout.about') },
   { path: '/settings/network', label: t('settingsLayout.network') },
   { path: '/settings/pairing', label: t('settingsLayout.pairing') },
   { path: '/settings/system', label: t('settingsLayout.system') },

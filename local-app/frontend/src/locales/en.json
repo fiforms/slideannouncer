@@ -11,6 +11,7 @@
         "countdown": "Returning to slideshow in {seconds}s…"
     },
     "settingsLayout": {
+        "about": "About",
         "backToSlideshow": "← Back to slideshow",
         "system": "System",
         "network": "Network",
@@ -18,6 +19,9 @@
         "advanced": "Advanced"
     },
     "settings": {
+        "about": {
+            "title": "About this device"
+        },
         "system": {
             "title": "System",
             "deviceInfo": "Device Info",
