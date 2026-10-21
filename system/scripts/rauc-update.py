@@ -46,6 +46,8 @@ from pathlib import Path
 
 import yaml
 
+# Cloudflare-style proxies 403 urllib's default "Python-urllib/x" agent; send our own.
+USER_AGENT = "RStation-Updater/1.0"
 BOOT_YAML = Path("/boot/firmware/slideannouncer.yaml")
 DEVICE_TOKEN_FILE = Path("/data/device-token")
 # Server confirmed on the device (first-run wizard) — see pairing.py's
@@ -130,7 +132,8 @@ def apply_update_source(response, payload, post=None):
 
     def default_post(url, body):
         req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
-                                     headers={"Content-Type": "application/json", "Accept": "application/json"})
+                                     headers={"Content-Type": "application/json", "Accept": "application/json",
+                                              "User-Agent": USER_AGENT})
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read())
 
@@ -175,6 +178,7 @@ def heartbeat():
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "User-Agent": USER_AGENT,
         },
     )
     try:
