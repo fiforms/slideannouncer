@@ -339,7 +339,6 @@
         "done": {
             "titlePaired": "¡Todo listo!",
             "titleUnpaired": "Configuración terminada",
-            "slidesNote": "La primera vez, las diapositivas pueden tardar unos minutos en descargarse y aparecer.",
             "unpairedNote": "Este dispositivo aún no está emparejado, así que no tiene diapositivas que mostrar. Puede emparejarlo en cualquier momento desde Configuración > Emparejamiento — presione el botón Menú del control remoto para abrir la Configuración.",
             "restartNote": "El dispositivo se reiniciará una vez para aplicar su nuevo nombre.",
             "start": "Iniciar presentación",

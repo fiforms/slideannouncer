@@ -61,7 +61,6 @@ async function start() {
       <p class="detail">
         {{ status.entity_name ? t('setup.pairing.paired', { entity: status.entity_name }) : t('setup.pairing.pairedNoEntity') }}
       </p>
-      <p class="detail">{{ t('setup.done.slidesNote') }}</p>
     </template>
     <p v-else-if="status" class="detail">{{ t('setup.done.unpairedNote') }}</p>
     <p v-if="status?.hostname_change_pending" class="detail">{{ t('setup.done.restartNote') }}</p>

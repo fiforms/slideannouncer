@@ -339,7 +339,6 @@
         "done": {
             "titlePaired": "You're all set!",
             "titleUnpaired": "Setup finished",
-            "slidesNote": "The first time, it may take a few minutes for slides to download and appear.",
             "unpairedNote": "This device isn't paired yet, so it has no slides to show. You can pair it any time from Settings > Pairing — press the Menu button on the remote to open Settings.",
             "restartNote": "The device will restart once to apply its new name.",
             "start": "Start Slideshow",
