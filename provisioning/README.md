@@ -32,6 +32,15 @@ itself:
   identity + initial-setup hints only; see `network-config` for network
   settings.
 
+- **Every boot — slideadmin password** (optional): if the yaml has
+  `slideadmin_password_hash` (a crypt hash), it's applied with `chpasswd -e`
+  into the `/etc` overlay on `/data`, so it persists across OTAs with no
+  image rebuild. Removing the key reverts to the image's password:
+  `system/scripts/shadow-revert.py` (`slide-announcer-shadow-revert.service`,
+  before `/etc`'s overlay mounts, the only safe time to delete the overlay's
+  copy of `shadow`) does it on the next boot, but only if
+  `/data/.slideadmin-password-managed` says this feature set the password.
+
 Pairing, slide sync, and the on-device Settings/Network UI (Tier 2,
 `local-app/`) are implemented and confirmed working on real hardware — see
 the top-level `README.md`'s status section and `SLIDE_ANNOUNCER.md`.

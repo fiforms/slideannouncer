@@ -79,6 +79,19 @@ vt_lockswitch: locked
 #   ssh-ed25519 AAAA...
 
 
+# Sets the console/keyboard login password for 'slideadmin' (also the CUPS
+# UI login), as a crypt hash — never plaintext. Generate one with
+# `mkpasswd -m yescrypt` (or `openssl passwd -6`) and paste it in SINGLE
+# quotes so the $ characters survive. Applied on every boot into the /etc
+# overlay on /data, so it survives OTA updates and needs no new image.
+# Removing this line reverts to the image's own password on the next boot
+# (only if this key was ever applied; a password changed by hand on a
+# device that never had this key is left alone). A value that isn't a
+# valid hash is ignored. SSH stays key-only regardless.
+
+# slideadmin_password_hash: '$y$j9T$...'
+
+
 # Overrides this device's hostname. Normally there's no need to set this:
 # by default the hostname is derived automatically from whatever device
 # name is typed at pairing time (e.g. "Front Lobby" -> front_lobby), or

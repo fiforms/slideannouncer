@@ -1,0 +1,21 @@
+[Unit]
+Description=Revert slideadmin's password to the image's when the boot yaml no longer sets one
+# Must run while the /etc overlay is not yet mounted (see
+# scripts/shadow-revert.py), so same DefaultDependencies=no /
+# Before=etc.mount shape as slide-announcer-data-dirs.service. Also needs the
+# boot partition (to read slideannouncer.yaml), ordered the same way
+# slide-announcer-factory-reset-check.service orders itself. If the boot
+# partition isn't there the script does nothing, by design.
+DefaultDependencies=no
+After=data.mount boot-firmware.mount slide-announcer-data-dirs.service
+Before=etc.mount
+Requires=data.mount
+ConditionPathExists=/data/.slideadmin-password-managed
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/slide-announcer-shadow-revert
+
+[Install]
+WantedBy=local-fs-pre.target

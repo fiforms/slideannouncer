@@ -66,6 +66,7 @@ install -m 755 files/system/scripts/bootfw-remount.sh "${ROOTFS_DIR}/usr/local/s
 install -m 755 files/system/scripts/vtlock-apply.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-vtlock-apply"
 install -m 755 files/system/scripts/home-dirs.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-home-dirs"
 install -m 755 files/system/scripts/ssh-gate.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-ssh-gate"
+install -m 755 files/system/scripts/shadow-revert.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-shadow-revert"
 install -m 755 files/system/scripts/power-button-monitor.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-power-button-monitor"
 install -m 755 files/system/scripts/boot-splash.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-boot-splash"
 # Boot splash: the pre-scaled raw image build.sh made from the product's
@@ -565,6 +566,7 @@ systemctl mask e2scrub_all.timer e2scrub_all.service e2scrub_reap.service
 systemctl enable slide-announcer-overlay-var-dirs.service
 systemctl enable slide-announcer-factory-reset-check.service
 systemctl enable slide-announcer-data-dirs.service
+systemctl enable slide-announcer-shadow-revert.service
 systemctl enable slide-announcer-home-dirs.service
 systemctl enable slide-announcer-rauc-dirs.service
 systemctl enable slide-announcer-data-resize.service

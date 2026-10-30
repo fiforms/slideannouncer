@@ -37,6 +37,12 @@ ZONEINFO_DIR = Path("/usr/share/zoneinfo")
 BACKEND_GROUP = "slideannouncer"
 SSH_ADMIN_USER = "slideadmin"
 SSH_AUTHORIZED_KEYS_PATH = Path("/home/slideadmin/.ssh/authorized_keys")
+# Present while /etc/shadow's overlay copy carries a hash we set from the boot
+# yaml. system/scripts/shadow-revert.py keys off it (see there).
+PASSWORD_MANAGED_MARKER = Path("/data/.slideadmin-password-managed")
+# Crypt(3) hash as `mkpasswd`/`openssl passwd` print it: $id$[params$]salt$hash.
+# No ':' or whitespace, so it can't corrupt a shadow line.
+CRYPT_HASH_RE = re.compile(r"^\$[0-9a-z]+\$[^:\s]+$")
 
 # Paths a real wipe-and-repair (per Heartbeat/Kiosk-display design) would
 # clear. None of these exist yet in the stub app, but clearing them here too
@@ -522,6 +528,55 @@ def sync_ssh_authorized_keys() -> None:
     log("synced ssh_authorized_keys to slideadmin's authorized_keys")
 
 
+def sync_slideadmin_password() -> None:
+    """Sets slideadmin's password from the boot-yaml `slideadmin_password_hash`
+    key (a crypt hash, never plaintext), every boot.
+
+    /etc is an overlay whose upper layer lives on /data, so the shadow edit
+    persists across reboots and OTAs without touching rootA/rootB. Applied
+    through chpasswd -e, not by editing /etc/shadow by hand, so locking and
+    the lastchg field stay right.
+
+    Removing the key reverts to the image's own password, but not here: this
+    runs with /etc's overlay mounted, where deleting the upper copy of shadow
+    is undefined behavior. system/scripts/shadow-revert.py does it on the next
+    boot, before the overlay mounts, guarded by PASSWORD_MANAGED_MARKER (which
+    we create once a hash is applied) so devices that never used this key are
+    left alone.
+
+    A malformed value is logged and ignored rather than applied, so a typo
+    can't lock the console login.
+    """
+    value = load_boot_config().get("slideadmin_password_hash")
+    if not value:
+        return
+    value = str(value).strip()
+    if not CRYPT_HASH_RE.match(value):
+        log("slideadmin_password_hash isn't a crypt hash ($id$salt$hash) — ignoring it")
+        return
+
+    current = None
+    for line in Path("/etc/shadow").read_text().splitlines():
+        fields = line.split(":")
+        if fields[0] == SSH_ADMIN_USER and len(fields) > 1:
+            current = fields[1]
+            break
+    if current != value:
+        # Not check=True: backend and kiosk both Require this service, so a
+        # chpasswd failure must not take the display down with it.
+        result = subprocess.run(
+            ["chpasswd", "-e"],
+            input=f"{SSH_ADMIN_USER}:{value}\n",
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            log(f"chpasswd failed (exit {result.returncode}) — slideadmin's password unchanged")
+            return
+        log("applied slideadmin_password_hash to slideadmin's shadow entry")
+    PASSWORD_MANAGED_MARKER.touch()
+
+
 def refresh_setup_mode_later() -> None:
     """Re-run setup-mode detection WITH the WiFi wait, detached from this
     service. slide-announcer-kiosk.service is ordered after firstboot, and
@@ -552,6 +607,7 @@ def main() -> int:
     refresh_setup_mode_later()
     write_language_boot_hint()
     sync_ssh_authorized_keys()
+    sync_slideadmin_password()
     return 0
 
 

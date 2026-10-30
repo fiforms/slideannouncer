@@ -21,6 +21,13 @@ compositor, kiosk Chromium, and `local-app/` services on the device.
   upper/work dirs before `/etc`'s overlay mount, every boot (cheap,
   idempotent) — needed because a factory reset wipes them at runtime,
   unlike `image-builder/repartition.sh`'s one-time build-time seed.
+- `slide-announcer-shadow-revert.service` + `scripts/shadow-revert.py` —
+  before `/etc`'s overlay mounts, if `/data/.slideadmin-password-managed`
+  exists and the boot yaml no longer has `slideadmin_password_hash`, deletes
+  the overlay's copy of `shadow`/`shadow-` so the image's original shows
+  through. Must run pre-mount (modifying an overlay's upperdir while mounted
+  is undefined behavior). The hash is applied by
+  `provisioning/firstboot.py`'s `sync_slideadmin_password()`.
 - `slide-announcer-home-dirs.service` + `scripts/home-dirs.sh` — creates
   and seeds (from `/etc/skel`, once) `/data/home/slideadmin` before
   `/home/slideadmin` bind-mounts onto it (`00-run.sh`'s fstab entry) —
