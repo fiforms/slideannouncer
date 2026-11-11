@@ -551,6 +551,11 @@ export function installRemoteNav(appRouter) {
         // isn't a route, so there's no history entry to undo, and closing
         // it must never change the pin.
         closeMenu()
+        // This press is spent dismissing the overlay. Without this,
+        // Slideshow.vue's own keydown listener (registered later, on the
+        // same window) sees the menu already closed and treats the same
+        // Back press as RESTART_KEYS, restarting the show/video.
+        event.stopImmediatePropagation()
         return
       }
       const modal = activeModal()
@@ -590,7 +595,13 @@ export function installRemoteNav(appRouter) {
 
     if (MENU_KEYS.includes(event.key)) {
       event.preventDefault()
-      if (menuOpen.value || inSettings() || inSetup()) return
+      // Menu toggles: pressing it again dismisses the overlay, same as Back.
+      if (menuOpen.value) {
+        closeMenu()
+        event.stopImmediatePropagation()
+        return
+      }
+      if (inSettings() || inSetup()) return
       openMenu()
     }
   })
