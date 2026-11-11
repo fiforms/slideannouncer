@@ -173,6 +173,8 @@ cp .env.example .env
 ./generate-rauc-cert.sh dev     # dev/test only — prints paths to use below
 # ... or for a real fleet:
 ./generate-rauc-cert.sh production   # see its MANIFEST.txt for backup instructions
+# ... or, for several developers sharing one CA (recommended for a team):
+./rauc-pki.sh status     # guided: ca -> csr -> sign -> install; prints who to send what to
 # edit .env with the RAUC_* paths it printed
 ```
 

@@ -54,7 +54,10 @@ CERT="${OUT_DIR}/dev-cert.pem"
 
 openssl req -x509 -newkey rsa:4096 -nodes -days 3650 \
 	-keyout "$KEY" -out "$CERT" \
-	-subj "/CN=Slide Announcer Dev RAUC Signing Cert" 2>/dev/null
+	-subj "/CN=Slide Announcer Dev RAUC Signing Cert" \
+	-addext "basicConstraints=critical,CA:FALSE" \
+	-addext "keyUsage=critical,digitalSignature" \
+	-addext "extendedKeyUsage=codeSigning" 2>/dev/null
 chmod 600 "$KEY"
 chmod 644 "$CERT"
 
