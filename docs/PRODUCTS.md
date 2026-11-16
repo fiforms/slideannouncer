@@ -80,6 +80,13 @@ The server side is the product's other half:
   hides it (signage), via a transparent cursor theme. `HOSTNAME_PREFIX=name`
   sets the pre-pairing hostname to `<name>-NNNNNN` (default `slideannouncer`);
   installed on the device as `/opt/slide-announcer/product.env` and read at boot.
+  `KIOSK_SESSION_WRAPPER="cmd args"` runs the compositor session through `cmd args <chromium
+  command line>` instead of Chromium directly, so a product can supervise Chromium beside another
+  app; it must exit when Chromium does, so the unit's restart still recovers a crash. A unit that
+  reuses `kiosk-start.sh` to take over the screen sets `KIOSK_SESSION_WRAPPER` with `Environment=`,
+  which wins over `product.env`. `KIOSK_SCREEN_UNITS="a.service b.service"` lists such units:
+  display sleep (`slide-announcer-display-power`) stops them along with the kiosk, after writing
+  the sleep marker so their `ExecStopPost` can tell a sleep from an exit.
 - `packages` — extra apt packages, appended to the core list at build time
   (CUPS, for instance). Hotfix bundles can't install packages, so changing
   this means a full image.
@@ -89,6 +96,12 @@ The server side is the product's other half:
   also means a full image.
 - `debs/*.deb` — local packages (backports newer than the distro's), `apt-get install`ed in the chroot after the
   `packages` list, so they upgrade a distro copy of the same package. Full image only, like `packages`.
+- `debs.lock` — released `.deb`s to download at build time instead of committing them: one
+  `<url> <sha256>` per line. `build.sh` caches them by checksum (`~/.cache/slide-announcer-debs`),
+  fails on a mismatch, and installs them with `debs/*.deb`.
+- `rootfs/` — other files copied onto the root filesystem as-is, owned by root (config drop-ins
+  such as `rootfs/etc/NetworkManager/conf.d/*.conf`). Installed before the core's files, so a core
+  file at the same path wins.
 - `system/*.service|*.timer` — units installed into `/etc/systemd/system`;
   `system/scripts/*` — installed into `/usr/local/sbin` under the same name.
 - `enable` — the units to enable, one per line.

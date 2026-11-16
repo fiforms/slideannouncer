@@ -11,8 +11,18 @@ KIOSK_URL="http://localhost/kiosk"
 # 1 = hide the idle mouse arrow (signage: nobody is meant to see a pointer). A product
 # whose screen is used with a mouse sets KIOSK_HIDE_CURSOR=0 in its product.env.
 KIOSK_HIDE_CURSOR=1
+# Optional command that runs the compositor session instead of Chromium. It is
+# exec'd with Chromium's full command line as its arguments, so it can run
+# Chromium itself (e.g. supervised alongside another app) or ignore it and show
+# something else. Set in product.env for the kiosk unit; another unit that
+# reuses this script to take over the screen sets it with Environment=, which
+# wins over product.env.
+UNIT_SESSION_WRAPPER="${KIOSK_SESSION_WRAPPER:-}"
+KIOSK_SESSION_WRAPPER=""
 # shellcheck disable=SC1091
 [ -f /opt/slide-announcer/product.env ] && . /opt/slide-announcer/product.env
+[ -n "$UNIT_SESSION_WRAPPER" ] && KIOSK_SESSION_WRAPPER="$UNIT_SESSION_WRAPPER"
+export KIOSK_SESSION_WRAPPER
 
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 mkdir -p "$XDG_RUNTIME_DIR"
@@ -122,6 +132,11 @@ CHROMIUM_CMD=(
 # kiosk from starting.
 if [ "${1:-}" = "--session" ]; then
 	/usr/local/sbin/slide-announcer-apply-screen-resolution || true
+	if [ -n "$KIOSK_SESSION_WRAPPER" ]; then
+		# Word-split on purpose: the wrapper may carry its own arguments.
+		# shellcheck disable=SC2086
+		exec $KIOSK_SESSION_WRAPPER "${CHROMIUM_CMD[@]}"
+	fi
 	exec "${CHROMIUM_CMD[@]}"
 fi
 
