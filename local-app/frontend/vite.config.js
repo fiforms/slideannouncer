@@ -17,10 +17,15 @@ const src = fileURLToPath(new URL('./src', import.meta.url))
 // public/product-splash.png) for the first-run Welcome screen to show.
 const hasProductSplash = existsSync(fileURLToPath(new URL('./public/product-splash.png', import.meta.url)))
 
+// A branded build (the product's own name for the device, set by its build
+// wrapper via KIOSK_BRAND_NAME) is credited on About as based on SlideAnnouncer.
+const brandName = process.env.KIOSK_BRAND_NAME || ''
+
 export default defineConfig({
   plugins: [vue()],
   define: {
     __HAS_PRODUCT_SPLASH__: JSON.stringify(hasProductSplash),
+    __BRAND_NAME__: JSON.stringify(brandName),
   },
   resolve: {
     alias: {
