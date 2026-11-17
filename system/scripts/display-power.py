@@ -58,7 +58,16 @@ def is_sleeping():
 def sleep():
     # Marker first: a screen unit's ExecStopPost (e.g. "go back to the
     # slideshow when AirShow exits") checks it so it doesn't wake the kiosk.
-    open(SLEEP_MARKER, "w").close()
+    # An existing marker counts (it may belong to another of the accounts
+    # allowed to run this, and can't be reopened for writing), and a marker
+    # that can't be made must never stop the sleep itself.
+    if not os.path.exists(SLEEP_MARKER):
+        try:
+            open(SLEEP_MARKER, "x").close()
+        except FileExistsError:
+            pass
+        except OSError as exc:
+            print(f"couldn't create {SLEEP_MARKER}: {exc}")
     subprocess.run(["systemctl", "stop", *screen_units()], check=False)
     subprocess.run(["vcgencmd", "display_power", "0"], check=False)
     print("kiosk stopped, HDMI blanked")
