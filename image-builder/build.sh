@@ -297,6 +297,33 @@ rm -rf "$FILES_DIR"
 mkdir -p "$FILES_DIR"
 rsync -a --exclude 'backend/venv' "${REPO_ROOT}/system/" "${FILES_DIR}/system/"
 rsync -a "${PRODUCT_DIR}/" "${FILES_DIR}/product/"
+# Released .debs the product pins rather than commits (image/debs.lock: one
+# "<url> <sha256>" per line). Downloaded once into a cache keyed by checksum,
+# verified, and added to the staged debs/ next to any committed ones.
+if [ -f "${PRODUCT_DIR}/debs.lock" ]; then
+	DEB_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/slide-announcer-debs"
+	mkdir -p "$DEB_CACHE" "${FILES_DIR}/product/debs"
+	grep -v '^[[:space:]]*\(#\|$\)' "${PRODUCT_DIR}/debs.lock" | while read -r deb_url deb_sha; do
+		if ! [[ "$deb_sha" =~ ^[0-9a-f]{64}$ ]]; then
+			echo "ERROR: ${PRODUCT_DIR}/debs.lock: no sha256 for ${deb_url}" >&2
+			exit 1
+		fi
+		cached="${DEB_CACHE}/${deb_sha}.deb"
+		if [ ! -f "$cached" ]; then
+			echo "==> Downloading ${deb_url}"
+			curl -fL --retry 3 -o "${cached}.part" "$deb_url"
+			mv "${cached}.part" "$cached"
+		fi
+		if ! echo "${deb_sha}  ${cached}" | sha256sum -c --quiet -; then
+			rm -f "$cached"
+			echo "ERROR: checksum mismatch for ${deb_url} (expected ${deb_sha})" >&2
+			exit 1
+		fi
+		deb_name="$(basename "${deb_url%%\?*}")"
+		cp "$cached" "${FILES_DIR}/product/debs/$(printf '%b' "${deb_name//%/\\x}")"  # %2B -> +
+	done
+fi
+rm -f "${FILES_DIR}/product/debs.lock"
 # Boot splash (product's image/splash.png overrides the core's), converted to
 # the raw format the device reads — it has no image library. Needs Pillow here.
 SPLASH_PNG="${REPO_ROOT}/system/splash/splash.png"

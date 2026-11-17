@@ -31,6 +31,24 @@ import subprocess
 
 KIOSK_UNIT = "slide-announcer-kiosk.service"
 SLEEP_MARKER = "/run/slide-announcer/kiosk-sleeping"
+PRODUCT_ENV = "/opt/slide-announcer/product.env"
+
+
+def screen_units(path=PRODUCT_ENV):
+    """The kiosk unit plus any product unit that takes over its screen
+    (product.env's KIOSK_SCREEN_UNITS, space-separated, e.g. a screen-mirroring
+    mode with Conflicts= on the kiosk). Sleep stops all of them; wake starts
+    only the kiosk."""
+    units = [KIOSK_UNIT]
+    try:
+        with open(path) as env:
+            for line in env:
+                key, sep, value = line.strip().partition("=")
+                if sep and key == "KIOSK_SCREEN_UNITS":
+                    units += [u for u in value.strip().strip("\"'").split() if u not in units]
+    except OSError:
+        pass
+    return units
 
 
 def is_sleeping():
@@ -38,9 +56,20 @@ def is_sleeping():
 
 
 def sleep():
-    subprocess.run(["systemctl", "stop", KIOSK_UNIT], check=False)
+    # Marker first: a screen unit's ExecStopPost (e.g. "go back to the
+    # slideshow when AirShow exits") checks it so it doesn't wake the kiosk.
+    # An existing marker counts (it may belong to another of the accounts
+    # allowed to run this, and can't be reopened for writing), and a marker
+    # that can't be made must never stop the sleep itself.
+    if not os.path.exists(SLEEP_MARKER):
+        try:
+            open(SLEEP_MARKER, "x").close()
+        except FileExistsError:
+            pass
+        except OSError as exc:
+            print(f"couldn't create {SLEEP_MARKER}: {exc}")
+    subprocess.run(["systemctl", "stop", *screen_units()], check=False)
     subprocess.run(["vcgencmd", "display_power", "0"], check=False)
-    open(SLEEP_MARKER, "w").close()
     print("kiosk stopped, HDMI blanked")
 
 

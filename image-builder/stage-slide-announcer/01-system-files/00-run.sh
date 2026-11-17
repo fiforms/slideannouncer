@@ -54,6 +54,12 @@ if [ -d files/product/system ]; then
 		[ -f "$script" ] && install -m 755 "$script" "${ROOTFS_DIR}/usr/local/sbin/"
 	done
 fi
+# Other files the product places on the root filesystem as-is (config drop-ins
+# such as /etc/NetworkManager/conf.d/*.conf), owned by root. Copied before
+# the core's own files below, so a core file of the same path wins.
+if [ -d files/product/rootfs ]; then
+	cp -r --no-preserve=ownership files/product/rootfs/. "${ROOTFS_DIR}/"
+fi
 install -m 755 files/system/scripts/clock-stamp.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-clock-stamp"
 install -m 755 files/system/scripts/data-resize.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-data-resize.sh"
 install -m 755 files/system/scripts/kiosk-start.sh "${ROOTFS_DIR}/usr/local/bin/slide-announcer-kiosk-start.sh"
