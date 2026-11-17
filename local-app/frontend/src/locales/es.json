@@ -20,7 +20,12 @@
     },
     "settings": {
         "about": {
-            "title": "Acerca de este dispositivo"
+            "title": "Acerca de este dispositivo",
+            "basedOn": "{brand} está basado en {platform}, un proyecto de software de código abierto.",
+            "openSource": "{platform} es un proyecto de software de código abierto.",
+            "licence": "{platform} es software libre publicado bajo la Licencia MIT: puede usarlo, estudiarlo, modificarlo y compartirlo. El sistema operativo del dispositivo también incluye software bajo la Licencia Pública General de GNU (GPL) y otras licencias de software libre, que igualmente le dan derecho a su código fuente.",
+            "source": "Código fuente y documentación:",
+            "noWarranty": "El software se proporciona tal cual, sin garantía de ningún tipo."
         },
         "system": {
             "title": "Sistema",
