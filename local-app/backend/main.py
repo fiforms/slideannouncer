@@ -20,6 +20,7 @@ from pydantic import BaseModel
 import captive_portal
 import escape_hatch
 import heartbeat
+import local_guard
 import network
 import network_diagnostics
 import pairing
@@ -40,6 +41,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+# Every route, core and product — see local_guard.py for why loopback isn't enough.
+app.add_middleware(local_guard.LocalGuard)
 for _router in product.get().routers:
     app.include_router(_router)
 
