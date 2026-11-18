@@ -115,10 +115,16 @@ CHROMIUM_CMD=(
 	# Chromium rejects the DevTools WebSocket handshake with 403 unless the
 	# client's Origin is explicitly allow-listed (added upstream to block
 	# DNS-rebinding attacks against the debug port) — confirmed on hardware
-	# that --remote-debugging-port alone isn't enough. Only loopback can
-	# reach the port at all (no --remote-debugging-address), so widening
-	# this to any origin costs nothing extra.
-	--remote-allow-origins=*
+	# that --remote-debugging-port alone isn't enough. Do NOT widen this to
+	# `*`: loopback-only does not protect it, because every page this kiosk
+	# loads (Revelation decks, captive portals, embedded players) runs on
+	# this same machine, and a browser page always sends its own Origin.
+	# Our CDP clients (kiosk-navigate, kiosk-guard, captive_portal,
+	# paint-debug, revelation-peer) use websocket-client, which sends
+	# `Origin: http://<host:port of the ws URL>` — 127.0.0.1:9222, since they
+	# read webSocketDebuggerUrl from http://127.0.0.1:9222/json*. No web page
+	# can have either origin: it would have to be served by this port.
+	--remote-allow-origins=http://127.0.0.1:9222,http://localhost:9222
 	"--app=${KIOSK_URL}"
 )
 

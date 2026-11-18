@@ -227,3 +227,22 @@ Runs as two separate systemd units today
 (`slide-announcer-backend`, `slide-announcer-kiosk`) — the design's
 eventual `slide-announcer-sync` unit (so a sync-loop crash can't take down
 the WiFi/pairing API) lands with the real sync daemon.
+
+## Who may call the local API
+
+Binding to loopback is not enough on its own: every page the kiosk browser
+loads (Revelation decks, captive-portal sign-in pages, embedded players)
+runs on this same machine and could otherwise POST to
+`http://localhost/api/local/system/factory-reset`. `backend/local_guard.py`
+therefore refuses, on every route (core and product, HTTP and WebSocket):
+
+- a `Host` that isn't `localhost` / `127.0.0.1` / `[::1]` (DNS rebinding;
+  nginx enforces the same rule in `../system/nginx-slide-announcer.conf`);
+- an `Origin` that isn't a loopback page;
+- any `POST`/`PUT`/`PATCH`/`DELETE` without `X-Local-App: 1`.
+
+The frontend's `request()` in `frontend/src/api.js` adds the header to
+every call — use it (or `LOCAL_HEADERS`) for new endpoints. A local tool
+that POSTs (curl, a script) must send the header too; GETs need nothing.
+Chromium's DevTools port is similarly restricted to our own CDP clients'
+origins (`--remote-allow-origins` in `../system/scripts/kiosk-start.sh`).

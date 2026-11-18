@@ -1,5 +1,10 @@
-export async function request(path, options) {
-  const res = await fetch(path, options)
+// The backend refuses any state-changing request without this header
+// (backend/local_guard.py) — a page from another site loaded in the kiosk
+// can't add it without a CORS preflight the backend never grants.
+export const LOCAL_HEADERS = { 'X-Local-App': '1' }
+
+export async function request(path, options = {}) {
+  const res = await fetch(path, { ...options, headers: { ...LOCAL_HEADERS, ...options.headers } })
   let body = null
   try {
     body = await res.json()
