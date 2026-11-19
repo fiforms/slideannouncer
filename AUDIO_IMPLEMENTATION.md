@@ -24,7 +24,7 @@ the same directory Chromium uses. Any other process that wants to talk to
 this PipeWire instance — a live Settings-UI change, or the remote's
 volume keys — has to set that same `XDG_RUNTIME_DIR` itself, since it has
 no session to inherit it from automatically. Both
-`apply-audio-output.sh` and `volume-key-monitor.py` do this explicitly
+`apply-audio-output.py` and `volume-key-monitor.py` do this explicitly
 (`export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"` /
 `os.environ.setdefault(...)`) — without it, `wpctl` silently talks to no
 PipeWire instance at all rather than erroring, since nothing checks its
@@ -35,30 +35,52 @@ of the speakers.
 
 ## Audio output (HDMI / headphone jack)
 
-- `/data/status/audio-output` holds `hdmi` or `headphones` (default
-  `hdmi`). Deliberately **not** in `pairing.py`'s `WIPE_PATHS` — this
-  describes how the device is physically wired into the room, not its
-  pairing state, so it survives unpair/factory-reset-adjacent flows.
-- `system/scripts/apply-audio-output.sh` (installed as
-  `/usr/local/sbin/slide-announcer-apply-audio-output`) reads that file,
-  greps `wpctl status`'s Audio-section `Sinks:` block, and runs
-  `wpctl set-default <id>`. Called by `kiosk-start.sh` at boot and by the
-  backend whenever Settings changes the value, so a switch takes effect
-  without a kiosk restart.
-- Sink matching is by substring, not an assumed literal name: real
-  hardware (Pi 4, vc4-kms-v3d) shows both outputs as "Built-in Audio",
-  distinguished only by a literal `(HDMI)` suffix on the HDMI one
-  (`64. Built-in Audio Stereo` / `65. Built-in Audio Digital Stereo
-  (HDMI)`). So `"hdmi"` matches that substring, and `"headphones"` matches
-  "whichever Built-in Audio sink is NOT the HDMI one" rather than betting
-  on a specific name — more likely to hold up across hardware/driver
-  revisions than either literal string would.
+- `/data/status/audio-output` holds `hdmi` (automatic, the default), `hdmi1`,
+  `hdmi2`, `headphones` or `all`. Deliberately **not** in `pairing.py`'s
+  `WIPE_PATHS` — this describes how the device is physically wired into the
+  room, not its pairing state, so it survives unpair/factory-reset-adjacent
+  flows.
+- `system/scripts/apply-audio-output.py` (installed as
+  `/usr/local/sbin/slide-announcer-apply-audio-output`) reads that file and
+  `pw-dump`'s sinks, runs `wpctl set-default <id>`, and re-applies the saved
+  volume/mute. Called by `kiosk-start.sh` at boot and by the backend whenever
+  Settings changes the value, so a switch takes effect without a kiosk restart.
+  It prints a JSON report (`--report` prints it without changing anything):
+  which display is on each HDMI port (the display's name, from the HDMI audio
+  device's ELD), where sound goes now, and `state` (`ok` / `fallback` / `failed`
+  / `unknown`). The backend returns it as `audio`; Settings shows the two HDMI
+  ports by display name and says when it had to fall back. An OS image whose
+  script predates this prints no JSON, and Settings then offers just
+  automatic/jack.
+- **Two displays.** PipeWire only creates an HDMI sink while a display is plugged
+  into that port, so with one TV the first HDMI sink is always the right one,
+  whichever port it is on — that is what "automatic" does. With two displays there
+  are two HDMI sinks; "automatic" takes the first (HDMI 1), and `hdmi1`/`hdmi2`
+  choose. `hdmi1` is HDMI-A-1, the `vc4-hdmi-0` ALSA card; `hdmi2` is HDMI-A-2,
+  `vc4-hdmi-1` (matched by `alsa.card_name`, not a literal sink name). A choice with
+  no display on it falls back to automatic rather than going silent.
+- **All outputs** (`all`) plays on every output at once — each HDMI port that has a
+  display, and the headphone jack — through a virtual sink defined in
+  `system/pipewire/50-slide-announcer-all-outputs.conf` (PipeWire's `combine-stream`
+  module, installed to `/etc/pipewire/pipewire.conf.d/`; it has to live in the daemon's
+  config because a module loaded from `pw-cli` dies with that process). It adds a stream
+  to each of those sinks as one appears, so hot-plugging needs no re-apply; USB audio is
+  not matched. The remote's volume applies to the combined sink; the script sets the
+  sinks under it to 100% so they don't scale it down. The outputs run on independent
+  clocks, so over a long time their sound can drift slightly apart — which is why it is
+  opt-in. Settings offers it when there are two or more outputs (so a lone display plus
+  the jack counts); with only one it is just that output. Confirmed on a Pi 4 with two
+  displays: a test tone through the combined sink linked to both HDMI sinks.
+- Sink matching for the jack is by description, not an assumed literal name: real
+  hardware (Pi 4, vc4-kms-v3d) shows it as "Built-in Audio Stereo" and the HDMI
+  ones as "Built-in Audio Digital Stereo (HDMI)", so `"headphones"` matches
+  "whichever Built-in Audio sink is NOT the HDMI one".
 - Backend: `pairing.py`'s `AUDIO_OUTPUT_FILE`/`read_audio_output()`/
   `write_audio_output()`; `system_control.py`'s `apply_audio_output()`;
   `main.py`'s `GET`/`POST /api/local/audio-output`.
 - Frontend: `api.js`'s `audioOutputStatus()`/`setAudioOutput()`, and an
-  "Audio Output" section on Settings → System with HDMI/Headphone Jack
-  tile buttons (`en`/`es` translated).
+  "Audio Output" section on Settings → System with tile buttons for
+  automatic / HDMI 1 / HDMI 2 / Headphone Jack / All outputs (`en`/`es` translated).
 
 ## Volume / mute
 
@@ -83,7 +105,7 @@ call `wpctl` directly anyway.
   and `/data/status/audio-muted` (`true`/`false`) — same plain-text-file
   pattern as `AUDIO_OUTPUT_FILE`, also excluded from `WIPE_PATHS` for the
   same reason.
-- `apply-audio-output.sh` re-applies the persisted volume/mute right
+- `apply-audio-output.py` re-applies the persisted volume/mute right
   after selecting the sink, so a boot or an output switch doesn't drop
   back to PipeWire's own ~40% default.
 - Backend: `pairing.py`'s `read_audio_volume()`/`read_audio_muted()`
@@ -103,7 +125,7 @@ call `wpctl` directly anyway.
 
 ## Shipping
 
-The OS-level pieces (`apply-audio-output.sh`, `volume-key-monitor.py`,
+The OS-level pieces (`apply-audio-output.py`, `volume-key-monitor.py`,
 `slide-announcer-volume-key.service`) reached already-provisioned devices
 as `image-builder/hotfixes/0.3.3` rather than a full reimage, and are
 folded into `image-builder/stage-slide-announcer/01-system-files/00-run.sh`

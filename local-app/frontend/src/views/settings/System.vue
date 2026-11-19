@@ -21,26 +21,69 @@ const updateRunning = ref(false)
 const progress = ref(null)
 let progressTimer = null
 
+// `audioOutput` is the saved choice; `audio` is what the device reports (which
+// display is on each HDMI port, where sound is going right now). `audio` is null
+// on an OS image that predates the report, which only knows HDMI vs the jack.
 const audioOutput = ref(null)
+const audio = ref(null)
 const audioOutputSaving = ref(false)
 const audioOutputError = ref(null)
 
+function applyAudioData(data) {
+  audioOutput.value = data.audio_output
+  audio.value = data.audio ?? null
+}
+
 async function loadAudioOutput() {
   try {
-    const data = await api.audioOutputStatus()
-    audioOutput.value = data.audio_output
+    applyAudioData(await api.audioOutputStatus())
   } catch {
     // leave blank rather than erroring out the page
   }
 }
 
+function portLabel(port) {
+  const name = port.present ? port.label : t('settings.system.audioNoDisplay')
+  return name
+    ? t('settings.system.audioOutputPort', { n: port.id.slice(-1), name })
+    : t('settings.system.audioOutputPortBare', { n: port.id.slice(-1) })
+}
+
+// The tiles: automatic and the jack always; with a report, the two HDMI ports
+// (named by the display on each); "All outputs" once there are two or more outputs
+// to feed (or if it is already chosen, so it can be seen and changed).
+const audioChoices = computed(() => {
+  const choices = [{ value: 'hdmi', label: t(audio.value ? 'settings.system.audioOutputAuto' : 'settings.system.audioOutputHdmi') }]
+  if (audio.value) {
+    for (const port of audio.value.ports.filter((p) => p.id !== 'headphones')) {
+      choices.push({ value: port.id, label: portLabel(port) })
+    }
+  }
+  choices.push({ value: 'headphones', label: t('settings.system.audioOutputHeadphones') })
+  if (audio.value && (audio.value.all_available || audioOutput.value === 'all')) {
+    choices.push({ value: 'all', label: t('settings.system.audioOutputAll') })
+  }
+  return choices
+})
+
+const audioEffectiveLabel = computed(() => {
+  const a = audio.value
+  if (!a?.effective) return null
+  if (a.effective === 'all') return t('settings.system.audioOutputAll')
+  if (a.effective === 'headphones') return t('settings.system.audioOutputHeadphones')
+  const port = a.ports.find((p) => p.id === a.effective)
+  return port ? portLabel(port) : null
+})
+
 async function selectAudioOutput(value) {
-  if (value === audioOutput.value || audioOutputSaving.value) return
+  if (audioOutputSaving.value) return
+  // Re-clicking the saved choice is only a no-op when sound is already going there;
+  // otherwise it is how you retry a switch that didn't take.
+  if (value === audioOutput.value && (!audio.value || audio.value.state === 'ok')) return
   audioOutputSaving.value = true
   audioOutputError.value = null
   try {
-    const data = await api.setAudioOutput(value)
-    audioOutput.value = data.audio_output
+    applyAudioData(await api.setAudioOutput(value))
   } catch (err) {
     audioOutputError.value = err.message
   } finally {
@@ -289,22 +332,23 @@ async function updateNow() {
       <div class="panel-title"><h2>{{ t('settings.system.audioOutput') }}</h2></div>
       <div class="actions">
         <button
+          v-for="choice in audioChoices"
+          :key="choice.value"
           class="tile action"
-          :class="{ active: audioOutput === 'hdmi' }"
+          :class="{ active: audioOutput === choice.value }"
           :disabled="audioOutputSaving"
-          @click="selectAudioOutput('hdmi')"
+          @click="selectAudioOutput(choice.value)"
         >
-          {{ t('settings.system.audioOutputHdmi') }}
-        </button>
-        <button
-          class="tile action"
-          :class="{ active: audioOutput === 'headphones' }"
-          :disabled="audioOutputSaving"
-          @click="selectAudioOutput('headphones')"
-        >
-          {{ t('settings.system.audioOutputHeadphones') }}
+          {{ choice.label }}
         </button>
       </div>
+      <p v-if="audioEffectiveLabel" class="current">{{ t('settings.system.audioOutputNow', { output: audioEffectiveLabel }) }}</p>
+      <p v-if="audio?.state === 'fallback'" class="pill warn note">
+        {{ t('settings.system.audioOutputFallback', { output: audioEffectiveLabel }) }}
+      </p>
+      <p v-else-if="audio?.state === 'failed'" class="pill warn note">
+        {{ t('settings.system.audioOutputFailed') }}
+      </p>
       <p v-if="audioOutputError" class="pill warn note">{{ audioOutputError }}</p>
     </section>
 

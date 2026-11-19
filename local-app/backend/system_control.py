@@ -78,7 +78,20 @@ async def sleep_display() -> None:
         raise SystemCommandError(f"{DISPLAY_POWER_CLI} sleep failed (exit {proc.returncode})")
 
 
-async def apply_audio_output() -> None:
+async def _run_json_cli(cli: str, *args: str) -> dict | None:
+    """Runs one of the OS scripts that print a JSON report on stdout; None if it
+    printed none (an older OS image's script, or the thing it talks to isn't up)."""
+    proc = await asyncio.create_subprocess_exec(
+        cli, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+    stdout, _ = await proc.communicate()
+    try:
+        report = json.loads(stdout.decode())
+    except ValueError:
+        return None
+    return report if isinstance(report, dict) else None
+
+
+async def apply_audio_output() -> dict | None:
     """Re-runs PipeWire's default-sink selection against whatever
     pairing.read_audio_output() currently says. No polkit rule needed —
     same reasoning as sleep_display() above: PipeWire/WirePlumber run as
@@ -87,21 +100,40 @@ async def apply_audio_output() -> None:
     reachable without elevation. Failures are logged by the script itself
     rather than raised — a missing/renamed ALSA sink shouldn't 500 the
     Settings page, it should just leave the previous output in place.
+
+    Returns the script's report (which outputs exist, which display is on each
+    HDMI port, where sound goes now — see system/scripts/apply-audio-output.py),
+    or None from an older OS image's script, which prints none.
     """
-    proc = await asyncio.create_subprocess_exec(AUDIO_OUTPUT_CLI)
-    await proc.wait()
+    return await _run_json_cli(AUDIO_OUTPUT_CLI)
 
 
-async def apply_screen_resolution() -> None:
+async def audio_output_report() -> dict | None:
+    """The same report without changing anything."""
+    return await _run_json_cli(AUDIO_OUTPUT_CLI, "--report")
+
+
+async def _run_screen_resolution_cli(*args: str) -> dict | None:
+    return await _run_json_cli(SCREEN_RESOLUTION_CLI, *args)
+
+
+async def apply_screen_resolution() -> dict | None:
     """Re-runs wlr-randr against whatever pairing.read_screen_resolution()
-    currently says. No polkit rule needed — same reasoning as
-    apply_audio_output() above: labwc/wlr-randr run as this same
-    unprivileged `slideannouncer` user. Failures are logged by the script
-    itself rather than raised — a bad mode shouldn't 500 the Settings
+    currently says, and returns the script's report of what the display ended
+    up on (see system/scripts/apply-screen-resolution.py). No polkit rule
+    needed — same reasoning as apply_audio_output() above: labwc/wlr-randr run
+    as this same unprivileged `slideannouncer` user. Failures are logged by the
+    script itself rather than raised — a bad mode shouldn't 500 the Settings
     page, it should just leave the previous resolution in place.
     """
-    proc = await asyncio.create_subprocess_exec(SCREEN_RESOLUTION_CLI)
-    await proc.wait()
+    return await _run_screen_resolution_cli()
+
+
+async def screen_resolution_report() -> dict | None:
+    """What the display is really doing right now, without changing anything —
+    the saved setting alone can't say (a failed apply leaves the compositor on
+    whatever mode it picked itself)."""
+    return await _run_screen_resolution_cli("--report")
 
 
 async def current_timezone() -> str | None:
