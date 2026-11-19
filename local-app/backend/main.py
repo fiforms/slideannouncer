@@ -295,9 +295,17 @@ async def network_forget(body: ForgetRequest):
     return {"ok": True}
 
 
+def _audio_output_payload(report: dict | None) -> dict:
+    """`audio_output` is the saved choice; `audio` is the live report from the OS
+    script — the outputs that exist (with the display's name on each HDMI port), where
+    sound goes now, and `state` ("ok" / "fallback" when the choice isn't available /
+    "failed" / "unknown") — or null on an OS image whose script predates it."""
+    return {"audio_output": pairing.read_audio_output(), "audio": report}
+
+
 @app.get("/api/local/audio-output")
-def audio_output_status():
-    return {"audio_output": pairing.read_audio_output()}
+async def audio_output_status():
+    return _audio_output_payload(await system_control.audio_output_report())
 
 
 class AudioOutputRequest(BaseModel):
@@ -306,16 +314,25 @@ class AudioOutputRequest(BaseModel):
 
 @app.post("/api/local/audio-output")
 async def audio_output_set(body: AudioOutputRequest):
-    if body.value not in ("hdmi", "headphones"):
-        raise HTTPException(status_code=422, detail="value must be 'hdmi' or 'headphones'")
-    pairing.write_audio_output(body.value)
-    await system_control.apply_audio_output()
-    return {"ok": True, "audio_output": body.value}
+    value = body.value.strip().lower()
+    if value not in pairing.AUDIO_OUTPUTS:
+        raise HTTPException(status_code=422, detail=f"value must be one of: {', '.join(pairing.AUDIO_OUTPUTS)}")
+    pairing.write_audio_output(value)
+    report = await system_control.apply_audio_output()
+    return {"ok": True, **_audio_output_payload(report)}
+
+
+async def _screen_resolution_payload(report: dict | None) -> dict:
+    """`screen_resolution` is the saved choice; `display` is the live report from
+    the OS script — current mode, the sizes the display lists, and `state`
+    ("ok" / "fallback" when the display can't do what was asked / "failed" /
+    "unknown") — or null on an OS image whose script predates it."""
+    return {"screen_resolution": pairing.read_screen_resolution(), "display": report}
 
 
 @app.get("/api/local/screen-resolution")
-def screen_resolution_status():
-    return {"screen_resolution": pairing.read_screen_resolution()}
+async def screen_resolution_status():
+    return await _screen_resolution_payload(await system_control.screen_resolution_report())
 
 
 class ScreenResolutionRequest(BaseModel):
@@ -324,11 +341,12 @@ class ScreenResolutionRequest(BaseModel):
 
 @app.post("/api/local/screen-resolution")
 async def screen_resolution_set(body: ScreenResolutionRequest):
-    if body.value not in ("4k", "1080p"):
-        raise HTTPException(status_code=422, detail="value must be '4k' or '1080p'")
-    pairing.write_screen_resolution(body.value)
-    await system_control.apply_screen_resolution()
-    return {"ok": True, "screen_resolution": body.value}
+    value = body.value.strip().lower()
+    if not pairing.valid_screen_resolution(value):
+        raise HTTPException(status_code=422, detail="value must be '4k', '1080p', '720p' or WIDTHxHEIGHT")
+    pairing.write_screen_resolution(value)
+    report = await system_control.apply_screen_resolution()
+    return {"ok": True, **await _screen_resolution_payload(report)}
 
 
 @app.get("/api/local/timezone")

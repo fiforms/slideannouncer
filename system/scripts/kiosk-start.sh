@@ -128,13 +128,13 @@ CHROMIUM_CMD=(
 	"--app=${KIOSK_URL}"
 )
 
-# wlr-randr (apply-screen-resolution.sh) needs a live compositor to talk
-# to, unlike apply-audio-output.sh above which only needs PipeWire — so
+# wlr-randr (apply-screen-resolution.py) needs a live compositor to talk
+# to, unlike apply-audio-output.py above which only needs PipeWire — so
 # unlike that call, this one can't run before `exec labwc`. labwc runs
 # this same script again with --session once the compositor is up, which
 # sets the mode and then execs Chromium — guaranteeing the mode is set
 # before Chromium's first frame. `|| true` matches the one on
-# apply-audio-output.sh above — a wlr-randr failure shouldn't block the
+# apply-audio-output.py above — a wlr-randr failure shouldn't block the
 # kiosk from starting.
 if [ "${1:-}" = "--session" ]; then
 	/usr/local/sbin/slide-announcer-apply-screen-resolution || true

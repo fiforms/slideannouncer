@@ -1,6 +1,6 @@
 # Slide Announcer Screens
 
-An entity admin picks the kiosk's display resolution (4K or 1080p) from
+An entity admin picks the kiosk's display resolution (4K, 1080p, 720p, or another size the display lists) from
 the device's on-screen Settings → Screens page. If a second HDMI output is
 connected, it's automatically mirrored at the same mode — there's no
 separate control for that yet. Single-display resolution switching is **confirmed on real hardware**
@@ -11,22 +11,36 @@ verification" below for what has and hasn't been confirmed.
 
 ## Resolution
 
-- `/data/status/screen-resolution` holds `4k` or `1080p` (default
-  `1080p` — the safer/more broadly-compatible mode across unknown TV/HDMI-
-  cable hardware). Deliberately **not** in `pairing.py`'s `WIPE_PATHS` —
+- `/data/status/screen-resolution` holds `4k`, `1080p`, `720p`, or any
+  `WIDTHxHEIGHT` (so every VESA mode the display lists works, e.g.
+  `1024x768`); default `1080p` — the safer/more broadly-compatible mode across unknown TV/HDMI-
+  cable hardware. Deliberately **not** in `pairing.py`'s `WIPE_PATHS` —
   this describes how the device is physically wired into the room, not its
   pairing state, same reasoning as `AUDIO_OUTPUT_FILE`.
-- `system/scripts/apply-screen-resolution.sh` (installed as
+- `system/scripts/apply-screen-resolution.py` (installed as
   `/usr/local/sbin/slide-announcer-apply-screen-resolution`) reads that
-  file, lists `wlr-randr`'s connected outputs, and sets each to the target
-  mode: `3840x2160@30Hz` for `4k`, `1920x1080@60Hz` for `1080p`. 4K is
-  pinned to 30Hz rather than 60Hz as a safer default across HDMI cable/TV
-  variance for a kiosk signal — worth revisiting once real 4K hardware is
-  in front of someone.
+  file and `wlr-randr`'s connected outputs, and sets each to the wanted
+  size at the refresh closest to its preference (`4k` 30Hz — pinned below
+  60Hz as a safer default across HDMI cable/TV variance for a kiosk
+  signal — everything else 60Hz).
+- **The setting is a preference, not a promise.** If an output doesn't list
+  the wanted size, it gets the largest size it does list that's no bigger
+  (the smallest it has, if all are bigger), so a display without 4K comes
+  up at 1080p instead of staying on whatever the compositor picked. The
+  script prints a JSON report of what the compositor *really* ended up on
+  (`state`: `ok` / `fallback` — the display can't do it / `failed` — it can
+  but the switch didn't take / `unknown`), and `--report` prints it
+  without changing anything. The backend's `GET`/`POST
+  /api/local/screen-resolution` return it as `display`, and Settings shows
+  the live mode plus a warning for `fallback`/`failed`. (A saved value alone
+  can't tell you the mode: a failed apply at boot used to leave a 4K TV on 4K
+  while Settings said 1080p.) An OS image whose script predates this prints
+  no JSON; the backend then returns `display: null` and Settings shows just
+  the saved choice.
 - Called by `kiosk-start.sh`'s labwc session command (`-s`) right after the
   compositor starts and before Chromium launches, and by the backend
   whenever Settings changes the value, so a switch takes effect without a
-  kiosk restart. Unlike `apply-audio-output.sh` (which only needs
+  kiosk restart. Unlike `apply-audio-output.py` (which only needs
   PipeWire, so it runs *before* `exec labwc`), this script needs a live
   compositor to talk to — see `kiosk-start.sh`'s comment on why it's
   folded into the `-s` session command instead.
@@ -41,7 +55,7 @@ verification" below for what has and hasn't been confirmed.
 
 ## Multi-monitor: mirror only
 
-The Pi 4 B has two HDMI outputs. `apply-screen-resolution.sh` sets *every*
+The Pi 4 B has two HDMI outputs. `apply-screen-resolution.py` sets *every*
 output `wlr-randr` reports to the same mode at the same position
 (`--pos 0,0`) — i.e. mirrors — rather than extending the desktop across
 both. This is the only behavior today; there's no Settings UI toggle for
@@ -62,7 +76,7 @@ as the `slideannouncer` user, that the output name and mode strings
 `kiosk-start.sh`'s `-s` session command sequences correctly without a
 `wlr-randr` failure blocking Chromium, and that the
 `XDG_RUNTIME_DIR`/`WAYLAND_DISPLAY` guesses in
-`apply-screen-resolution.sh` hold for the backend-triggered path.
+`apply-screen-resolution.py` hold for the backend-triggered path.
 
 **Still untested: dual-HDMI.** Connect a second monitor, confirm both
 outputs report as connected to `wlr-randr` and both mirror correctly at the
@@ -71,7 +85,7 @@ chosen mode. The user has never tried this on any software stack.
 ## Shipping
 
 Like the audio-output feature, the OS-level piece (`wlr-randr` package,
-`apply-screen-resolution.sh`, the `kiosk-start.sh` change) needs a new
+`apply-screen-resolution.py`, the `kiosk-start.sh` change) needs a new
 image build/OTA to reach already-provisioned devices — a hotfix bundle is
 the lighter path if the only change needed after hardware testing is
 within these files, per `image-builder/hotfixes/README.md`. The local-app

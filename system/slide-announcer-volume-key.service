@@ -12,7 +12,7 @@ Type=simple
 # /dev/input/event* only needs the `input` group, and `wpctl` is already
 # reachable by this account without elevation (PipeWire/WirePlumber run
 # as this same user, started directly by kiosk-start.sh — see
-# apply-audio-output.sh's own comment). volume-key-monitor.py sets its own
+# apply-audio-output.py's own comment). volume-key-monitor.py sets its own
 # XDG_RUNTIME_DIR default to match kiosk-start.sh's, since this unit has
 # no PAMName= to get one from logind automatically.
 User=slideannouncer

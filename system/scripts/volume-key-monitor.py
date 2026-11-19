@@ -6,7 +6,7 @@ PipeWire's default sink via wpctl, persisting the result to
 Division of labor mirrors power-button-monitor.py/display-power.py: this
 script is the input trigger and the thing that actually calls wpctl; the
 two /data files are the shared state everything else reads — re-applied
-at boot/output-switch time by apply-audio-output.sh, and read (not
+at boot/output-switch time by apply-audio-output.py, and read (not
 written) by the backend's pairing.py for the /api/local/audio-volume
 endpoint the kiosk page polls to reflect changes on screen.
 

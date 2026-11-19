@@ -131,7 +131,7 @@ def print_output_mode():
     sent, including the interlace flag wlr-randr doesn't show)."""
     wlr_randr = shutil.which("wlr-randr")
     if not wlr_randr:
-        print("  wlr-randr: NOT INSTALLED — apply-screen-resolution.sh can't set the mode either")
+        print("  wlr-randr: NOT INSTALLED — apply-screen-resolution.py can't set the mode either")
     else:
         try:
             uid = pwd.getpwnam("slideannouncer").pw_uid

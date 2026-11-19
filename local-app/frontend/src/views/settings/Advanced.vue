@@ -27,33 +27,74 @@ async function selectLanguage(code) {
   }
 }
 
-// Screen resolution — moved here from the old standalone Screens page.
+// Screen resolution. `resolution` is the saved choice; `display` is what the
+// screen is really doing (current mode, the sizes it lists, and whether that
+// matches the choice) — the choice alone can't say, since the display may not
+// support it or applying it may have failed.
 const resolution = ref(null)
+const display = ref(null)
 const resolutionSaving = ref(false)
 const resolutionError = ref(null)
 
+// The tiles; every other size the display lists goes in the dropdown.
+const RESOLUTION_PRESETS = [
+  { value: '4k', size: '3840x2160' },
+  { value: '1080p', size: '1920x1080' },
+  { value: '720p', size: '1280x720' },
+]
+
+function applyResolutionData(data) {
+  resolution.value = data.screen_resolution
+  display.value = data.display ?? null
+}
+
 async function loadResolution() {
   try {
-    const data = await api.screenResolutionStatus()
-    resolution.value = data.screen_resolution
+    applyResolutionData(await api.screenResolutionStatus())
   } catch {
     // leave blank rather than erroring out the page
   }
 }
 
 async function selectResolution(value) {
-  if (value === resolution.value || resolutionSaving.value) return
+  if (resolutionSaving.value) return
+  // Re-clicking the saved choice is only a no-op when the screen is already on
+  // it; otherwise it is how you retry a switch that didn't take.
+  if (value === resolution.value && (!display.value || display.value.state === 'ok')) return
   resolutionSaving.value = true
   resolutionError.value = null
   try {
-    const data = await api.setScreenResolution(value)
-    resolution.value = data.screen_resolution
+    applyResolutionData(await api.setScreenResolution(value))
   } catch (err) {
     resolutionError.value = err.message
   } finally {
     resolutionSaving.value = false
   }
 }
+
+const otherResolutionOptions = computed(() => {
+  const presetSizes = new Set(RESOLUTION_PRESETS.map((p) => p.size))
+  return (display.value?.modes ?? [])
+    .filter((size) => !presetSizes.has(size))
+    .map((size) => ({ value: size, label: size.replace('x', '×') }))
+})
+// Shows the saved size when it is one of the dropdown's, else the "Other" prompt.
+const otherResolutionValue = computed(() =>
+  otherResolutionOptions.value.some((o) => o.value === resolution.value) ? resolution.value : null)
+const otherResolutionChoices = computed(() => [
+  { value: null, label: t('settings.screens.resolutionOther') },
+  ...otherResolutionOptions.value,
+])
+
+const displayMode = computed(() => {
+  const cur = display.value?.current
+  return cur ? `${cur.width}×${cur.height} @ ${Math.round(cur.refresh)} Hz` : null
+})
+const targetLabel = computed(() => (display.value?.target ?? '').replace('x', '×'))
+// With two displays, a fallback means the one that can't do it holds both back;
+// name it. (A lone display's fallback is just that display.)
+const limitedBy = computed(() => (display.value?.limited_by ?? []).join(', '))
+const hasTwoScreens = computed(() => (display.value?.outputs?.length ?? 0) > 1)
 
 // Timezone — two pickers (area, then place) rather than one list of ~400 names,
 // which the remote couldn't scroll sensibly. UTC has no place, so picking it as
@@ -131,22 +172,36 @@ onMounted(() => {
       <div class="panel-title"><h2>{{ t('settings.screens.resolution') }}</h2></div>
       <div class="actions">
         <button
+          v-for="preset in RESOLUTION_PRESETS"
+          :key="preset.value"
           class="tile action"
-          :class="{ active: resolution === '4k' }"
+          :class="{ active: resolution === preset.value }"
           :disabled="resolutionSaving"
-          @click="selectResolution('4k')"
+          @click="selectResolution(preset.value)"
         >
-          {{ t('settings.screens.resolution4k') }}
+          {{ t(`settings.screens.resolution_${preset.value}`) }}
         </button>
-        <button
-          class="tile action"
-          :class="{ active: resolution === '1080p' }"
+        <Dropdown
+          v-if="otherResolutionOptions.length"
+          :model-value="otherResolutionValue"
+          :options="otherResolutionChoices"
           :disabled="resolutionSaving"
-          @click="selectResolution('1080p')"
-        >
-          {{ t('settings.screens.resolution1080p') }}
-        </button>
+          @update:model-value="(v) => v && selectResolution(v)"
+        />
       </div>
+      <p v-if="displayMode" class="current">{{ t('settings.screens.resolutionCurrent', { mode: displayMode }) }}</p>
+      <p v-if="display?.state === 'fallback' && hasTwoScreens" class="pill warn note">
+        {{ t('settings.screens.resolutionFallbackBoth', { wanted: targetLabel, mode: displayMode, display: limitedBy }) }}
+      </p>
+      <p v-else-if="display?.state === 'fallback'" class="pill warn note">
+        {{ t('settings.screens.resolutionFallback', { wanted: targetLabel, mode: displayMode }) }}
+      </p>
+      <p v-else-if="display?.state === 'failed'" class="pill warn note">
+        {{ t('settings.screens.resolutionFailed', { wanted: targetLabel, mode: displayMode }) }}
+      </p>
+      <p v-if="display && !display.mirrored" class="pill warn note">
+        {{ t('settings.screens.resolutionNotMirrored') }}
+      </p>
       <p v-if="resolutionError" class="pill warn note">{{ resolutionError }}</p>
       <p class="hint note">{{ t('settings.screens.multiMonitorHint') }}</p>
     </section>

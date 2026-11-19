@@ -80,8 +80,11 @@ install -m 755 files/system/scripts/boot-splash.py "${ROOTFS_DIR}/usr/local/sbin
 install -d "${ROOTFS_DIR}/usr/share/slide-announcer"
 install -m 644 files/splash.raw "${ROOTFS_DIR}/usr/share/slide-announcer/splash.raw"
 install -m 755 files/system/scripts/display-power.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-display-power"
-install -m 755 files/system/scripts/apply-audio-output.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-audio-output"
-install -m 755 files/system/scripts/apply-screen-resolution.sh "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-screen-resolution"
+install -m 755 files/system/scripts/apply-audio-output.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-audio-output"
+# The "All outputs" combined sink Settings -> Audio Output can pick.
+install -D -m 644 files/system/pipewire/50-slide-announcer-all-outputs.conf \
+	"${ROOTFS_DIR}/etc/pipewire/pipewire.conf.d/50-slide-announcer-all-outputs.conf"
+install -m 755 files/system/scripts/apply-screen-resolution.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-apply-screen-resolution"
 install -m 755 files/system/scripts/volume-key-monitor.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-volume-key-monitor"
 install -m 755 files/system/scripts/paint-debug.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-paint-debug"
 install -m 755 files/system/scripts/kiosk-navigate.py "${ROOTFS_DIR}/usr/local/sbin/slide-announcer-kiosk-navigate"

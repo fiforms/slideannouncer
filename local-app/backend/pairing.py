@@ -123,7 +123,7 @@ DEFAULT_AUDIO_OUTPUT = "hdmi"
 # Current volume (0-100) and mute state — written by the remote's
 # volume/mute keys (system/scripts/volume-key-monitor.py, a standalone
 # process, not this backend) and re-applied at boot/output-switch time by
-# apply-audio-output.sh. This module only reads them, for the
+# apply-audio-output.py. This module only reads them, for the
 # /api/local/audio-volume endpoint the kiosk page polls to reflect
 # changes on screen. Same not-in-WIPE_PATHS reasoning as
 # AUDIO_OUTPUT_FILE — a volume level is a property of the room, not of
@@ -448,11 +448,17 @@ def apply_server_language(code: str | None, revision: int | None, sent_pending: 
     LANGUAGE_PENDING_FILE.unlink(missing_ok=True)
 
 
+# "hdmi" is automatic (the first HDMI output that has a display); hdmi1/hdmi2 pick
+# a port; "all" plays on every output (each HDMI output and the jack). apply-audio-output.py (the OS script)
+# owns what each means and what happens when one isn't available.
+AUDIO_OUTPUTS = ("hdmi", "hdmi1", "hdmi2", "headphones", "all")
+
+
 def read_audio_output() -> str:
     if not AUDIO_OUTPUT_FILE.exists():
         return DEFAULT_AUDIO_OUTPUT
     value = AUDIO_OUTPUT_FILE.read_text().strip()
-    return value if value in ("hdmi", "headphones") else DEFAULT_AUDIO_OUTPUT
+    return value if value in AUDIO_OUTPUTS else DEFAULT_AUDIO_OUTPUT
 
 
 def write_audio_output(value: str) -> None:
@@ -461,11 +467,21 @@ def write_audio_output(value: str) -> None:
     AUDIO_OUTPUT_FILE.chmod(0o644)
 
 
+# "4k"/"1080p"/"720p", or any "WIDTHxHEIGHT" (every VESA mode the display lists).
+# apply-screen-resolution.py (the OS script) owns what each one means and falls
+# back to the closest size the display actually supports.
+SCREEN_RESOLUTION_RE = re.compile(r"^(4k|1080p|720p|\d{3,5}x\d{3,5})$")
+
+
+def valid_screen_resolution(value: str) -> bool:
+    return bool(SCREEN_RESOLUTION_RE.match(value))
+
+
 def read_screen_resolution() -> str:
     if not SCREEN_RESOLUTION_FILE.exists():
         return DEFAULT_SCREEN_RESOLUTION
-    value = SCREEN_RESOLUTION_FILE.read_text().strip()
-    return value if value in ("4k", "1080p") else DEFAULT_SCREEN_RESOLUTION
+    value = SCREEN_RESOLUTION_FILE.read_text().strip().lower()
+    return value if valid_screen_resolution(value) else DEFAULT_SCREEN_RESOLUTION
 
 
 def write_screen_resolution(value: str) -> None:
