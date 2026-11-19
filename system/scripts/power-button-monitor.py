@@ -17,7 +17,7 @@ slide-announcer-kiosk.service — it has to keep running *while* the kiosk
 is stopped/asleep, so a second press can bring it back.
 
 Device discovery is capability-based (any /dev/input/event* node that
-supports KEY_POWER) rather than pinned to a specific USB vendor/product
+supports one of TOGGLE_KEYS) rather than pinned to a specific USB vendor/product
 ID, since this device only ever has the one remote plugged in. Re-scanned
 periodically so an unplug/replug is picked back up without restarting this
 service.
@@ -34,6 +34,15 @@ DISPLAY_POWER_CLI = "/usr/local/sbin/slide-announcer-display-power"
 RESCAN_INTERVAL_SECONDS = 5.0
 DEBOUNCE_SECONDS = 1.0
 
+# Keys that toggle sleep/wake. Older remote sends KEY_POWER; newer one sends
+# KEY_SLEEP (Settings -> Key Debug shows it as Chromium keyCode 95 "Sleep").
+# KEY_WAKEUP is included for remotes with a separate wake button.
+TOGGLE_KEYS = (
+    libevdev.EV_KEY.KEY_POWER,
+    libevdev.EV_KEY.KEY_SLEEP,
+    libevdev.EV_KEY.KEY_WAKEUP,
+)
+
 
 def _open_power_device(path):
     try:
@@ -45,7 +54,7 @@ def _open_power_device(path):
     except OSError:
         f.close()
         return None
-    if not dev.has(libevdev.EV_KEY.KEY_POWER):
+    if not any(dev.has(k) for k in TOGGLE_KEYS):
         f.close()
         return None
     # events() stops at "no more events buffered right now" rather than
@@ -57,7 +66,7 @@ def _open_power_device(path):
 
 
 def scan_power_devices(known):
-    """Returns known with dead nodes dropped and any new KEY_POWER-capable
+    """Returns known with dead nodes dropped and any new toggle-key-capable
     /dev/input/event* nodes added."""
     for path in list(known):
         if not os.path.exists(path):
@@ -95,7 +104,7 @@ def main():
             f, dev = devices[path]
             try:
                 for event in dev.events():
-                    if event.matches(libevdev.EV_KEY.KEY_POWER) and event.value == 1:
+                    if event.value == 1 and any(event.matches(k) for k in TOGGLE_KEYS):
                         now = time.monotonic()
                         if now - last_toggle >= DEBOUNCE_SECONDS:
                             subprocess.run([DISPLAY_POWER_CLI, "toggle"], check=False)
