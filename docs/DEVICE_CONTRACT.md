@@ -174,6 +174,8 @@ Version strings: see [Versions](#versions).
 | `os_bundle_sha256` | string \| null | informational; the device relies on RAUC's signature check instead (see [Updates](#updates)) |
 | `os_release_type` | `"full"` \| `"hotfix"` \| null | non-null only when `os_update_available` |
 | `os_auto_update_enabled` | bool | per-device switch: whether the device may apply OS updates on its own schedule |
+| `app_update_age_hours`, `os_update_age_hours` | int \| null | whole hours the offered release has been available on this device's channel (since it was tagged there); null when nothing is offered. See [Overdue updates](#overdue-updates) |
+| `update_overdue_after_hours` | int | optional: the age at which an offered update counts as overdue (default 72 if absent) |
 | `update_channel` | string | optional: this device's channel as set on the paired server; only needed when `update_server_url` is set |
 | `update_server_url` | string \| null | optional: another server to ask for software instead of this one — see [Update source](#update-source) |
 | *extension fields* | any | see [Extensions](#extensions) |
@@ -242,6 +244,30 @@ failed to install is not retried every cycle — only once the offered version
 changes. The server therefore only has to offer the right release; it doesn't
 track progress. (There is currently no update-result report back to the
 server beyond the versions in the next heartbeat.)
+
+### Overdue updates
+
+A device that is powered on only for a weekly service may never be running during its idle window, so
+an update would wait forever. The heartbeat therefore also carries `app_update_age_hours` /
+`os_update_age_hours` (how long the offered release has been available) and `update_overdue_after_hours`
+(default 72). Once an age reaches the threshold that tier's update is **overdue**: the updater skips the
+idle window and applies on its next check (the timers fire a few minutes after boot, so a weekly device
+updates shortly after it is switched on). Everything else still applies: the auto-update switch, the
+app-before-OS ordering, the failed-version guard, and the update hold below.
+
+The age is sent as a duration, not a timestamp, because a device with no RTC can't trust its clock
+early in boot. Ages and the threshold are among the fields an [update source](#update-source) may set.
+
+### Update hold
+
+A product writes **`/run/slide-announcer/update-hold`** — JSON `{"reasons": ["airshow_casting", ...]}` —
+while something on screen must not be interrupted by a restart or reboot, and refreshes it every few
+seconds (it lives on tmpfs, so a reboot clears it). Both updaters, when running unattended, defer while
+the file exists and was modified within the last 120 seconds; a stale file is ignored so a dead writer
+can't block updates indefinitely. The hold applies to the idle window and to overdue updates alike. It
+does not apply to an update a person asked for with "Update Now" (`--force`). The platform defines only
+the file; what counts as a reason is the product's (the slideannouncer product's are listed in its
+docs).
 
 ### Releases (server data model)
 

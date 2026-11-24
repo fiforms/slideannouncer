@@ -88,6 +88,7 @@ def read_cpu_temp_c() -> float | None:
 UPDATE_KEYS = (
     "latest_app_version", "app_update_available", "app_download_url", "app_sha256",
     "latest_os_version", "os_update_available", "os_bundle_url", "os_bundle_sha256", "os_release_type",
+    "app_update_age_hours", "os_update_age_hours", "update_overdue_after_hours",
 )
 
 

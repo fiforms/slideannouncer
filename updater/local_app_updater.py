@@ -65,6 +65,17 @@ RELEASES_DIR = DATA_LOCAL_APP / "releases"
 KEEP_RELEASES = 3
 IDLE_WINDOW_START_HOUR = 2  # 02:00 local
 IDLE_WINDOW_END_HOUR = 5  # 05:00 local
+# Written by the product (the kiosk backend) while something on screen must not
+# be interrupted: JSON {"reasons": [...]}, refreshed every few seconds, on tmpfs
+# so a reboot clears it. Products decide what counts (a cast, a video, live TV);
+# the updaters only honour it. See docs/DEVICE_CONTRACT.md, "Update hold".
+UPDATE_HOLD_FILE = Path("/run/slide-announcer/update-hold")
+# A hold not refreshed for this long is ignored: its writer has died, and
+# nobody should be left unable to update because of a stale file.
+UPDATE_HOLD_STALE_SECONDS = 120
+# Used when the server doesn't say (older server, or an update source that
+# omits it) — keep in step with config/slide_announcer.php.
+DEFAULT_OVERDUE_AFTER_HOURS = 72
 HEALTH_CHECK_TIMEOUT_SECONDS = 30
 HEALTH_CHECK_INTERVAL_SECONDS = 2
 BACKEND_STATUS_URL = "http://127.0.0.1:8000/api/local/status"
@@ -165,6 +176,32 @@ def within_idle_window(now: datetime | None = None) -> bool:
     # Wraps past midnight (e.g. 22-5) — not used by the defaults above, but
     # kept correct in case the window is ever reconfigured that way.
     return hour >= IDLE_WINDOW_START_HOUR or hour < IDLE_WINDOW_END_HOUR
+
+
+def update_hold_reasons(path: Path | None = None, now: float | None = None) -> list[str]:
+    """Why the product wants no restart right now (see UPDATE_HOLD_FILE), or []."""
+    path = path or UPDATE_HOLD_FILE
+    try:
+        age = (now if now is not None else time.time()) - path.stat().st_mtime
+        if age > UPDATE_HOLD_STALE_SECONDS:
+            return []
+        reasons = json.loads(path.read_text()).get("reasons")
+    except (OSError, ValueError, AttributeError):
+        return []
+    return [str(r) for r in reasons] if isinstance(reasons, list) and reasons else []
+
+
+def is_overdue(info: dict, kind: str) -> bool:
+    """True once the offered `kind` ('app' or 'os') update has been available for
+    longer than the server's overdue threshold. The server sends an age, not a
+    date, because a device with no RTC can't trust its own clock at boot. An
+    overdue update skips the overnight window — a device powered on only for a
+    weekly service would otherwise never reach it — but never the update hold."""
+    age = info.get(f"{kind}_update_age_hours")
+    threshold = info.get("update_overdue_after_hours")
+    if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or threshold <= 0:
+        threshold = DEFAULT_OVERDUE_AFTER_HOURS
+    return not isinstance(age, bool) and isinstance(age, (int, float)) and age >= threshold
 
 
 def read_heartbeat_update_info(prefer_fresh_check: bool = False) -> dict | None:
@@ -449,10 +486,21 @@ def main(force: bool = False) -> int:
             "waiting for a newer release rather than retrying the same one every cycle")
         return 0
 
-    if not force and not within_idle_window():
+    overdue = is_overdue(info, "app")
+    if not force and not overdue and not within_idle_window():
         log(f"update to {version} available but outside the idle window "
             f"({IDLE_WINDOW_START_HOUR:02d}:00-{IDLE_WINDOW_END_HOUR:02d}:00 local) — deferring")
         return 0
+
+    if not force:
+        held = update_hold_reasons()
+        if held:
+            log(f"update to {version} is ready but something must not be interrupted "
+                f"({', '.join(held)}) — deferring")
+            return 0
+        if overdue and not within_idle_window():
+            log(f"update to {version} is overdue ({info.get('app_update_age_hours')}h old) — "
+                "applying outside the idle window")
 
     lock = acquire_lock()
     if lock is None:
@@ -473,7 +521,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--force", action="store_true",
-        help="Bypass the idle window and the already-attempted-this-version guard — used by "
+        help="Bypass the idle window, the update hold, and the already-attempted-this-version guard — used by "
              "the Settings UI's on-demand 'Update Now' unit "
              "(slide-announcer-local-app-updater-now.service).",
     )
